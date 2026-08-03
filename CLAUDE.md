@@ -1,7 +1,7 @@
 # CLAUDE.md —— 项目长期规则
 
 本文件记录《独裁者按钮》MVP 的长期约束。首要执行依据是
-`docs/独裁者按钮_ClaudeCode开发简版需求文档_V1.0.docx`；本文件与其冲突时以该文档为准。
+若项目中存在 `docs/独裁者按钮_ClaudeCode开发简版需求文档_V1.0.docx`，该文档为首要执行依据；否则以本文件与 `README.md` 为准。
 
 ## 技术约束（不可自行扩大）
 
@@ -25,12 +25,12 @@
 
 ## 当前进度
 
-- 已完成：全局可点击薄框架。UX-01 ~ UX-14 场景容器、单页切换、统一场景状态管理、
-  烦恼数组暂存、下一步 / 返回 / 退出 / 重新开始。
-- 未实现（占位）：M03 泡泡生成、M04 删除与增殖、动画、音效。
-  相关函数签名在 `js/bubble-game.js` 中为 no-op。
-- 待确认常量：`GROWTH_START_THRESHOLD`、`GROWTH_INTERVAL_MS`、
-  `BUTTON_UNLOCK_THRESHOLD`（文档 §11 标注「待视觉测试确认」，现为临时占位值）。
+- 已完成：UX-01～UX-14 核心闭环；M03/M04 泡泡生成、漂浮、点击删除与增殖；
+  M05 独裁者按钮解锁与清空；M06 烦恼重现、主题停留、总结与重置。
+- 当前版本：MVP V0.3。
+- 下一阶段：优先进行真人试玩和阈值调整，再考虑 P1 特殊泡泡、音效与高保真素材。
+- 待试玩确认常量：`GROWTH_START_THRESHOLD`、`GROWTH_INTERVAL_MS`、
+  `BUTTON_UNLOCK_THRESHOLD`。
 
 ## 文件职责
 
@@ -40,5 +40,5 @@
 | `css/style.css` | 全局视觉、布局、场景显隐、按钮与输入样式 |
 | `js/config.js` | CONFIG 常量、APP_STATE、SCENE_FLOW |
 | `js/scene-manager.js` | 场景切换、进入/退出钩子、定时器清理 |
-| `js/bubble-game.js` | Canvas 与泡泡逻辑（当前为占位空壳） |
+| `js/bubble-game.js` | Canvas 泡泡生成、运动、点击、删除、增殖与柔和重现 |
 | `js/app.js` | 初始化、事件绑定、全局数据、流程协调 |
