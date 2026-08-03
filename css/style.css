@@ -1,0 +1,925 @@
+/**
+ * style.css —— 情绪化基础 UI 定调（视觉系统 + 五阶段情绪）
+ *
+ * 结构：
+ *   1. 颜色 / 字体 / 间距 / 圆角 / 阴影 / 动效变量
+ *   2. 五个情绪阶段的主题令牌（A 进入 → B 暴露 → C 失控 → D 清空 → E 重现）
+ *   3. 基础排版与舞台
+ *   4. 组件：按钮 / 独裁者按钮 / 输入 / 列表 / 进度 / 弹窗
+ *   5. 场景专属（UX-01 / 04 / 07 / 09 / 10 / 11 / 12）
+ *   6. 动效与 prefers-reduced-motion
+ *
+ * 尺寸遵循 AC-01：标题 ≥40pt、正文 ≥26pt、主按钮高 ≥48px。
+ */
+
+* { box-sizing: border-box; }
+
+:root {
+  /* ---------- 颜色原子 ---------- */
+  --c-void: #070912;        /* 深蓝黑背景 */
+  --c-deep: #0d1120;
+  --c-violet: #1b1a2e;      /* 紫灰蓝输入背景 */
+  --c-violet-lift: #232338;
+  --c-dora: #4a7dc8;        /* 克制的哆啦A梦蓝 */
+  --c-dora-soft: #6f9ad8;
+  --c-alert: #c02b26;       /* 独裁者按钮警示红：仅关键节点 */
+  --c-alert-lift: #e03a33;
+  --c-blank: #eef0f3;       /* 空白场景颜色 */
+  --c-blank-ink: #6b7280;
+  --c-return: #7f8ba6;      /* 重现阶段的低饱和蓝灰 */
+  --c-ink: #e8ecf4;         /* 冷灰白主文字 */
+  --c-ink-2: #97a1b8;       /* 灰蓝辅助文字 */
+  --c-ink-3: #5c6680;       /* 编号与最弱信息 */
+  --c-warn-ink: #d9a24a;    /* 提示文字：克制，不用大面积红框 */
+
+  /* ---------- 字体层级 ---------- */
+  --ff: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+  --fs-tag: 18px;           /* 编号 / 阶段标识 */
+  --fs-title: 56px;         /* 标题 ≥40pt */
+  --fs-body: 35px;          /* 正文 ≥26pt */
+  --fs-btn: 26px;
+  --fs-note: 22px;          /* 辅助信息 */
+  --lh-title: 1.24;
+  --lh-body: 1.62;
+  --ls-tag: 0.32em;
+  --ls-title: 0.02em;
+
+  /* ---------- 间距与尺寸 ---------- */
+  --sp-1: 8px;
+  --sp-2: 16px;
+  --sp-3: 24px;
+  --sp-4: 36px;
+  --sp-5: 56px;
+  --sp-6: 88px;
+  --w-content: 1100px;
+  --w-text: 900px;
+  --w-list: 760px;
+
+  /* ---------- 圆角与阴影 ---------- */
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 20px;
+  --r-pill: 999px;
+  --sh-soft: 0 18px 50px rgba(0, 0, 0, 0.42);
+  --sh-lift: 0 10px 28px rgba(0, 0, 0, 0.34);
+  --sh-glow: 0 0 0 1px rgba(122, 158, 214, 0.22), 0 0 32px rgba(74, 125, 200, 0.18);
+  --sh-alert: 0 0 0 1px rgba(224, 58, 51, 0.4), 0 0 46px rgba(192, 43, 38, 0.34);
+
+  /* ---------- 动效 ---------- */
+  --t-fast: 160ms;
+  --t-mid: 420ms;
+  --t-scene: 560ms;
+  --t-slow: 900ms;
+  --t-breath: 3600ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 0.84, 0.44, 1);
+
+  /* ---------- 主题令牌：默认= 阶段A ---------- */
+  --bg: var(--c-void);
+  --bg-2: var(--c-deep);
+  --ink: var(--c-ink);
+  --ink-dim: var(--c-ink-2);
+  --ink-faint: var(--c-ink-3);
+  --panel: rgba(255, 255, 255, 0.035);
+  --line: rgba(150, 170, 210, 0.16);
+  --accent: var(--c-dora);
+  --glow: rgba(74, 125, 200, 0.16);   /* 微弱冷色光晕 */
+  --glow-size: 62vw;
+  --glow-y: 42%;
+  --density: 0;                        /* 画面密度：阶段C 递增 */
+  --scene-pad: var(--sp-6);
+}
+/* =====================================================================
+   2. 五个情绪阶段
+   用 :has() 根据当前可见场景切换主题令牌，
+   因此无需给 14 个场景标签逐个加 class，也不需要 JS 参与。
+   ===================================================================== */
+
+/* ---------- 阶段A｜进入与好奇：UX-01~03 安静、陌生、略带期待 ---------- */
+body:has(.scene--active:is([data-scene="ux-01"], [data-scene="ux-02"], [data-scene="ux-03"])) {
+  --bg: var(--c-void);
+  --glow: rgba(74, 125, 200, 0.16);
+  --glow-size: 64vw;
+  --glow-y: 40%;
+  --scene-pad: var(--sp-6);
+}
+
+/* ---------- 阶段B｜自我暴露：UX-04~06 私人、犹豫、轻微紧张 ---------- */
+body:has(.scene--active:is([data-scene="ux-04"], [data-scene="ux-05"], [data-scene="ux-06"])) {
+  --bg: #12131f;
+  --bg-2: var(--c-violet);
+  --panel: rgba(120, 116, 168, 0.10);
+  --line: rgba(150, 145, 200, 0.20);
+  --glow: rgba(112, 104, 168, 0.17);
+  --glow-size: 46vw;
+  --glow-y: 46%;
+  --accent: var(--c-dora);
+  --scene-pad: var(--sp-5);
+}
+
+/* ---------- 阶段C｜释放与失控：UX-07~09 逐级升压 ---------- */
+/* C-1 释放：色彩仍柔和 */
+body:has(.scene--active[data-scene="ux-07"]) {
+  --bg: #101526;
+  --panel: rgba(120, 150, 200, 0.09);
+  --line: rgba(150, 175, 215, 0.22);
+  --glow: rgba(80, 130, 195, 0.20);
+  --glow-size: 52vw;
+  --density: 0.34;
+  --scene-pad: var(--sp-4);
+}
+
+/* C-2 焦虑：密度与对比升高，暖色警示渗入 */
+body:has(.scene--active[data-scene="ux-08"]) {
+  --bg: #14121c;
+  --ink-dim: #a9a2ae;
+  --panel: rgba(170, 130, 130, 0.10);
+  --line: rgba(200, 150, 145, 0.26);
+  --glow: rgba(150, 80, 78, 0.22);
+  --glow-size: 44vw;
+  --density: 0.72;
+  --scene-pad: var(--sp-3);
+}
+
+/* C-3 失控临界：画面收紧，只为红按钮让位 */
+body:has(.scene--active[data-scene="ux-09"]) {
+  --bg: #120d10;
+  --ink-dim: #a2939a;
+  --panel: rgba(180, 110, 105, 0.09);
+  --line: rgba(200, 120, 115, 0.28);
+  --glow: rgba(178, 46, 40, 0.26);
+  --glow-size: 40vw;
+  --glow-y: 54%;
+  --accent: var(--c-alert);
+  --density: 1;
+  --scene-pad: var(--sp-3);
+}
+
+/* ---------- 阶段D｜彻底清空：UX-10 空洞、失重、不确定 ---------- */
+body:has(.scene--active[data-scene="ux-10"]) {
+  --bg: var(--c-blank);
+  --bg-2: var(--c-blank);
+  --ink: #4a5160;
+  --ink-dim: var(--c-blank-ink);
+  --ink-faint: #aeb4bf;
+  --panel: rgba(0, 0, 0, 0.015);
+  --line: rgba(90, 100, 120, 0.14);
+  --accent: #8b93a3;
+  --glow: rgba(255, 255, 255, 0);
+  --density: 0;
+  --scene-pad: var(--sp-6);
+}
+
+/* ---------- 阶段E｜重现与接纳：UX-11~14 柔和、克制、释然 ---------- */
+body:has(.scene--active:is([data-scene="ux-11"], [data-scene="ux-12"],
+                           [data-scene="ux-13"], [data-scene="ux-14"])) {
+  --bg: #1a2130;
+  --bg-2: #202836;
+  --ink: #dfe5ee;
+  --ink-dim: var(--c-return);
+  --panel: rgba(170, 186, 210, 0.07);
+  --line: rgba(160, 178, 205, 0.18);
+  --accent: #6f8fc0;
+  --glow: rgba(127, 139, 166, 0.15);
+  --glow-size: 58vw;
+  --glow-y: 48%;
+  --density: 0;
+  --scene-pad: var(--sp-5);
+}
+
+/* 重现阶段逐场收束：到 UX-14 留下情绪余韵 */
+body:has(.scene--active[data-scene="ux-14"]) {
+  --bg: #151b28;
+  --glow: rgba(127, 139, 166, 0.10);
+}
+
+/* =====================================================================
+   3. 基础排版与舞台
+   ===================================================================== */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--ff);
+  color: var(--ink);
+  background: var(--bg);
+  /* 阶段间的情绪过渡：底色缓慢推移，而非硬切 */
+  transition: background-color var(--t-slow) var(--ease), color var(--t-mid) var(--ease);
+}
+
+body {
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 冷色光晕层：未来实验装置的单一光源感 */
+body::before {
+  content: "";
+  position: fixed;
+  left: 50%;
+  top: var(--glow-y);
+  width: var(--glow-size);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, var(--glow) 0%, transparent 68%);
+  pointer-events: none;
+  z-index: 0;
+  transition: width var(--t-slow) var(--ease), top var(--t-slow) var(--ease),
+              background var(--t-slow) var(--ease);
+}
+
+/* 展览空间的地平线：极细一道，暗示装置所在的台面 */
+body::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 96px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 22%, var(--line) 78%, transparent);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity var(--t-mid) var(--ease);
+}
+
+/* 16:9 横向舞台（文档 §1.2） */
+.stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--scene-pad) var(--sp-5) calc(var(--sp-6) + var(--sp-3));
+  transition: padding var(--t-slow) var(--ease);
+}
+
+/* ---------- 场景显隐：单页切换的核心（结构不变） ---------- */
+.scene {
+  display: none;
+  width: 100%;
+  max-width: var(--w-content);
+  text-align: center;
+}
+
+.scene--active {
+  display: block;
+  /* 先淡出再淡入：由 opacity + blur + translateY 组成 */
+  animation: scene-in var(--t-scene) var(--ease-out) both;
+}
+
+/* 编号 / 阶段标识：最弱层级 */
+.scene__tag {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-tag);
+  font-weight: 400;
+  letter-spacing: var(--ls-tag);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  transition: color var(--t-mid) var(--ease);
+}
+
+/* AC-01：标题 ≥40pt ≈ 53px */
+.scene__title {
+  margin: 0 auto var(--sp-3);
+  max-width: var(--w-text);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: var(--lh-title);
+  letter-spacing: var(--ls-title);
+  color: var(--ink);
+  text-wrap: balance;
+  transition: color var(--t-mid) var(--ease);
+}
+
+/* AC-01：正文 ≥26pt ≈ 35px */
+.scene__desc {
+  margin: 0 auto var(--sp-4);
+  max-width: var(--w-text);
+  font-size: var(--fs-body);
+  font-weight: 300;
+  line-height: var(--lh-body);
+  color: var(--ink-dim);
+  text-wrap: pretty;
+  transition: color var(--t-mid) var(--ease);
+}
+
+.scene__actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: var(--sp-4);
+}
+
+/* =====================================================================
+   4. 组件
+   ===================================================================== */
+
+/* ---------- 普通按钮：克制，hover 仅轻微光晕 + 1~2px 位移 ---------- */
+.btn {
+  position: relative;
+  min-height: 56px;             /* AC-01：≥48px */
+  padding: 0 var(--sp-4);
+  font-family: inherit;
+  font-size: var(--fs-btn);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  cursor: pointer;
+  /* 点击反馈 ≤200ms（AC-03 / AC-05） */
+  transition: background-color var(--t-fast) var(--ease),
+              border-color var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease),
+              transform var(--t-fast) var(--ease),
+              opacity var(--t-fast) var(--ease);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  box-shadow: var(--sh-glow);
+}
+
+.btn:active { transform: translateY(0); }
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* 主操作：最高层级，但仍以细边与内敛底色表达 */
+.btn--primary {
+  color: #f4f7fb;
+  background: color-mix(in srgb, var(--accent) 82%, #0b0f18);
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.btn--primary:hover {
+  background: color-mix(in srgb, var(--accent) 94%, #0b0f18);
+}
+
+/* 返回 / 退出：层级明确低于主操作，但始终可见可找到 */
+.btn--ghost,
+.btn:not(.btn--primary):not(.btn--danger) {
+  color: var(--ink-dim);
+  background: transparent;
+}
+
+.btn--ghost {
+  border-color: transparent;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ink-dim) 40%, transparent);
+  text-underline-offset: 6px;
+}
+
+.btn--ghost:hover {
+  color: var(--ink);
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.btn[disabled] {
+  opacity: 0.34;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn[disabled]:hover { transform: none; box-shadow: none; }
+
+.is-hidden { display: none; }
+
+/* ---------- 独裁者按钮：独立样式，UX-09 的唯一视觉中心 ----------
+   危险（警示红 + 外扩红环）、诱惑（缓慢呼吸）、不可逆（按下后彻底冷却）。 */
+.btn--danger {
+  min-height: 96px;
+  padding: 0 var(--sp-5);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #fff4f3;
+  background:
+    radial-gradient(120% 140% at 50% 0%, var(--c-alert-lift) 0%, var(--c-alert) 58%, #8d1b17 100%);
+  border: 1px solid color-mix(in srgb, var(--c-alert-lift) 70%, transparent);
+  border-radius: var(--r-pill);
+  box-shadow: var(--sh-alert);
+  animation: dictator-breath var(--t-breath) var(--ease) infinite;
+}
+
+.btn--danger:hover {
+  transform: translateY(-2px) scale(1.015);
+  background:
+    radial-gradient(120% 140% at 50% 0%, #f04b43 0%, var(--c-alert-lift) 58%, #a01f1a 100%);
+  box-shadow: 0 0 0 1px rgba(240, 75, 67, 0.55), 0 0 70px rgba(224, 58, 51, 0.5);
+}
+
+.btn--danger:active { transform: translateY(0) scale(0.99); }
+
+/* 触发后：锁定即冷却，去掉呼吸与红光，表达不可逆 */
+.btn--danger[disabled] {
+  opacity: 1;
+  color: #8d8288;
+  background: #241a1c;
+  border-color: rgba(200, 120, 115, 0.20);
+  box-shadow: none;
+  animation: none;
+}
+
+/* ---------- 输入框：情绪容器 ---------- */
+.worry-input {
+  position: relative;
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--sp-2);
+}
+
+.worry-input__field {
+  width: 560px;
+  min-height: 68px;
+  padding: 0 var(--sp-3);
+  font-family: inherit;
+  font-size: var(--fs-btn);
+  font-weight: 300;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--c-violet) 0%, #16162a 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--sh-lift);
+  transition: border-color var(--t-mid) var(--ease),
+              box-shadow var(--t-mid) var(--ease);
+}
+
+.worry-input__field::placeholder {
+  color: color-mix(in srgb, var(--ink-dim) 62%, transparent);
+  font-weight: 300;
+}
+
+/* 聚焦：边缘光缓慢增强（呼吸），而非硬边高亮 */
+.worry-input__field:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  animation: field-breath 3200ms var(--ease) infinite;
+}
+
+/* 空输入提示：克制的暖色文字，不用大面积刺眼红框 */
+.worry-hint {
+  min-height: 32px;
+  margin: 0 auto var(--sp-3);
+  font-size: var(--fs-note);
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  color: var(--c-warn-ink);
+  transition: color var(--t-mid) var(--ease);
+}
+
+/* ---------- 烦恼列表 / 总结列表 ---------- */
+.worry-list, .summary-list {
+  list-style: none;
+  margin: 0 auto var(--sp-3);
+  padding: 0;
+  max-width: var(--w-list);
+  text-align: left;
+}
+
+.worry-list li, .summary-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: 10px;
+  padding: 18px var(--sp-3);
+  font-size: var(--fs-btn);
+  font-weight: 300;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: var(--r-s);
+  animation: item-in var(--t-mid) var(--ease-out) both;
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.worry-list__empty {
+  justify-content: center;
+  border-left-color: transparent;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.worry-list__remove {
+  min-height: 40px;
+  padding: 0 var(--sp-2);
+  font-family: inherit;
+  font-size: 18px;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-s);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+
+.worry-list__remove:hover {
+  color: var(--ink-dim);
+  border-color: var(--line);
+}
+
+.worry-list--readonly li { justify-content: flex-start; }
+
+/* ---------- 进度提示：细线 + 编号 + 光点，不做后台步骤条 ---------- */
+.progress {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3);
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: var(--ls-tag);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  transition: color var(--t-mid) var(--ease), opacity var(--t-mid) var(--ease);
+}
+
+/* 细线轨道 + 随场景推进的光点（位置由 --progress-x 提供） */
+.progress::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--sp-3) + 26px);
+  width: 260px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, var(--line), transparent);
+}
+
+.progress::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 130px + 260px * var(--progress-x, 0));
+  bottom: calc(var(--sp-3) + 24px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+  transition: left var(--t-slow) var(--ease), background-color var(--t-mid) var(--ease);
+}
+
+/* 阶段D 清空：进度与地平线一并隐去，只留空白 */
+body:has(.scene--active[data-scene="ux-10"]) .progress { opacity: 0; }
+body:has(.scene--active[data-scene="ux-10"])::after { opacity: 0; }
+
+/* ---------- 退出确认弹窗 ---------- */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 13, 0.78);
+  backdrop-filter: blur(6px);
+  z-index: 10;
+}
+
+.modal--open {
+  display: flex;
+  animation: fade-in var(--t-mid) var(--ease) both;
+}
+
+.modal__panel {
+  width: min(680px, 90vw);
+  padding: var(--sp-5);
+  text-align: center;
+  background: linear-gradient(180deg, #171c2b 0%, #11151f 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  box-shadow: var(--sh-soft);
+  animation: modal-in var(--t-mid) var(--ease-out) both;
+}
+
+.modal__title {
+  margin: 0 0 var(--sp-2);
+  font-size: 38px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.modal__desc {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-btn);
+  font-weight: 300;
+  line-height: var(--lh-body);
+  color: var(--ink-dim);
+}
+
+/* =====================================================================
+   5. 场景专属
+   ===================================================================== */
+
+/* ---------- 占位框：统一为「装置待安装」的语气 ---------- */
+.placeholder-box {
+  margin: 0 auto var(--sp-3);
+  max-width: var(--w-text);
+  padding: var(--sp-4) var(--sp-3);
+  font-size: var(--fs-note);
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  transition: border-color var(--t-mid) var(--ease), background-color var(--t-mid) var(--ease);
+}
+
+.placeholder-box--canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  /* 装置网格：密度随阶段C 的 --density 升高 */
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% calc(64px - 26px * var(--density)),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / calc(64px - 26px * var(--density)) 100%,
+    var(--panel);
+  background-blend-mode: normal;
+  opacity: calc(0.5 + 0.5 * var(--density));
+}
+
+.placeholder-box--small {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 17px;
+}
+
+/* ---------- UX-01：安静、神秘的体验馆入口 ---------- */
+/* 标题字距缓慢收拢，像装置刚被唤醒 */
+[data-scene="ux-01"] .scene__title {
+  font-size: 64px;
+  font-weight: 300;
+  animation: title-track var(--t-slow) var(--ease-out) both;
+}
+
+[data-scene="ux-01"] .scene__tag { animation: fade-in var(--t-slow) var(--ease) both; }
+
+[data-scene="ux-01"] .scene__desc {
+  animation: fade-up var(--t-slow) var(--ease-out) 220ms both;
+}
+
+/* 独裁者按钮此刻只是远处一枚隐约线索，不构成视觉中心 */
+.hint-relic {
+  margin: var(--sp-4) auto var(--sp-3);
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%,
+              rgba(192, 43, 38, 0.16) 0%, rgba(192, 43, 38, 0.05) 44%, transparent 70%);
+  border: 1px solid rgba(192, 43, 38, 0.12);
+  opacity: 0.5;
+  animation: relic-breath 7s var(--ease) infinite;
+}
+
+/* ---------- UX-04：私人、犹豫的烦恼输入 ---------- */
+[data-scene="ux-04"] .scene__title,
+[data-scene="ux-05"] .scene__title { font-weight: 400; }
+
+/* 输入装置外壳：把表单包成一台记录设备 */
+[data-scene="ux-04"] .worry-input {
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: rgba(120, 116, 168, 0.05);
+  box-shadow: var(--sh-lift);
+}
+
+/* ---------- UX-07：从释放走向混乱的游戏区域占位 ---------- */
+[data-scene="ux-07"] .placeholder-box--canvas,
+[data-scene="ux-08"] .placeholder-box--canvas {
+  /* 轻微错位与模糊，仅作用于装饰层，不影响文字阅读与点击 */
+  filter: blur(calc(0.4px * var(--density)));
+}
+
+[data-scene="ux-08"] .scene__title {
+  /* 极轻错位：焦虑感，幅度控制在 1px 内以保证可读 */
+  animation: drift 5200ms var(--ease) infinite;
+}
+
+/* ---------- UX-09：危险、诱惑、不可逆 ---------- */
+/* 让按钮独占焦点：同场景其他元素退到最低存在感 */
+[data-scene="ux-09"] .scene__desc { opacity: 0.72; }
+[data-scene="ux-09"] .placeholder-box { opacity: 0.4; }
+
+[data-scene="ux-09"] .scene__actions {
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+}
+
+/* ---------- UX-10：彻底清空 ---------- */
+/* 隐去大部分界面信息，只保留静止与留白；文字延迟浮现 */
+[data-scene="ux-10"] .scene__tag { opacity: 0; }
+
+[data-scene="ux-10"] .scene__title {
+  font-size: 44px;
+  font-weight: 200;
+  letter-spacing: 0.1em;
+  animation: fade-in 1400ms var(--ease) 900ms both;
+}
+
+[data-scene="ux-10"] .scene__desc {
+  font-size: 28px;
+  animation: fade-in 1200ms var(--ease) 1600ms both;
+}
+
+[data-scene="ux-10"] .placeholder-box {
+  background: transparent;
+  border-color: rgba(90, 100, 120, 0.12);
+  animation: fade-in 1200ms var(--ease) 2000ms both;
+}
+
+[data-scene="ux-10"] .scene__actions {
+  animation: fade-in 900ms var(--ease) 2400ms both;
+}
+
+/* ---------- UX-11：烦恼重现（更浅、更透明） ---------- */
+[data-scene="ux-11"] .worry-list li {
+  color: var(--ink-dim);
+  background: rgba(170, 186, 210, 0.05);
+  border-left-color: rgba(160, 178, 205, 0.28);
+  opacity: 0.72;
+  /* 缓慢逐条浮现，无对抗性 */
+  animation: fade-up 1600ms var(--ease-out) both;
+}
+
+[data-scene="ux-11"] .worry-list li:nth-child(2) { animation-delay: 400ms; }
+[data-scene="ux-11"] .worry-list li:nth-child(3) { animation-delay: 800ms; }
+
+[data-scene="ux-11"] .placeholder-box--canvas { opacity: 0.34; }
+
+/* ---------- UX-12：通过文字、停顿与留白表达主题 ---------- */
+[data-scene="ux-12"] .scene__title {
+  max-width: 20ch;
+  font-size: 60px;
+  font-weight: 300;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+}
+
+/* 逐句出现：每句之间留出停顿 */
+[data-scene="ux-12"] .theme-line {
+  display: block;
+  animation: fade-up 1500ms var(--ease-out) both;
+}
+
+[data-scene="ux-12"] .theme-line:nth-child(1) { animation-delay: 300ms; }
+[data-scene="ux-12"] .theme-line:nth-child(2) { animation-delay: 1900ms; }
+
+[data-scene="ux-12"] .scene__desc {
+  font-size: 26px;
+  opacity: 0.72;
+  animation: fade-in 1200ms var(--ease) 3400ms both;
+}
+
+[data-scene="ux-12"] .scene__actions {
+  margin-top: var(--sp-6);
+  animation: fade-in 1000ms var(--ease) 4000ms both;
+}
+
+/* ---------- UX-13 / UX-14：收束，保留余韵 ---------- */
+[data-scene="ux-13"] .summary-list li { border-left-color: rgba(160, 178, 205, 0.3); }
+
+[data-scene="ux-14"] .scene__title {
+  font-weight: 300;
+  letter-spacing: 0.06em;
+}
+
+/* =====================================================================
+   6. 动效
+   只使用 opacity / blur / translateY / letter-spacing / box-shadow。
+   无泡泡运动、无爆炸、无粒子、无强烈震动、无音效。
+   ===================================================================== */
+
+@keyframes scene-in {
+  from { opacity: 0; filter: blur(6px); transform: translateY(14px); }
+  to   { opacity: 1; filter: blur(0);   transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes item-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 标题字距缓慢收拢 */
+@keyframes title-track {
+  from { opacity: 0; letter-spacing: 0.3em; filter: blur(5px); }
+  to   { opacity: 1; letter-spacing: 0.02em; filter: blur(0); }
+}
+
+/* 输入聚焦：边缘光缓慢增强 */
+@keyframes field-breath {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 0 rgba(74,125,200,0.28); }
+  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0 26px 2px rgba(74,125,200,0.26); }
+}
+
+/* 独裁者按钮：缓慢呼吸，表达诱惑 */
+@keyframes dictator-breath {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(224,58,51,0.34), 0 0 30px rgba(192,43,38,0.26); }
+  50%      { box-shadow: 0 0 0 1px rgba(224,58,51,0.52), 0 0 62px rgba(192,43,38,0.44); }
+}
+
+/* UX-01 隐约线索：极慢的明暗起伏 */
+@keyframes relic-breath {
+  0%, 100% { opacity: 0.36; }
+  50%      { opacity: 0.62; }
+}
+
+/* 焦虑期的极轻错位：幅度 ≤1px，不影响阅读 */
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  25%      { transform: translate(0.6px, -0.4px); }
+  50%      { transform: translate(-0.5px, 0.5px); }
+  75%      { transform: translate(0.4px, 0.3px); }
+}
+
+/* ---------- prefers-reduced-motion：只保留简单淡入淡出 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 保留最基本的场景淡入，去掉位移与模糊 */
+  .scene--active {
+    animation: fade-in 200ms linear both !important;
+  }
+
+  .btn:hover { transform: none; }
+  .btn--danger { animation: none; }
+  .btn--danger:hover { transform: none; }
+  .worry-input__field:focus { animation: none; }
+  .hint-relic { animation: none; opacity: 0.5; }
+  [data-scene="ux-08"] .scene__title { animation: none; }
+  [data-scene="ux-07"] .placeholder-box--canvas,
+  [data-scene="ux-08"] .placeholder-box--canvas { filter: none; }
+
+  /* 阶段D/E 的延迟浮现改为即时可见，避免长时间空屏 */
+  [data-scene="ux-10"] .scene__title,
+  [data-scene="ux-10"] .scene__desc,
+  [data-scene="ux-10"] .placeholder-box,
+  [data-scene="ux-10"] .scene__actions,
+  [data-scene="ux-11"] .worry-list li,
+  [data-scene="ux-12"] .theme-line,
+  [data-scene="ux-12"] .scene__desc,
+  [data-scene="ux-12"] .scene__actions {
+    animation: fade-in 200ms linear both !important;
+    opacity: 1;
+  }
+}
+
+/* ---------- 窄屏兜底：移动端仅保证不崩溃（文档 §1.3） ---------- */
+@media (max-width: 900px) {
+  :root {
+    --fs-title: 40px;
+    --fs-body: 26px;
+    --fs-btn: 22px;
+    --scene-pad: var(--sp-4);
+  }
+
+  .stage { padding: var(--sp-4) var(--sp-3) var(--sp-6); }
+  .worry-input { flex-wrap: wrap; }
+  .worry-input__field { width: 100%; }
+  [data-scene="ux-01"] .scene__title { font-size: 44px; }
+  [data-scene="ux-12"] .scene__title { font-size: 34px; }
+}

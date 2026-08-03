@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>22世纪未来道具体验馆 · No.001《独裁者按钮》</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- 单页场景切换容器：UX-01 ~ UX-14 全部在此页面内显隐（文档 §1.3） -->
+<main id="stage" class="stage">
+
+  <!-- ================= UX-01 进入体验馆 / APP_STATE.INTRO ================= -->
+  <section class="scene" data-scene="ux-01" aria-hidden="true">
+    <p class="scene__tag">UX-01 · INTRO</p>
+    <h1 class="scene__title">22世纪未来道具体验馆</h1>
+    <p class="scene__desc">No.001《独裁者按钮》。占位说明：此处将展示体验馆首页与开场动画。</p>
+    <!-- 隐约线索：独裁者按钮此刻只是远处一枚微光，不作为视觉中心 -->
+    <div class="hint-relic" aria-hidden="true"></div>
+    <div class="scene__actions">
+      <button type="button" class="btn btn--primary" data-action="next">进入体验馆</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-02 浏览道具介绍 / GADGET_INFO ================= -->
+  <section class="scene" data-scene="ux-02" aria-hidden="true">
+    <p class="scene__tag">UX-02 · GADGET_INFO</p>
+    <h1 class="scene__title">道具介绍</h1>
+    <p class="scene__desc">占位说明：此处展示原作设定、体验目标与风险提示。</p>
+    <div class="placeholder-box">［占位框：道具图示与背景说明］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-03 确认开始体验 / START_CONFIRM ================= -->
+  <section class="scene" data-scene="ux-03" aria-hidden="true">
+    <p class="scene__tag">UX-03 · START_CONFIRM</p>
+    <h1 class="scene__title">确认开始体验</h1>
+    <p class="scene__desc">占位说明：确认后进入烦恼采集；取消则返回介绍。</p>
+    <div class="placeholder-box">［占位框：开始前提示］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">取消</button>
+      <button type="button" class="btn btn--primary" data-action="next">开始体验</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-04 输入烦恼 / INPUT_WORRIES ================= -->
+  <section class="scene" data-scene="ux-04" aria-hidden="true">
+    <p class="scene__tag">UX-04 · INPUT_WORRIES</p>
+    <h1 class="scene__title">输入你的烦恼</h1>
+    <p class="scene__desc">
+      占位说明：至少输入 1 条，最多
+      <span data-bind="maxWorries"></span> 条（FR-02-01）。空输入不可继续。
+    </p>
+
+    <div class="worry-input">
+      <input type="text" id="worry-text" class="worry-input__field" maxlength="40"
+             placeholder="例如：明天的作业还没做完" autocomplete="off">
+      <button type="button" class="btn btn--primary" data-action="add-worry">添加</button>
+    </div>
+    <p class="worry-hint" data-bind="worryHint" role="status" aria-live="polite"></p>
+
+    <!-- 烦恼暂存于 JavaScript 数组 appData.worries（文档 §5.2 / FR-02-03） -->
+    <ul class="worry-list" data-bind="worryList"></ul>
+
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-05 确认生成 / INPUT_WORRIES ================= -->
+  <section class="scene" data-scene="ux-05" aria-hidden="true">
+    <p class="scene__tag">UX-05 · INPUT_WORRIES</p>
+    <h1 class="scene__title">确认生成</h1>
+    <p class="scene__desc">占位说明：确认后文本转为泡泡数据；可返回修改。</p>
+    <ul class="worry-list worry-list--readonly" data-bind="worryListConfirm"></ul>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回修改</button>
+      <button type="button" class="btn btn--primary" data-action="next">开始删除</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-06 泡泡生成 / BUBBLE_CREATE ================= -->
+  <section class="scene" data-scene="ux-06" aria-hidden="true">
+    <p class="scene__tag">UX-06 · BUBBLE_CREATE</p>
+    <h1 class="scene__title">泡泡生成</h1>
+    <p class="scene__desc">占位说明：此处生成不同位置、大小、速度的泡泡。</p>
+    <div class="placeholder-box placeholder-box--canvas">［占位框：Canvas 泡泡生成 —— 本轮不实现］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-07 点击删除 / BUBBLE_GAME ================= -->
+  <section class="scene" data-scene="ux-07" aria-hidden="true">
+    <p class="scene__tag">UX-07 · BUBBLE_GAME</p>
+    <h1 class="scene__title">点击删除</h1>
+    <p class="scene__desc">占位说明：点击泡泡后泡泡消失并播放删除反馈；点空白不报错。</p>
+    <div class="placeholder-box placeholder-box--canvas">［占位框：泡泡点击与删除反馈 —— 本轮不实现］</div>
+    <div class="placeholder-box placeholder-box--small">［占位框：音效 —— 本轮不实现］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-08 烦恼增殖 / BUBBLE_GAME ================= -->
+  <section class="scene" data-scene="ux-08" aria-hidden="true">
+    <p class="scene__tag">UX-08 · BUBBLE_GAME</p>
+    <h1 class="scene__title">烦恼增殖</h1>
+    <p class="scene__desc">占位说明：达到阈值后持续新增泡泡，让用户感知「越删越多」。</p>
+    <div class="placeholder-box placeholder-box--canvas">［占位框：增殖逻辑 —— 本轮不实现］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-09 激活按钮 / BUTTON_READY ================= -->
+  <section class="scene" data-scene="ux-09" aria-hidden="true">
+    <p class="scene__tag">UX-09 · BUTTON_READY</p>
+    <h1 class="scene__title">激活独裁者按钮</h1>
+    <p class="scene__desc">占位说明：按钮解锁后可触发；触发后锁定，重复点击忽略（FR-05-01）。</p>
+    <div class="placeholder-box placeholder-box--small">［占位框：启动动画与音效 —— 本轮不实现］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--danger" data-action="trigger-button">按下独裁者按钮</button>
+      <!-- 按钮锁定后的前进出口，避免返回 UX-09 后无路可走（文档 §3「不留下死路」） -->
+      <button type="button" class="btn btn--primary is-hidden" data-action="next"
+              data-bind="buttonNext">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+    <p class="worry-hint" data-bind="buttonHint" role="status" aria-live="polite"></p>
+  </section>
+
+  <!-- ================= UX-10 画面清空 / WORLD_CLEAR ================= -->
+  <section class="scene" data-scene="ux-10" aria-hidden="true">
+    <p class="scene__tag">UX-10 · WORLD_CLEAR</p>
+    <h1 class="scene__title">画面清空</h1>
+    <p class="scene__desc">占位说明：泡泡与背景元素消失，进入短暂空白。</p>
+    <div class="placeholder-box placeholder-box--canvas">［占位框：清空演出 —— 本轮不实现］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-11 烦恼重现 / WORRIES_RETURN ================= -->
+  <section class="scene" data-scene="ux-11" aria-hidden="true">
+    <p class="scene__tag">UX-11 · WORRIES_RETURN</p>
+    <h1 class="scene__title">烦恼重现</h1>
+    <p class="scene__desc">占位说明：泡泡以更柔和、缓慢的状态重现。</p>
+    <ul class="worry-list worry-list--readonly" data-bind="worryListReturn"></ul>
+    <div class="placeholder-box placeholder-box--canvas">［占位框：柔和重现动画 —— 本轮不实现］</div>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">下一步</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-12 阅读主题 / THEME ================= -->
+  <section class="scene" data-scene="ux-12" aria-hidden="true">
+    <p class="scene__tag">UX-12 · THEME</p>
+    <!-- 主题文案逐句出现（文案沿用 FR-06-02 原句，仅拆句以保留停顿） -->
+    <h1 class="scene__title">
+      <span class="theme-line">烦恼不会真正消失，</span>
+      <span class="theme-line">但你可以学会面对它。</span>
+    </h1>
+    <p class="scene__desc">占位说明：主题文案至少停留 <span data-bind="themeReadSec"></span> 秒（AC-06）。</p>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">查看体验总结</button>
+      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-13 查看总结 / SUMMARY ================= -->
+  <section class="scene" data-scene="ux-13" aria-hidden="true">
+    <p class="scene__tag">UX-13 · SUMMARY</p>
+    <h1 class="scene__title">体验总结</h1>
+    <p class="scene__desc">占位说明：展示删除数量、点击次数与简短总结；统计失败显示默认总结。</p>
+    <ul class="summary-list" data-bind="summaryList"></ul>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="next">结束体验</button>
+    </div>
+  </section>
+
+  <!-- ================= UX-14 返回首页 / RESET ================= -->
+  <section class="scene" data-scene="ux-14" aria-hidden="true">
+    <p class="scene__tag">UX-14 · RESET</p>
+    <h1 class="scene__title">体验结束</h1>
+    <p class="scene__desc">占位说明：清理临时数据并返回首页，可重新体验（FR-06-03）。</p>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="back">返回</button>
+      <button type="button" class="btn btn--primary" data-action="restart">重新开始</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- 场景进度指示（薄框架调试用，非文档新增功能） -->
+<footer class="progress">
+  <span data-bind="progress"></span>
+</footer>
+
+<!-- 退出确认（FR-01-03：退出需确认并返回首页） -->
+<div class="modal" data-bind="exitModal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal__panel">
+    <h2 class="modal__title">确认退出体验？</h2>
+    <p class="modal__desc">退出后将清理本次临时数据并返回首页。</p>
+    <div class="scene__actions">
+      <button type="button" class="btn" data-action="exit-cancel">取消</button>
+      <button type="button" class="btn btn--danger" data-action="exit-confirm">确认退出</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/bubble-game.js"></script>
+<script src="js/scene-manager.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
