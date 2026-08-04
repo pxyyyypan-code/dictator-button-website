@@ -104,84 +104,52 @@
     </div>
   </section>
 
-  <!-- UX-07 -->
-  <section class="scene scene--wide" data-scene="ux-07" aria-hidden="true">
-    <p class="scene__tag">DELETE TEST · PHASE 1</p>
-    <h1 class="scene__title">点击泡泡，尝试删除烦恼</h1>
-    <p class="scene__desc">先完成 <span data-bind="growthThreshold"></span> 次有效删除。点击空白不会产生惩罚。</p>
-    <div class="game-shell">
-      <div class="game-hud">
-        <span class="hud-pill">删除 <strong data-bind="deleteCount">0</strong></span>
-        <span class="hud-pill">点击 <strong data-bind="clickCount">0</strong></span>
-        <span class="hud-pill hud-pill--status" data-bind="gameStatus">删除测试进行中</span>
+  <!-- UX-07～UX-11：共用同一个连续全屏交互空间 -->
+  <section class="scene scene--immersive phase-calm" data-scene="ux-07" data-phase="calm" aria-hidden="true">
+    <canvas class="bubble-canvas bubble-canvas--immersive bubble-canvas--interactive"
+            data-canvas="experience" aria-label="全屏烦恼泡泡交互区域"></canvas>
+    <div class="immersive-frame" aria-hidden="true"></div>
+
+    <header class="immersive-header">
+      <p class="scene__tag" data-bind="continuousTag">DELETE TEST</p>
+      <h1 class="scene__title" data-bind="continuousTitle">点击泡泡，尝试删除烦恼</h1>
+      <p class="scene__desc" data-bind="continuousDesc">先观察它们如何消失。点击空白不会产生惩罚。</p>
+    </header>
+
+    <div class="game-hud game-hud--immersive" data-bind="continuousHud" aria-live="polite">
+      <span class="hud-pill"><span data-bind="primaryMetricLabel">已删除</span> <strong data-bind="primaryMetricValue">0</strong></span>
+      <span class="hud-pill">当前泡泡 <strong data-bind="bubbleMetricValue">0</strong></span>
+      <span class="hud-pill hud-pill--status">系统状态：<strong data-bind="systemMetricValue">删除有效</strong></span>
+    </div>
+
+    <button type="button" class="btn btn--ghost immersive-exit" data-action="exit">退出体验</button>
+
+    <div class="dictator-inline" data-bind="dictatorInline" aria-live="polite">
+      <span class="dictator-inline__label" data-bind="dictatorLabel">紧急清除协议</span>
+      <button type="button" class="btn btn--danger dictator-inline__button"
+              data-action="trigger-inline-button" data-bind="inlineButton" disabled>等待授权</button>
+      <small class="dictator-inline__hint" data-bind="inlineButtonHint"></small>
+    </div>
+
+    <!-- 烦恼重现后的主动选择：双条件满足后缓慢出现，按钮位置固定不动 -->
+    <div class="return-choice" data-bind="returnChoice" aria-hidden="true">
+      <p class="return-choice__question">它们总会回来。你还想继续删除吗？</p>
+      <div class="return-choice__actions">
+        <button type="button" class="btn return-choice__btn"
+                data-action="return-continue" data-bind="returnContinue">继续删除</button>
+        <button type="button" class="btn btn--primary return-choice__btn"
+                data-action="return-stop" data-bind="returnStop">停下来看看</button>
       </div>
-      <canvas class="bubble-canvas bubble-canvas--interactive" data-canvas="delete" aria-label="点击删除烦恼泡泡"></canvas>
     </div>
-    <div class="scene__actions scene__actions--quiet">
-      <button type="button" class="btn" data-action="back">返回</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
+
+    <p class="immersive-whisper" data-bind="immersiveStatus" role="status" aria-live="polite"></p>
   </section>
 
-  <!-- UX-08 -->
-  <section class="scene scene--wide" data-scene="ux-08" aria-hidden="true">
-    <p class="scene__tag">DELETE TEST · PHASE 2</p>
-    <h1 class="scene__title">为什么越来越多？</h1>
-    <p class="scene__desc">烦恼正在加速增殖。点击一个泡泡，它反而会分裂成更多泡泡。</p>
-    <div class="game-shell game-shell--growth">
-      <div class="game-hud">
-        <span class="hud-pill">删除 <strong data-bind="deleteCountGrowth">0</strong></span>
-        <span class="hud-pill">场内泡泡 <strong data-bind="bubbleCount">0</strong></span>
-        <span class="hud-pill hud-pill--alert" data-bind="growthStatus">增殖协议已启动</span>
-      </div>
-      <canvas class="bubble-canvas bubble-canvas--interactive" data-canvas="growth" aria-label="持续增殖的烦恼泡泡"></canvas>
-    </div>
-    <div class="scene__actions">
-      <button type="button" class="btn btn--danger btn--compact" data-action="enter-button" data-bind="enterButton" disabled>独裁者按钮尚未解锁</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
-  </section>
-
-  <!-- UX-09 -->
-  <section class="scene" data-scene="ux-09" aria-hidden="true">
-    <p class="scene__tag">DANGER · FINAL AUTHORIZATION</p>
-    <h1 class="scene__title">独裁者按钮已激活</h1>
-    <p class="scene__desc">一次清除全部烦恼。执行后，系统将进入不可中断的删除程序。</p>
-    <div class="dictator-device" aria-hidden="true">
-      <div class="dictator-device__ring"></div>
-      <div class="dictator-device__core"></div>
-    </div>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回</button>
-      <button type="button" class="btn btn--danger" data-action="trigger-button">按下独裁者按钮</button>
-      <button type="button" class="btn btn--primary is-hidden" data-action="next" data-bind="buttonNext">继续</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
-    <p class="worry-hint" data-bind="buttonHint" role="status" aria-live="polite"></p>
-  </section>
-
-  <!-- UX-10 -->
-  <section class="scene scene--wide" data-scene="ux-10" aria-hidden="true">
-    <p class="scene__tag">ERASURE IN PROGRESS</p>
-    <h1 class="scene__title" data-bind="clearTitle">删除程序正在运行</h1>
-    <p class="scene__desc" data-bind="clearStatus">正在移除所有对象……</p>
-    <div class="clear-field" aria-hidden="true">
-      <span></span><span></span><span></span>
-    </div>
-  </section>
-
-  <!-- UX-11 -->
-  <section class="scene scene--wide" data-scene="ux-11" aria-hidden="true">
-    <p class="scene__tag">UNEXPECTED RETURN</p>
-    <h1 class="scene__title">真的消失了吗？</h1>
-    <p class="scene__desc">同样的烦恼再次出现。它们仍然存在，但似乎不再那么急迫。</p>
-    <div class="game-shell game-shell--soft">
-      <canvas class="bubble-canvas" data-canvas="return" aria-label="重新出现的柔和烦恼泡泡"></canvas>
-    </div>
-    <div class="scene__actions">
-      <button type="button" class="btn btn--primary" data-action="next">继续</button>
-    </div>
-  </section>
+  <!-- UX-08～UX-11 保留为后台节点，视觉继续使用 UX-07 -->
+  <section class="scene scene--alias" data-scene="ux-08" aria-hidden="true"></section>
+  <section class="scene scene--alias" data-scene="ux-09" aria-hidden="true"></section>
+  <section class="scene scene--alias" data-scene="ux-10" aria-hidden="true"></section>
+  <section class="scene scene--alias" data-scene="ux-11" aria-hidden="true"></section>
 
   <!-- UX-12 -->
   <section class="scene" data-scene="ux-12" aria-hidden="true">

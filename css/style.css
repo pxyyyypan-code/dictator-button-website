@@ -1215,3 +1215,478 @@ body:has(.scene--active[data-scene="ux-10"]) .clear-field {
   .dictator-device__core,
   .clear-field span { animation: none !important; }
 }
+
+/* =====================================================================
+   8. V0.5 连续全屏交互（UX-07～UX-11）
+   后台节点继续推进，前台始终保留同一个 Canvas 与空间。
+   ===================================================================== */
+
+body[data-current-scene="ux-07"],
+body[data-current-scene="ux-08"],
+body[data-current-scene="ux-09"] {
+  --bg: #0d111d;
+  --bg-2: #101522;
+  --ink: #e8ecf4;
+  --ink-dim: #99a2b5;
+  --ink-faint: #687289;
+  --line: rgba(145, 170, 210, 0.16);
+  --glow: rgba(72, 116, 180, 0.12);
+  --scene-pad: 0px;
+}
+
+body[data-current-scene="ux-10"] {
+  --bg: #eef0f3;
+  --bg-2: #eef0f3;
+  --ink: #5a616f;
+  --ink-dim: #8b919d;
+  --glow: rgba(255, 255, 255, 0);
+  --scene-pad: 0px;
+}
+
+body[data-current-scene="ux-11"] {
+  --bg: #1a2130;
+  --bg-2: #202836;
+  --ink: #dfe5ee;
+  --ink-dim: #7f8ba6;
+  --glow: rgba(127, 139, 166, 0.12);
+  --scene-pad: 0px;
+}
+
+body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
+        [data-current-scene="ux-09"], [data-current-scene="ux-10"],
+        [data-current-scene="ux-11"]) {
+  overflow: hidden;
+}
+
+body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
+        [data-current-scene="ux-09"], [data-current-scene="ux-10"],
+        [data-current-scene="ux-11"])::after,
+body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
+        [data-current-scene="ux-09"], [data-current-scene="ux-10"],
+        [data-current-scene="ux-11"]) .progress {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scene--alias { display: none !important; }
+
+.scene--immersive {
+  --chaos-level: 0;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  overflow: hidden;
+  text-align: left;
+  background: rgba(7, 10, 17, 0.30);
+  isolation: isolate;
+  transition: background-color 1100ms var(--ease), color 600ms var(--ease);
+}
+
+.scene--immersive.scene--active {
+  display: block;
+  animation: none;
+}
+
+.bubble-canvas--immersive {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  transition: opacity 900ms var(--ease), filter 900ms var(--ease);
+}
+
+.immersive-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.immersive-frame::before,
+.immersive-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 280ms linear;
+}
+
+/* 警戒感来自整幅画面的边缘，而非单独的游戏框。 */
+.immersive-frame::before {
+  opacity: var(--chaos-level);
+  box-shadow:
+    inset 0 0 0 2px rgba(220, 62, 66, 0.58),
+    inset 0 0 74px 8px rgba(186, 39, 48, 0.36);
+}
+
+.immersive-frame::after {
+  opacity: var(--chaos-level);
+  background:
+    radial-gradient(ellipse at center, transparent 45%, rgba(130, 18, 28, 0.09) 72%, rgba(110, 12, 22, 0.32) 100%);
+  box-shadow: inset 0 0 190px rgba(180, 34, 42, 0.22);
+}
+
+.immersive-header {
+  position: absolute;
+  z-index: 4;
+  top: clamp(34px, 5.2vh, 68px);
+  left: 50%;
+  width: min(920px, 76vw);
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  transition: opacity 700ms var(--ease), transform 700ms var(--ease), color 700ms var(--ease);
+}
+
+.immersive-header .scene__tag {
+  margin-bottom: 14px;
+  font-size: clamp(13px, 1.1vw, 17px);
+  color: rgba(150, 162, 188, 0.70);
+}
+
+.immersive-header .scene__title {
+  max-width: none;
+  margin-bottom: 12px;
+  font-size: clamp(36px, 4vw, 58px);
+  line-height: 1.18;
+  text-shadow: 0 0 30px rgba(10, 14, 24, 0.66);
+}
+
+.immersive-header .scene__desc {
+  max-width: none;
+  margin: 0;
+  font-size: clamp(17px, 1.7vw, 25px);
+  line-height: 1.55;
+  color: rgba(184, 190, 206, 0.78);
+  text-shadow: 0 2px 20px rgba(5, 8, 15, 0.85);
+}
+
+.game-hud--immersive {
+  left: clamp(24px, 3vw, 54px);
+  right: auto;
+  top: auto;
+  bottom: clamp(28px, 4vh, 52px);
+  z-index: 5;
+  width: auto;
+  max-width: min(740px, 70vw);
+  transition: opacity 500ms var(--ease), transform 500ms var(--ease);
+}
+
+.game-hud--immersive .hud-pill--status {
+  margin-left: 0;
+}
+
+.immersive-exit {
+  position: absolute;
+  z-index: 7;
+  right: clamp(22px, 3vw, 52px);
+  top: clamp(20px, 3vh, 38px);
+  min-height: 42px;
+  padding: 0 8px;
+  font-size: 16px;
+  opacity: 0.72;
+}
+
+.dictator-inline {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  bottom: clamp(28px, 4vh, 50px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(390px, 78vw);
+  opacity: 0;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  transition: opacity 300ms linear, filter 460ms var(--ease), transform 460ms var(--ease);
+  filter: blur(5px);
+}
+
+.dictator-inline.is-visible { filter: blur(0); }
+.dictator-inline.is-interactive { pointer-events: auto; }
+
+.dictator-inline::before {
+  content: none;
+}
+
+.dictator-inline__label {
+  font-size: 13px;
+  letter-spacing: 0.26em;
+  color: rgba(229, 151, 153, 0.78);
+  text-transform: uppercase;
+}
+
+.dictator-inline__button {
+  min-height: 72px;
+  padding: 0 38px;
+  font-size: clamp(20px, 2vw, 27px);
+  letter-spacing: 0.10em;
+}
+
+.dictator-inline__button[disabled] {
+  opacity: 0.48;
+  border-color: rgba(190, 72, 76, 0.28);
+  background: rgba(74, 23, 30, 0.48);
+  animation: none;
+}
+
+.dictator-inline__hint {
+  min-height: 20px;
+  font-size: 14px;
+  letter-spacing: 0.10em;
+  color: rgba(226, 175, 177, 0.72);
+}
+
+.immersive-whisper {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: clamp(112px, 15vh, 150px);
+  min-height: 26px;
+  margin: 0;
+  transform: translateX(-50%);
+  font-size: clamp(15px, 1.4vw, 20px);
+  letter-spacing: 0.08em;
+  color: rgba(228, 233, 242, 0.74);
+  text-shadow: 0 2px 18px rgba(0,0,0,0.72);
+  pointer-events: none;
+  transition: opacity 400ms var(--ease), color 400ms var(--ease);
+}
+
+/* 增殖阶段：只让边缘与信息逐渐转暖，不进行整屏硬切。 */
+.scene--immersive.phase-growth .immersive-header .scene__title,
+.scene--immersive.phase-ready .immersive-header .scene__title {
+  color: color-mix(in srgb, #e8ecf4 72%, #ef8f93 28%);
+}
+
+.scene--immersive.phase-ready .immersive-frame::before,
+.scene--immersive.phase-ready .immersive-frame::after {
+  opacity: 1;
+}
+
+.scene--immersive.phase-erasing .game-hud--immersive,
+.scene--immersive.phase-erasing .immersive-exit,
+.scene--immersive.phase-erasing .dictator-inline,
+.scene--immersive.phase-blank .game-hud--immersive,
+.scene--immersive.phase-blank .immersive-exit,
+.scene--immersive.phase-blank .dictator-inline,
+.scene--immersive.phase-return .dictator-inline {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 重现阶段仍需显示「删除尝试 / 当前泡泡 / 系统状态」，只压低存在感。 */
+.scene--immersive.phase-return .game-hud--immersive {
+  opacity: 0.72;
+}
+
+.scene--immersive.phase-erasing .immersive-frame::before,
+.scene--immersive.phase-erasing .immersive-frame::after,
+.scene--immersive.phase-blank .immersive-frame::before,
+.scene--immersive.phase-blank .immersive-frame::after,
+.scene--immersive.phase-return .immersive-frame::before,
+.scene--immersive.phase-return .immersive-frame::after {
+  opacity: 0;
+}
+
+.scene--immersive.phase-erasing .immersive-header {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.scene--immersive.phase-erasing .immersive-header .scene__title {
+  color: rgba(225, 227, 232, 0.84);
+}
+
+.scene--immersive.phase-erasing .immersive-whisper,
+.scene--immersive.phase-blank .immersive-whisper {
+  opacity: 0;
+}
+
+.scene--immersive.phase-blank {
+  background: #eef0f3;
+}
+
+.scene--immersive.phase-blank .bubble-canvas--immersive {
+  opacity: 0;
+  filter: brightness(1.6) saturate(0);
+}
+
+.scene--immersive.phase-blank .immersive-header {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.scene--immersive.phase-blank .immersive-header .scene__tag,
+.scene--immersive.phase-blank .immersive-header .scene__desc {
+  opacity: 0;
+}
+
+.scene--immersive.phase-blank .immersive-header .scene__title {
+  color: rgba(88, 94, 105, 0.66);
+  text-shadow: none;
+  font-weight: 300;
+}
+
+.scene--immersive.phase-return {
+  background: rgba(22, 29, 43, 0.54);
+}
+
+.scene--immersive.phase-return .bubble-canvas--immersive {
+  opacity: 1;
+  filter: none;
+}
+
+.scene--immersive.phase-return .immersive-header {
+  top: clamp(42px, 7vh, 82px);
+}
+
+.scene--immersive.phase-return .immersive-header .scene__title {
+  color: rgba(224, 230, 239, 0.92);
+}
+
+.scene--immersive.phase-return .immersive-exit {
+  opacity: 0.54;
+}
+
+/* ---------- 重现阶段的主动选择（§五） ---------- */
+/*
+ * 位置固定：面板与两个按钮都不随 hover 变化尺寸或位移，
+ * hover 只改变背景色、边框、发光与透明度。
+ */
+.return-choice {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: clamp(28px, 4vh, 54px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(520px, 86vw);
+  margin-left: calc(min(520px, 86vw) / -2);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  /* 缓慢出现：1200ms 线性淡入，避免突然弹出打断情绪 */
+  transition: opacity 1200ms linear, visibility 0s linear 1200ms;
+}
+
+.return-choice.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 1200ms linear, visibility 0s linear 0s;
+}
+
+.return-choice__question {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(17px, 1.7vw, 23px);
+  letter-spacing: 0.10em;
+  font-weight: 300;
+  color: rgba(228, 233, 242, 0.88);
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.74);
+}
+
+.return-choice__actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(14px, 2vw, 26px);
+}
+
+/* 固定宽高：hover / active 都不改变盒模型，按钮不会移动 */
+.return-choice__btn {
+  min-width: 156px;
+  min-height: 54px;
+  padding: 0 26px;
+  font-size: clamp(15px, 1.4vw, 18px);
+  letter-spacing: 0.08em;
+  transform: none;
+  transition: background-color var(--t-fast) var(--ease),
+              border-color var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease),
+              opacity var(--t-fast) var(--ease);
+}
+
+.return-choice__btn:hover,
+.return-choice__btn:focus-visible,
+.return-choice__btn:active {
+  /* 明确禁止位移与缩放（§五） */
+  transform: none;
+}
+
+.return-choice__btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
+  box-shadow: var(--sh-glow);
+  opacity: 0.94;
+}
+
+/* 选择界面出现时，把点击反馈整体上移，避免两行文字挤在一起。 */
+.return-choice.is-visible ~ .immersive-whisper {
+  bottom: clamp(196px, 25vh, 250px);
+}
+
+.return-choice__btn[hidden] { display: none; }
+
+.return-choice__btn[disabled] {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+
+.modal { z-index: 100; }
+
+@media (max-width: 900px) {
+  .immersive-header { width: 88vw; top: 54px; }
+  .immersive-header .scene__title { font-size: 34px; }
+  .immersive-header .scene__desc { font-size: 17px; }
+  .game-hud--immersive {
+    left: 18px;
+    bottom: 18px;
+    max-width: 62vw;
+    gap: 6px;
+  }
+  .game-hud--immersive .hud-pill {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .game-hud--immersive .hud-pill strong { font-size: 14px; }
+  .dictator-inline { bottom: 22px; width: 280px; }
+  .dictator-inline__button { min-height: 58px; padding: 0 24px; }
+  .immersive-whisper { bottom: 104px; width: 80vw; text-align: center; }
+  .return-choice {
+    bottom: 20px;
+    width: 88vw;
+    margin-left: -44vw;
+    gap: 12px;
+  }
+  .return-choice__actions { gap: 12px; }
+  .return-choice__btn { min-width: 132px; min-height: 48px; padding: 0 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene--immersive,
+  .bubble-canvas--immersive,
+  .immersive-header,
+  .game-hud--immersive,
+  .dictator-inline,
+  .return-choice,
+  .return-choice__btn,
+  .immersive-frame::before,
+  .immersive-frame::after {
+    transition-duration: 0.01ms !important;
+  }
+  .return-choice.is-visible,
+  .return-choice:not(.is-visible) {
+    transition-delay: 0s !important;
+  }
+  .dictator-inline::before { animation: none !important; }
+}

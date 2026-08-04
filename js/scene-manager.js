@@ -67,7 +67,7 @@ const SceneManager = (function () {
     clearTimers();
 
     currentIndex = index;
-    renderVisibility(target.id);
+    renderVisibility(target.viewId || target.id);
 
     if (hooks[target.id] && typeof hooks[target.id].onEnter === 'function') {
       hooks[target.id].onEnter();
@@ -106,7 +106,7 @@ const SceneManager = (function () {
   function reset() {
     clearTimers();
     currentIndex = 0;
-    renderVisibility(SCENE_FLOW[0].id);
+    renderVisibility(SCENE_FLOW[0].viewId || SCENE_FLOW[0].id);
     if (typeof changeListener === 'function') {
       changeListener(SCENE_FLOW[0], 0);
     }

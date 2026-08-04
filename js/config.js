@@ -1,36 +1,50 @@
 /**
- * config.js —— 可配置常量（文档 §5.4 / §11）
- * 规则：阈值、时长、数量一律集中在此，不散落到其他文件。
+ * config.js —— 可配置常量
+ * V0.5.3：延长正常删除阶段、渐变进入失控、原地爆裂清空、重现阶段主动选择。
  */
 'use strict';
 
 const CONFIG = {
-  // 输入相关（文档 §2.3 / §5.3）
   MAX_WORRIES_MVP: 3,
 
-  // 时长相关（文档 §5.4 / §6 AC）
   BUBBLE_CREATE_DURATION_MS: 2000,
   INITIAL_BUBBLE_COUNT: 8,
-  MAX_BUBBLES: 42,
+  // 自动增殖维持原有 42 个密度；用户点击分裂可继续增长到更高上限。
+  AUTO_GROWTH_MAX_BUBBLES: 42,
+  MAX_BUBBLES: 96,
   BUBBLE_MIN_RADIUS: 52,
   BUBBLE_MAX_RADIUS: 88,
   BUBBLE_SPEED_MIN: 22,
   BUBBLE_SPEED_MAX: 48,
   CLICK_FEEDBACK_MAX_MS: 200,
   DELETE_ANIMATION_MAX_MS: 300,
-  CLEAR_ANIMATION_MS: 2000,
   THEME_MIN_READ_MS: 5000,
 
-  // 文档 §5.4 / §11 标注「待视觉测试确认」：以下为临时占位值，非最终规则。
-  // TODO(待确认): 增殖起始阈值 —— 需结合试玩调整。
-  GROWTH_START_THRESHOLD: 5,
-  // 增殖速度会逐步加快：从较慢间隔开始，持续缩短到最小间隔。
-  GROWTH_INTERVAL_START_MS: 1500,
-  GROWTH_INTERVAL_MIN_MS: 360,
-  GROWTH_ACCELERATION_FACTOR: 0.82,
-  GROWTH_INITIAL_BURST_COUNT: 4,
+  // ---- 正常删除阶段（UX-07）：必须同时满足时长与次数才进入失控 ----
+  NORMAL_PHASE_MIN_MS: 14000,
+  NORMAL_DELETE_THRESHOLD: 8,
+  NORMAL_SPAWN_INTERVAL_MS: 1000,
+  NORMAL_MIN_BUBBLES: 6,
+  NORMAL_TARGET_BUBBLES: 9,
+  NORMAL_MAX_BUBBLES: 10,
 
-  // 增殖阶段点击泡泡时，母泡泡会分裂为多个更小泡泡。
+  // 正常删除达到该值后，后台进入失控状态；前台不切页、不显示阈值。
+  // 兼容旧字段：真正的门控由 NORMAL_PHASE_MIN_MS + NORMAL_DELETE_THRESHOLD 决定。
+  GROWTH_START_THRESHOLD: 8,
+  // ---- 渐变失控：transitionProgress 0→1 的时长与分裂概率分段 ----
+  TRANSITION_RAMP_MS: 9000,
+  SPLIT_CHANCE_EARLY_MIN: 0.10,
+  SPLIT_CHANCE_EARLY_MAX: 0.20,
+  SPLIT_CHANCE_MID_MIN: 0.30,
+  SPLIT_CHANCE_MID_MAX: 0.65,
+  SPLIT_CHANCE_LATE_MIN: 0.70,
+  SPLIT_CHANCE_LATE_MAX: 1.00,
+  TRANSITION_TITLE_SWITCH: 0.45,
+  GROWTH_INTERVAL_START_MS: 1400,
+  GROWTH_INTERVAL_MIN_MS: 300,
+  GROWTH_ACCELERATION_FACTOR: 0.88,
+  GROWTH_INITIAL_BURST_COUNT: 1,
+
   SPLIT_MIN_CHILDREN: 2,
   SPLIT_MAX_CHILDREN: 4,
   SPLIT_CHILD_RADIUS_MIN: 30,
@@ -38,13 +52,55 @@ const CONFIG = {
   SPLIT_CHILD_RADIUS_FACTOR_MAX: 0.66,
   SPLIT_SPEED_MIN: 86,
   SPLIT_SPEED_MAX: 156,
-  // TODO(待确认): 独裁者按钮解锁条件 —— 建议按删除次数或体验时间。
-  BUTTON_UNLOCK_THRESHOLD: 10
+  REJECT_ANIMATION_MS: 420,
+
+  // 独裁者按钮的后台解锁条件：同时满足，而非单纯累计点击。
+  BUTTON_UNLOCK_MIN_DURATION_MS: 10000,
+  BUTTON_UNLOCK_MIN_ATTEMPTS: 5,
+  BUTTON_UNLOCK_BUBBLE_MIN: 14,
+  BUTTON_REVEAL_CHAOS_START: 0.26,
+
+  // chaosLevel 的归一化参考值。
+  CHAOS_BUBBLE_FULL: 30,
+  CHAOS_ATTEMPT_FULL: 10,
+  CHAOS_SPLIT_FULL: 8,
+  CHAOS_TIME_FULL_MS: 16000,
+
+  // 连续清空与重现演出。
+  // V0.5.3：全部删除改为「原地爆裂」，不再向中心聚集。
+  ERASURE_EXPLOSION_DURATION_MS: 1450,
+  ERASURE_STAGGER_MAX_MS: 250,
+  ERASURE_REDUCED_MOTION_MS: 320,
+  EMPTY_PAUSE_MS: 2500,
+  ERASURE_PULL_DURATION_MS: 2600,
+  BLANK_TITLE_VISIBLE_MS: 900,
+  BLANK_HOLD_DURATION_MS: 2600,
+  RETURN_INITIAL_DELAY_MS: 850,
+  RETURN_INTERVAL_MS: 760,
+  RETURN_COPY_DELAY_MS: 900,
+  // ---- 烦恼重现阶段：不再几次点击就跳转 ----
+  RETURN_INTERACTION_MIN_MS: 14000,
+  RETURN_ATTEMPT_THRESHOLD: 6,
+  RETURN_RESPAWN_DELAY_MIN_MS: 800,
+  RETURN_RESPAWN_DELAY_MAX_MS: 1200,
+  RETURN_MIN_BUBBLES: 5,
+  RETURN_CHOICE_FADE_MS: 1200,
+  RETURN_EXTRA_INTERACTION_MS: 9000,
+  MAX_CONTINUE_DELETE_COUNT: 1,
+  RETURN_SETTLE_DELAY_MS: 1400,
+  // 兼容旧字段（不再用于自动跳转判定）。
+  RETURN_INTERACTION_MIN_ATTEMPTS: 6,
+  RETURN_RESPAWN_DELAY_MS: 1000
 };
 
-// 场景状态枚举（文档 §5.1）。
-// 文档定义 12 个 APP_STATE 覆盖 14 个 UX 节点：
-// INPUT_WORRIES 覆盖 UX-04~05，BUBBLE_GAME 覆盖 UX-07~08。
+/** 重现阶段的随机点击反馈文案：只描述“又出现了”，不出现“删除成功”。 */
+const RETURN_FEEDBACK_LINES = [
+  '它消散了，但没有真正离开。',
+  '同样的烦恼出现在另一个位置。',
+  '删除请求完成，但对象再次出现。',
+  '它只是暂时离开了视线。'
+];
+
 const APP_STATE = {
   INTRO: 'INTRO',
   GADGET_INFO: 'GADGET_INFO',
@@ -61,8 +117,8 @@ const APP_STATE = {
 };
 
 /**
- * 场景表：UX-01 ~ UX-14 的线性主流程（文档 §3）。
- * id 与 index.html 中 data-scene 一一对应；state 为文档 §5.1 的 APP_STATE。
+ * UX-07~UX-11 仍是独立后台节点，但共用 ux-07 的视觉容器。
+ * 因此状态可以测试和统计，用户却不会感到“翻页”。
  */
 const SCENE_FLOW = [
   { id: 'ux-01', state: APP_STATE.INTRO },
@@ -70,12 +126,12 @@ const SCENE_FLOW = [
   { id: 'ux-03', state: APP_STATE.START_CONFIRM },
   { id: 'ux-04', state: APP_STATE.INPUT_WORRIES },
   { id: 'ux-05', state: APP_STATE.INPUT_WORRIES },
-  { id: 'ux-06', state: APP_STATE.BUBBLE_CREATE },
-  { id: 'ux-07', state: APP_STATE.BUBBLE_GAME },
-  { id: 'ux-08', state: APP_STATE.BUBBLE_GAME },
-  { id: 'ux-09', state: APP_STATE.BUTTON_READY },
-  { id: 'ux-10', state: APP_STATE.WORLD_CLEAR },
-  { id: 'ux-11', state: APP_STATE.WORRIES_RETURN },
+  { id: 'ux-06', state: APP_STATE.BUBBLE_CREATE, viewId: 'ux-07' },
+  { id: 'ux-07', state: APP_STATE.BUBBLE_GAME, viewId: 'ux-07' },
+  { id: 'ux-08', state: APP_STATE.BUBBLE_GAME, viewId: 'ux-07' },
+  { id: 'ux-09', state: APP_STATE.BUTTON_READY, viewId: 'ux-07' },
+  { id: 'ux-10', state: APP_STATE.WORLD_CLEAR, viewId: 'ux-07' },
+  { id: 'ux-11', state: APP_STATE.WORRIES_RETURN, viewId: 'ux-07' },
   { id: 'ux-12', state: APP_STATE.THEME },
   { id: 'ux-13', state: APP_STATE.SUMMARY },
   { id: 'ux-14', state: APP_STATE.RESET }
