@@ -225,9 +225,40 @@ const check = (n, ok, d) => results.push({ n, ok: !!ok, d: d === undefined ? '' 
       return !/还差|倒计时|进度/.test(scene.textContent) && !scene.querySelector('progress');
     }));
 
-  /* ---------- 停下来看看 → UX-12 ---------- */
+  /* ---------- 停下来看看 → 观察选择 → UX-12 ---------- *
+   * V0.7 起「停下来看看」不再直接跳页，而是先进入 observe-select，
+   * 由用户挑一个泡泡看清，再自动进入 UX-12。旧脚本缺了「选泡泡」这步。 */
   await click('[data-bind="returnStop"]');
-  check('「停下来看看」进入 UX-12', await waitState('ux-12', 15000), await state());
+  await p.waitForTimeout(600);
+  const observing = await p.evaluate(() => ({
+    scene: appData.currentScene,
+    mode: BubbleGame.getGrowthState().mode,
+    n: BubbleGame.getBubbleCount()
+  }));
+  check('「停下来看看」进入观察选择态（不直接跳页）',
+    observing.scene === 'ux-11' && observing.mode === 'observe-select' && observing.n > 0,
+    JSON.stringify(observing));
+
+  const picked = await p.evaluate(() => {
+    const t = BubbleGame.getDebugSnapshot()[0];
+    if (!t) return null;
+    BubbleGame.handleClick(t.x, t.y);
+    return t.text;
+  });
+  await p.waitForTimeout(500);
+  const focused = await p.evaluate(() => ({
+    mode: BubbleGame.getGrowthState().mode,
+    selected: appData.selectedWorryText
+  }));
+  check('选中泡泡后进入聚焦态并记下所选烦恼',
+    focused.mode === 'observe-focus' && !!focused.selected,
+    JSON.stringify(focused) + ' / picked=' + picked);
+
+  check('聚焦结束后自动进入 UX-12', await waitState('ux-12', 15000), await state());
+  check('UX-12 显示所选的那条烦恼',
+    (await p.evaluate(() => document.querySelector('[data-bind="themeFocus"]').textContent))
+      .includes(focused.selected || ' '),
+    await p.evaluate(() => document.querySelector('[data-bind="themeFocus"]').textContent));
   await p.waitForFunction(() =>
     !document.querySelector('[data-scene="ux-12"] [data-action="next"]').disabled,
     null, { timeout: 25000 }).catch(() => {});
