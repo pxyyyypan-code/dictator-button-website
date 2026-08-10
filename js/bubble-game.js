@@ -41,6 +41,11 @@ const BubbleGame = (function () {
   const particles = [];
   const ripples = [];
 
+  // ——— 绘制缓存：这些结果在帧与帧之间几乎不变，没必要每帧重算 ———
+  const blurSprites = new Map();   // B10_BLUR 的预渲染模糊贴图（见 drawBubble 注释）
+  const hexCache = new Map();      // 颜色字符串 → rgb
+  const textLineCache = new Map(); // 文本分行结果（measureText 逐字调用，很贵）
+
   function random(min, max) {
     return min + Math.random() * (max - min);
   }
@@ -115,11 +120,17 @@ const BubbleGame = (function () {
   }
 
   function hexToRgb(hex) {
-    const value = String(hex || '#7F9CC8').replace('#', '');
+    const key = String(hex || '#7F9CC8');
+    const cached = hexCache.get(key);
+    if (cached) return cached;
+    const value = key.replace('#', '');
     const full = value.length === 3 ? value.split('').map(function (c) { return c + c; }).join('') : value;
     const parsed = parseInt(full, 16);
-    if (!Number.isFinite(parsed)) return { r: 127, g: 156, b: 200 };
-    return { r: (parsed >> 16) & 255, g: (parsed >> 8) & 255, b: parsed & 255 };
+    const rgb = Number.isFinite(parsed)
+      ? { r: (parsed >> 16) & 255, g: (parsed >> 8) & 255, b: parsed & 255 }
+      : { r: 127, g: 156, b: 200 };
+    hexCache.set(key, rgb);
+    return rgb;
   }
 
   function mixRgb(a, b, t) {
@@ -129,6 +140,43 @@ const BubbleGame = (function () {
       g: Math.round(lerp(a.g, b.g, p)),
       b: Math.round(lerp(a.b, b.b, p))
     };
+  }
+
+  /**
+   * 泡泡配色：原本每帧每个泡泡都要做 1 次 hexToRgb + 4 次 mixRgb + 6 段字符串拼接。
+   * 但结果只取决于（行为色, 模式, 警戒红程度），红度按 1/32 量化后逐帧几乎不变，
+   * 因此缓存到泡泡自身即可，视觉无差别。
+   */
+  function bubblePalette(bubble, red) {
+    const redStep = Math.round(clamp(red, 0, 1) * 32);
+    const key = mode + '|' + redStep + '|' + bubble.behaviorColor;
+    if (bubble.paletteKey === key && bubble.palette) return bubble.palette;
+
+    const soft = isSoftMode();
+    const neutralRgb = { r: 92, g: 142, b: 207 };
+    const typeWeight = mode === 'growth'
+      ? Number(CONFIG.BEHAVIOR_COLOR_GROWTH_WEIGHT) || 0.88
+      : soft ? 0.32 : Number(CONFIG.BEHAVIOR_COLOR_CALM_WEIGHT) || 0.58;
+    let bubbleRgb = mixRgb(neutralRgb, hexToRgb(bubble.behaviorColor), typeWeight);
+    if (mode === 'growth') bubbleRgb = mixRgb(bubbleRgb, { r: 206, g: 72, b: 82 }, clamp(red, 0, 1) * 0.30);
+    const lightRgb = mixRgb(bubbleRgb, { r: 244, g: 248, b: 255 }, soft ? 0.54 : 0.62);
+    const darkRgb = mixRgb(bubbleRgb, { r: 22, g: 28, b: 43 }, 0.58);
+    const rgb = function (c, a) { return 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + a + ')'; };
+
+    const palette = {
+      bubble: bubbleRgb,
+      light: lightRgb,
+      dark: darkRgb,
+      glow: rgb(bubbleRgb, (soft ? 0.18 : 0.24 + red * 0.12).toFixed(3)),
+      glowFade: rgb(bubbleRgb, 0),
+      stop0: rgb(lightRgb, soft ? 0.46 : 0.70),
+      stop1: rgb(bubbleRgb, soft ? 0.30 : 0.48),
+      stop2: rgb(darkRgb, soft ? 0.17 : 0.31),
+      outline: rgb(lightRgb, (soft ? 0.34 : 0.46 + red * 0.10).toFixed(3))
+    };
+    bubble.paletteKey = key;
+    bubble.palette = palette;
+    return palette;
   }
 
   /** 是否处于「减少动态效果」偏好：原地爆裂需退化为快速淡出。 */
@@ -626,14 +674,29 @@ const BubbleGame = (function () {
   function nearestBubble(source, predicate) {
     let nearest = null;
     let best = Infinity;
-    bubbles.forEach(function (candidate) {
-      if (candidate === source || candidate.state === 'bursting') return;
-      if (predicate && !predicate(candidate)) return;
+    for (let i = 0; i < bubbles.length; i += 1) {
+      const candidate = bubbles[i];
+      if (candidate === source || candidate.state === 'bursting') continue;
+      if (predicate && !predicate(candidate)) continue;
       const dx = candidate.x - source.x;
       const dy = candidate.y - source.y;
       const d2 = dx * dx + dy * dy;
       if (d2 < best) { best = d2; nearest = candidate; }
-    });
+    }
+    return nearest;
+  }
+
+  /**
+   * 每帧最近邻缓存：B5/B7 的运动、以及 B7 的连线绘制原本各自调用一次
+   * nearestBubble（每次 O(n)），同一帧里对同一个泡泡算了两三遍。
+   * 这里按帧号复用结果，一帧内每个泡泡只搜一次。
+   */
+  let nearestFrameId = -1;
+  function nearestBubbleThisFrame(source) {
+    if (source.nearestFrame === nearestFrameId) return source.nearestCache;
+    const nearest = nearestBubble(source);
+    source.nearestFrame = nearestFrameId;
+    source.nearestCache = nearest;
     return nearest;
   }
 
@@ -671,7 +734,7 @@ const BubbleGame = (function () {
     }
 
     if (bubble.behaviorType === 'B5_CLUSTER' && (mode === 'calm' || mode === 'growth')) {
-      const target = nearestBubble(bubble);
+      const target = nearestBubbleThisFrame(bubble);
       if (target) {
         const dx = target.x - bubble.x;
         const dy = target.y - bubble.y;
@@ -686,7 +749,7 @@ const BubbleGame = (function () {
     }
 
     if (bubble.behaviorType === 'B7_LINKED' && (mode === 'calm' || mode === 'growth')) {
-      const target = nearestBubble(bubble);
+      const target = nearestBubbleThisFrame(bubble);
       if (target) {
         const dx = target.x - bubble.x;
         const dy = target.y - bubble.y;
@@ -979,6 +1042,7 @@ const BubbleGame = (function () {
   }
 
   function update(dt, time) {
+    nearestFrameId += 1;
     if (mode === 'erasing' && updateErasure(dt)) return;
 
     for (let i = bubbles.length - 1; i >= 0; i -= 1) {
@@ -1111,7 +1175,7 @@ const BubbleGame = (function () {
     if (!linked.length) return;
     ctx.save(); ctx.lineWidth = mode === 'growth' ? 1.8 : 1.35;
     linked.forEach(function (bubble) {
-      const nearest = nearestBubble(bubble); if (!nearest) return;
+      const nearest = nearestBubbleThisFrame(bubble); if (!nearest) return;
       const d = Math.hypot(nearest.x - bubble.x, nearest.y - bubble.y); if (d > 430) return;
       const alpha = mode === 'growth' ? 0.32 + currentBehaviorIntensity() * 0.34 : 0.28;
       const gradient = ctx.createLinearGradient(bubble.x, bubble.y, nearest.x, nearest.y);
@@ -1155,48 +1219,115 @@ const BubbleGame = (function () {
   function drawBubble(bubble, time) {
     const r = bubble.radius * bubble.scale;
     if (r <= 0.5) return;
-    ctx.save();
-    const rejecting = bubble.state === 'rejecting';
-    const rejectProgress = rejecting ? clamp(bubble.rejectElapsed / CONFIG.REJECT_ANIMATION_MS, 0, 1) : 0;
-    const shakeX = rejecting ? Math.sin(rejectProgress * Math.PI * 10) * (1 - rejectProgress) * 9 : 0;
-    const shakeY = rejecting ? Math.cos(rejectProgress * Math.PI * 8) * (1 - rejectProgress) * 4 : 0;
-    ctx.translate(bubble.x + shakeX, bubble.y + shakeY);
-    ctx.globalAlpha = bubble.opacity;
-    if (bubble.behaviorType === 'B10_BLUR') {
-      const blurPx = Math.max(0, (1 - bubble.hoverReveal) * (mode === 'growth' ? 7.2 : isSoftMode() ? 2.8 : 5.4));
-      ctx.filter = blurPx > 0.2 ? 'blur(' + blurPx.toFixed(2) + 'px)' : 'none';
+
+    const blurPx = bubble.behaviorType === 'B10_BLUR'
+      ? Math.max(0, (1 - bubble.hoverReveal) * (mode === 'growth' ? 7.2 : isSoftMode() ? 2.8 : 5.4))
+      : 0;
+
+    if (blurPx > 0.2) {
+      // 模糊到这个程度，泡泡上的文字和行为签名本来就看不清，
+      // 逐帧重画毫无意义。按（半径, 模糊量, 配色）量化后缓存成贴图，
+      // 参数不变时直接贴回，把每帧的模糊次数降到接近 0。
+      const rq = Math.round(r / 3) * 3;
+      const bq = Math.round(blurPx * 2) / 2;
+      const palette = bubblePalette(bubble, mode === 'growth' ? chaosLevel : 0);
+      const key = bubble.behaviorType + '|' + rq + '|' + bq + '|' + palette.stop1 + '|' + Math.round(dpr * 10);
+      // 贴图里烘焙的是「静止、未被拒绝」的泡泡，
+      // 抖动和放大在贴回主画布时施加，否则被拒绝的一帧会污染缓存。
+      const rejecting = bubble.state === 'rejecting';
+      const rejectProgress = rejecting ? clamp(bubble.rejectElapsed / CONFIG.REJECT_ANIMATION_MS, 0, 1) : 0;
+      let sprite = blurSprites.get(key);
+      if (!sprite) {
+        // 泡泡本体最大到 r * 1.28（B9 的外圈），再留出模糊扩散的余量。
+        const size = Math.ceil((rq * 1.35 + bq * 3 + 6) * 2);
+        const surface = document.createElement('canvas');
+        surface.width = Math.round(size * dpr);
+        surface.height = Math.round(size * dpr);
+        const lc = surface.getContext('2d');
+        lc.setTransform(dpr, 0, 0, dpr, 0, 0);
+        lc.translate(size / 2, size / 2);
+        // 关键：模糊设在**离屏层**上。设在主画布上等于让浏览器模糊整个全屏，
+        // 那正是原来卡顿的根源；这里模糊面积只有这一小块画布，且只做一次。
+        lc.filter = 'blur(' + bq.toFixed(2) + 'px)';
+        const previousCtx = ctx;
+        ctx = lc;               // 让 paintBubbleBody 及其下游全部画到离屏层
+        paintBubbleBody(bubble, rq, 0, true);
+        ctx = previousCtx;
+        lc.filter = 'none';
+        sprite = { canvas: surface, size: size };
+        if (blurSprites.size > 160) blurSprites.clear();
+        blurSprites.set(key, sprite);
+      }
+
+      const shakeX = rejecting ? Math.sin(rejectProgress * Math.PI * 10) * (1 - rejectProgress) * 9 : 0;
+      const shakeY = rejecting ? Math.cos(rejectProgress * Math.PI * 8) * (1 - rejectProgress) * 4 : 0;
+      const pulse = mode === 'growth' ? 1 + Math.sin(time * (2.6 + chaosLevel * 2.5) + bubble.phase) * (0.012 + chaosLevel * 0.025) : 1;
+      const rejectScale = rejecting ? 1 + Math.sin(rejectProgress * Math.PI) * 0.16 : 1;
+      const scale = pulse * rejectScale;
+
+      ctx.save();
+      ctx.globalAlpha = bubble.opacity;
+      ctx.translate(bubble.x + shakeX, bubble.y + shakeY);
+      if (scale !== 1) ctx.scale(scale, scale);
+      ctx.drawImage(sprite.canvas, -sprite.size / 2, -sprite.size / 2, sprite.size, sprite.size);
+      ctx.restore();
+      return;
     }
 
-    const growthPulse = mode === 'growth' ? 1 + Math.sin(time * (2.6 + chaosLevel * 2.5) + bubble.phase) * (0.012 + chaosLevel * 0.025) : 1;
-    const rejectScale = rejecting ? 1 + Math.sin(rejectProgress * Math.PI) * 0.16 : 1;
-    ctx.scale(growthPulse * rejectScale, growthPulse * rejectScale);
+    ctx.save();
+    ctx.translate(bubble.x, bubble.y);
+    ctx.globalAlpha = bubble.opacity;
+    paintBubbleBody(bubble, r, time, false);
+    ctx.restore();
+  }
+
+  /**
+   * 画泡泡本体，坐标原点已经在泡泡中心（主画布或离屏层）。
+   * offscreen=true 时目标是离屏层：那里不叠 opacity，贴回主画布时统一乘。
+   */
+  function paintBubbleBody(bubble, r, time, offscreen) {
+    ctx.save();
+    // 离屏贴图只烘焙「静止、未被拒绝」的样子：抖动、脉动、拒绝放大都依赖
+    // 逐帧变化的时间，烘焙进去会被后续帧复用而卡住，这些改由调用方在贴回时施加。
+    const rejecting = !offscreen && bubble.state === 'rejecting';
+    const rejectProgress = rejecting ? clamp(bubble.rejectElapsed / CONFIG.REJECT_ANIMATION_MS, 0, 1) : 0;
+    if (offscreen) {
+      ctx.globalAlpha = 1;
+    } else {
+      const shakeX = rejecting ? Math.sin(rejectProgress * Math.PI * 10) * (1 - rejectProgress) * 9 : 0;
+      const shakeY = rejecting ? Math.cos(rejectProgress * Math.PI * 8) * (1 - rejectProgress) * 4 : 0;
+      ctx.translate(shakeX, shakeY);
+      const growthPulse = mode === 'growth' ? 1 + Math.sin(time * (2.6 + chaosLevel * 2.5) + bubble.phase) * (0.012 + chaosLevel * 0.025) : 1;
+      const rejectScale = rejecting ? 1 + Math.sin(rejectProgress * Math.PI) * 0.16 : 1;
+      ctx.scale(growthPulse * rejectScale, growthPulse * rejectScale);
+    }
 
     const red = mode === 'growth' ? chaosLevel : 0;
-    const behaviorRgb = hexToRgb(bubble.behaviorColor);
-    const neutralRgb = { r: 92, g: 142, b: 207 };
-    const typeWeight = mode === 'growth'
-      ? Number(CONFIG.BEHAVIOR_COLOR_GROWTH_WEIGHT) || 0.88
-      : isSoftMode() ? 0.32 : Number(CONFIG.BEHAVIOR_COLOR_CALM_WEIGHT) || 0.58;
-    let bubbleRgb = mixRgb(neutralRgb, behaviorRgb, typeWeight);
-    if (mode === 'growth') bubbleRgb = mixRgb(bubbleRgb, { r: 206, g: 72, b: 82 }, chaosLevel * 0.30);
-    const lightRgb = mixRgb(bubbleRgb, { r: 244, g: 248, b: 255 }, isSoftMode() ? 0.54 : 0.62);
-    const darkRgb = mixRgb(bubbleRgb, { r: 22, g: 28, b: 43 }, 0.58);
-    const glowColor = 'rgba(' + bubbleRgb.r + ',' + bubbleRgb.g + ',' + bubbleRgb.b + ',' + (isSoftMode() ? 0.18 : 0.24 + red * 0.12).toFixed(3) + ')';
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = isSoftMode() ? 17 : 17 + red * 16;
+    const palette = bubblePalette(bubble, red);
+
+    // 外发光：原本靠 shadowBlur 实现，但那会让每次填充都多跑一遍模糊卷积，
+    // 几十个泡泡叠加后开销很大。改成先铺一层向外淡出的径向渐变，
+    // 观感一致（同样的颜色、同样的扩散范围），成本只是一次普通填充。
+    const glowSpan = (isSoftMode() ? 17 : 17 + red * 16) * 0.92;
+    const glow = ctx.createRadialGradient(0, 0, Math.max(0.1, r * 0.92), 0, 0, r + glowSpan);
+    glow.addColorStop(0, palette.glow);
+    glow.addColorStop(1, palette.glowFade);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + glowSpan, 0, Math.PI * 2);
+    ctx.fill();
 
     const g = ctx.createRadialGradient(-r * 0.28, -r * 0.36, r * 0.08, 0, 0, r);
-    g.addColorStop(0, 'rgba(' + lightRgb.r + ',' + lightRgb.g + ',' + lightRgb.b + ',' + (isSoftMode() ? 0.46 : 0.70) + ')');
-    g.addColorStop(0.55, 'rgba(' + bubbleRgb.r + ',' + bubbleRgb.g + ',' + bubbleRgb.b + ',' + (isSoftMode() ? 0.30 : 0.48) + ')');
-    g.addColorStop(1, 'rgba(' + darkRgb.r + ',' + darkRgb.g + ',' + darkRgb.b + ',' + (isSoftMode() ? 0.17 : 0.31) + ')');
+    g.addColorStop(0, palette.stop0);
+    g.addColorStop(0.55, palette.stop1);
+    g.addColorStop(1, palette.stop2);
 
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = 'rgba(' + lightRgb.r + ',' + lightRgb.g + ',' + lightRgb.b + ',' + (isSoftMode() ? 0.34 : 0.46 + red * 0.10).toFixed(3) + ')';
+    ctx.strokeStyle = palette.outline;
     ctx.lineWidth = rejecting ? 2.2 : 1.2;
     ctx.stroke();
 
@@ -1241,13 +1372,28 @@ const BubbleGame = (function () {
     ctx.textBaseline = 'middle';
     ctx.font = '400 ' + fontSize + 'px "Microsoft YaHei", "PingFang SC", sans-serif';
     const maxWidth = radius * 1.45;
-    const lines = wrapText(text, maxWidth);
+    const lines = wrapTextCached(text, maxWidth, fontSize);
     const lineHeight = fontSize * 1.25;
     const startY = -((lines.length - 1) * lineHeight) / 2;
     lines.slice(0, 3).forEach(function (line, index) {
       ctx.fillText(line, 0, startY + index * lineHeight, maxWidth);
     });
     ctx.restore();
+  }
+
+  /**
+   * 分行结果只取决于（文本, 字号, 最大宽度）。
+   * 逐字 measureText 在几十个泡泡下每帧上百次调用，缓存后每种组合只算一次。
+   * 宽度按 4px 分档，避免半径连续变化时缓存永远命中不了。
+   */
+  function wrapTextCached(text, maxWidth, fontSize) {
+    const key = text + '|' + Math.round(fontSize) + '|' + Math.round(maxWidth / 4);
+    const cached = textLineCache.get(key);
+    if (cached) return cached;
+    const lines = wrapText(text, maxWidth);
+    if (textLineCache.size > 400) textLineCache.clear();
+    textLineCache.set(key, lines);
+    return lines;
   }
 
   function wrapText(text, maxWidth) {
@@ -1684,6 +1830,8 @@ const BubbleGame = (function () {
     worries = [];
     callbacks = {};
     avoidRects = [];
+    blurSprites.clear();
+    textLineCache.clear();
     mode = 'calm';
     observeFocusId = null;
     pointer.active = false;
