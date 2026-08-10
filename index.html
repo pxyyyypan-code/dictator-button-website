@@ -65,6 +65,17 @@
       <button type="button" class="btn btn--primary" data-action="add-worry">添加</button>
     </div>
     <p class="worry-hint" data-bind="worryHint" role="status" aria-live="polite"></p>
+
+    <div class="worry-helper" aria-label="烦恼灵感库">
+      <div class="worry-helper__head">
+        <span>不知道怎么说？从一个方向开始</span>
+        <button type="button" class="worry-helper__refresh" data-action="refresh-worry-suggestions">换一批</button>
+      </div>
+      <div class="worry-category-chips" data-bind="worryCategories"></div>
+      <div class="worry-suggestions" data-bind="worrySuggestions"></div>
+      <p class="worry-helper__note">预设只是灵感，你仍然可以自由输入任何烦恼。不同内容会在后续获得不同的互动反应。</p>
+    </div>
+
     <ul class="worry-list" data-bind="worryList"></ul>
     <div class="scene__actions">
       <button type="button" class="btn" data-action="back">返回</button>
@@ -133,11 +144,11 @@
 
     <!-- 烦恼重现后的主动选择：双条件满足后缓慢出现，按钮位置固定不动 -->
     <div class="return-choice" data-bind="returnChoice" aria-hidden="true">
-      <p class="return-choice__question">它们总会回来。你还想继续删除吗？</p>
+      <p class="return-choice__question" data-bind="returnChoiceQuestion">它们总会回来。你还想继续删除吗？</p>
       <div class="return-choice__actions">
         <button type="button" class="btn return-choice__btn"
-                data-action="return-continue" data-bind="returnContinue">继续删除</button>
-        <button type="button" class="btn btn--primary return-choice__btn"
+                data-action="return-continue" data-bind="returnContinue">再试一次</button>
+        <button type="button" class="btn return-choice__btn"
                 data-action="return-stop" data-bind="returnStop">停下来看看</button>
       </div>
     </div>
@@ -153,12 +164,13 @@
 
   <!-- UX-12 -->
   <section class="scene" data-scene="ux-12" aria-hidden="true">
-    <p class="scene__tag">EXPERIENCE CONCLUSION</p>
+    <p class="scene__tag">OBSERVATION</p>
     <h1 class="scene__title">
-      <span class="theme-line">烦恼不会真正消失，</span>
-      <span class="theme-line">但你可以学会面对它。</span>
+      <span class="theme-line">它没有消失。</span>
+      <span class="theme-line">但你不必继续追着它跑。</span>
     </h1>
-    <p class="scene__desc" data-bind="themeCountdown">请在这里停留片刻。</p>
+    <p class="scene__desc theme-focus" data-bind="themeFocus"></p>
+    <p class="scene__desc" data-bind="themeCountdown">有些东西无法通过“删除”解决。看见它，也许就是另一种开始。</p>
     <div class="scene__actions">
       <button type="button" class="btn" data-action="back">返回</button>
       <button type="button" class="btn btn--primary" data-action="next" data-bind="themeNext" disabled>阅读中</button>
@@ -204,6 +216,7 @@
 </div>
 
 <script src="js/config.js"></script>
+<script src="js/worry-data.js"></script>
 <script src="js/bubble-game.js"></script>
 <script src="js/scene-manager.js"></script>
 <script src="js/app.js"></script>

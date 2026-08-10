@@ -1392,7 +1392,7 @@ body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
 
 .dictator-inline {
   position: absolute;
-  z-index: 7;
+  z-index: 9;
   left: 50%;
   bottom: clamp(28px, 4vh, 50px);
   display: flex;
@@ -1403,15 +1403,40 @@ body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
   opacity: 0;
   pointer-events: none;
   transform-origin: 50% 100%;
-  transition: opacity 300ms linear, filter 460ms var(--ease), transform 460ms var(--ease);
+  transition: opacity 300ms linear,
+              filter 460ms var(--ease),
+              transform 460ms var(--ease),
+              top 460ms var(--ease),
+              bottom 460ms var(--ease),
+              width 460ms var(--ease);
   filter: blur(5px);
 }
 
 .dictator-inline.is-visible { filter: blur(0); }
-.dictator-inline.is-interactive { pointer-events: auto; }
+.dictator-inline.is-interactive {
+  pointer-events: auto;
+  top: 67%;
+  bottom: auto;
+  width: min(560px, 84vw);
+  transform: translate(-50%, -50%) scale(1) !important;
+}
 
 .dictator-inline::before {
   content: none;
+}
+
+.dictator-inline.is-interactive::before {
+  content: '';
+  position: absolute;
+  inset: 24px 50% auto 50%;
+  width: clamp(220px, 26vw, 330px);
+  height: clamp(220px, 26vw, 330px);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 173, 168, 0.26) 0%, rgba(240, 73, 63, 0.12) 26%, rgba(217, 54, 45, 0.06) 48%, rgba(6, 7, 16, 0) 72%);
+  filter: blur(6px);
+  pointer-events: none;
 }
 
 .dictator-inline__label {
@@ -1421,11 +1446,70 @@ body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
   text-transform: uppercase;
 }
 
+.dictator-inline.is-interactive .dictator-inline__label {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  letter-spacing: 0.34em;
+  color: rgba(255, 219, 219, 0.94);
+  text-shadow: 0 0 12px rgba(255, 124, 113, 0.30);
+}
+
 .dictator-inline__button {
   min-height: 72px;
   padding: 0 38px;
   font-size: clamp(20px, 2vw, 27px);
   letter-spacing: 0.10em;
+}
+
+.dictator-inline.is-interactive .dictator-inline__button {
+  position: relative;
+  z-index: 1;
+  width: clamp(188px, 19vw, 236px);
+  min-width: clamp(188px, 19vw, 236px);
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+  padding: 0 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  line-height: 1.3;
+  font-size: clamp(26px, 2.2vw, 34px);
+  letter-spacing: 0.06em;
+  background:
+    radial-gradient(135% 135% at 50% 26%, #ffd2c9 0%, #ff8f77 12%, #ef523f 34%, #c92d26 63%, #711714 100%);
+  border: 2px solid rgba(255, 214, 206, 0.55);
+  box-shadow:
+    0 0 0 8px rgba(120, 18, 16, 0.22),
+    0 0 0 18px rgba(196, 49, 41, 0.14),
+    0 20px 48px rgba(0, 0, 0, 0.34),
+    0 0 84px rgba(221, 61, 52, 0.46),
+    inset 0 4px 16px rgba(255, 255, 255, 0.22),
+    inset 0 -14px 26px rgba(90, 12, 10, 0.38);
+}
+
+.dictator-inline.is-interactive .dictator-inline__button::before {
+  content: '';
+  position: absolute;
+  inset: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 232, 226, 0.28);
+  pointer-events: none;
+}
+
+.dictator-inline.is-interactive .dictator-inline__button::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 12px);
+  width: clamp(160px, 20vw, 240px);
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: radial-gradient(circle at center, rgba(235, 76, 64, 0.42) 0%, rgba(235, 76, 64, 0.14) 44%, rgba(235, 76, 64, 0) 74%);
+  filter: blur(7px);
+  pointer-events: none;
 }
 
 .dictator-inline__button[disabled] {
@@ -1440,6 +1524,18 @@ body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
   font-size: 14px;
   letter-spacing: 0.10em;
   color: rgba(226, 175, 177, 0.72);
+}
+
+.dictator-inline.is-interactive .dictator-inline__hint {
+  position: relative;
+  z-index: 1;
+  max-width: min(420px, 80vw);
+  min-height: 38px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: 0.14em;
+  color: rgba(246, 216, 217, 0.82);
 }
 
 .immersive-whisper {
@@ -1661,6 +1757,8 @@ body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
   .game-hud--immersive .hud-pill strong { font-size: 14px; }
   .dictator-inline { bottom: 22px; width: 280px; }
   .dictator-inline__button { min-height: 58px; padding: 0 24px; }
+  .dictator-inline.is-interactive { top: 70%; width: min(340px, 88vw); }
+  .dictator-inline.is-interactive .dictator-inline__button { width: 168px; min-width: 168px; font-size: 22px; }
   .immersive-whisper { bottom: 104px; width: 80vw; text-align: center; }
   .return-choice {
     bottom: 20px;
@@ -1689,4 +1787,124 @@ body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
     transition-delay: 0s !important;
   }
   .dictator-inline::before { animation: none !important; }
+}
+
+/* =====================================================================
+   V0.7｜烦恼灵感库 + 强行为对象 + 观察阶段
+   ===================================================================== */
+.worry-helper {
+  width: min(900px, 92vw);
+  margin: 0 auto var(--sp-3);
+  padding: 18px 20px 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: var(--r-m);
+  background: rgba(108, 113, 157, 0.055);
+  text-align: left;
+}
+
+.worry-helper__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  color: var(--ink-dim);
+  font-size: 16px;
+  letter-spacing: .06em;
+}
+
+.worry-helper__refresh {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--c-dora-soft);
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 7px;
+}
+.worry-helper__refresh:hover,
+.worry-helper__refresh:focus-visible { background: rgba(111,154,216,.09); outline: none; }
+
+.worry-category-chips,
+.worry-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.worry-category-chips { margin-bottom: 12px; }
+
+.worry-category-chip,
+.worry-suggestion {
+  appearance: none;
+  font-family: inherit;
+  color: var(--ink-dim);
+  background: rgba(255,255,255,.025);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.worry-category-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  font-size: 14px;
+}
+.worry-category-chip.is-active {
+  color: var(--ink);
+  border-color: rgba(111,154,216,.46);
+  background: rgba(74,125,200,.12);
+}
+.worry-suggestion {
+  min-height: 38px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 15px;
+  text-align: left;
+}
+.worry-suggestion:hover,
+.worry-suggestion:focus-visible {
+  color: var(--ink);
+  border-color: rgba(111,154,216,.42);
+  background: rgba(74,125,200,.09);
+  outline: none;
+}
+.worry-helper__note {
+  margin: 12px 0 0;
+  color: var(--ink-faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.theme-focus {
+  margin-bottom: 10px !important;
+  color: color-mix(in srgb, var(--ink) 72%, var(--c-return));
+  font-size: clamp(18px, 1.8vw, 25px) !important;
+}
+
+/* 玩家选择“停下来看看”后，界面主动退让，只留下泡泡与观察提示。 */
+.scene--immersive.is-observing .game-hud--immersive,
+.scene--immersive.is-observing .immersive-exit {
+  opacity: .18;
+}
+.scene--immersive.is-observing .immersive-frame::before,
+.scene--immersive.is-observing .immersive-frame::after { opacity: 0 !important; }
+.scene--immersive.is-focus .game-hud--immersive,
+.scene--immersive.is-focus .immersive-exit,
+.scene--immersive.is-focus .immersive-whisper { opacity: 0 !important; }
+.scene--immersive.is-focus .immersive-header {
+  top: clamp(34px, 5vh, 62px);
+}
+
+/* 沉浸交互阶段隐藏 1/14 数字进度，内部状态仍保留。 */
+body[data-current-scene="ux-07"] .progress,
+body[data-current-scene="ux-08"] .progress,
+body[data-current-scene="ux-09"] .progress,
+body[data-current-scene="ux-10"] .progress,
+body[data-current-scene="ux-11"] .progress { opacity: 0; pointer-events: none; }
+
+@media (max-width: 760px) {
+  .worry-helper { padding: 14px; }
+  .worry-helper__head { align-items: flex-start; }
+  .worry-suggestion { flex: 1 1 44%; }
 }

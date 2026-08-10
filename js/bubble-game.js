@@ -1,7 +1,6 @@
 /**
  * bubble-game.js —— Canvas 泡泡交互核心
- * V0.5.3：正常删除阶段持续补充泡泡、按概率渐变进入分裂失控、
- *         全部删除改为「原地爆裂」，重现阶段随机延迟重新出现并支持缓慢静止。
+ * V0.7：强化 10 类行为对象的视觉、运动和点击差异；正常阶段即可辨认，失控阶段进一步放大。
  */
 'use strict';
 
@@ -27,6 +26,10 @@ const BubbleGame = (function () {
   let resizeObserver = null;
   let fallbackResizeHandler = null;
   let pointerHandler = null;
+  let pointerMoveHandler = null;
+  let pointerLeaveHandler = null;
+  let pointer = { x: -9999, y: -9999, active: false };
+  let observeFocusId = null;
   let worries = [];
   let callbacks = {};
   let nextId = 1;
@@ -51,7 +54,7 @@ const BubbleGame = (function () {
   }
 
   function isSoftMode() {
-    return mode === 'soft' || mode === 'return';
+    return mode === 'soft' || mode === 'return' || mode === 'observe-select' || mode === 'observe-focus';
   }
 
   function lerp(a, b, t) {
@@ -70,11 +73,62 @@ const BubbleGame = (function () {
     return array[Math.floor(Math.random() * array.length)];
   }
 
+  function normalizeWorry(item) {
+    if (item && typeof item === 'object' && String(item.text || '').trim()) {
+      const text = String(item.text).trim();
+      return {
+        id: item.id || ('profile-' + Math.random().toString(36).slice(2, 8)),
+        text: text,
+        category: item.category || 'custom',
+        behaviorType: item.behaviorType || (typeof WorryData !== 'undefined' ? WorryData.randomBehaviorType() : 'B1_LIGHT')
+      };
+    }
+    const text = String(item || '').trim();
+    if (!text) return null;
+    if (typeof WorryData !== 'undefined') return WorryData.createProfile(text);
+    return { id: 'profile-' + Math.random().toString(36).slice(2, 8), text: text, category: 'custom', behaviorType: 'B1_LIGHT' };
+  }
+
   function safeWorries(input) {
     const list = Array.isArray(input)
-      ? input.map(function (item) { return String(item || '').trim(); }).filter(Boolean)
+      ? input.map(normalizeWorry).filter(Boolean)
       : [];
-    return list.length ? list : ['尚未说出口的烦恼'];
+    return list.length ? list : [normalizeWorry('尚未说出口的烦恼')];
+  }
+
+  function behaviorMeta(type) {
+    if (typeof WorryData !== 'undefined') return WorryData.behavior(type);
+    return { id: type || 'B1_LIGHT', name: '普通', color: '#7F9CC8' };
+  }
+
+  function currentBehaviorIntensity() {
+    if (mode === 'growth') {
+      return lerp(
+        Number(CONFIG.TRANSITION_BEHAVIOR_MIN) || 0.2,
+        Number(CONFIG.TRANSITION_BEHAVIOR_MAX) || 1,
+        clamp(transitionProgress, 0, 1)
+      );
+    }
+    if (mode === 'calm') return Number(CONFIG.CALM_BEHAVIOR_INTENSITY) || 0.16;
+    if (mode === 'observe-select' || mode === 'observe-focus') return 0.08;
+    return 0.12;
+  }
+
+  function hexToRgb(hex) {
+    const value = String(hex || '#7F9CC8').replace('#', '');
+    const full = value.length === 3 ? value.split('').map(function (c) { return c + c; }).join('') : value;
+    const parsed = parseInt(full, 16);
+    if (!Number.isFinite(parsed)) return { r: 127, g: 156, b: 200 };
+    return { r: (parsed >> 16) & 255, g: (parsed >> 8) & 255, b: parsed & 255 };
+  }
+
+  function mixRgb(a, b, t) {
+    const p = clamp(t, 0, 1);
+    return {
+      r: Math.round(lerp(a.r, b.r, p)),
+      g: Math.round(lerp(a.g, b.g, p)),
+      b: Math.round(lerp(a.b, b.b, p))
+    };
   }
 
   /** 是否处于「减少动态效果」偏好：原地爆裂需退化为快速淡出。 */
@@ -104,14 +158,16 @@ const BubbleGame = (function () {
     returnTimers = [];
   }
 
-  function createBubble(text, options) {
+  function createBubble(worryItem, options) {
+    const profile = normalizeWorry(worryItem) || normalizeWorry('尚未说出口的烦恼');
+    const text = profile.text;
     const opts = options || {};
     const minR = CONFIG.BUBBLE_MIN_RADIUS;
     const maxR = CONFIG.BUBBLE_MAX_RADIUS;
     const textBonus = Math.min(24, Math.max(0, text.length - 6) * 2.2);
     const defaultRadius = Math.min(maxR, random(minR, maxR - 8) + textBonus);
     const radius = Number.isFinite(opts.radius)
-      ? clamp(opts.radius, CONFIG.SPLIT_CHILD_RADIUS_MIN || 24, maxR)
+      ? clamp(opts.radius, CONFIG.SPLIT_CHILD_RADIUS_MIN || 24, maxR * 1.35)
       : defaultRadius;
     const angle = Number.isFinite(opts.angle) ? opts.angle : random(0, Math.PI * 2);
     const defaultSpeed = isSoftMode()
@@ -125,13 +181,20 @@ const BubbleGame = (function () {
     const maxY = Math.max(minY + 1, height - radius - 8);
     const requestedX = Number.isFinite(opts.x) ? opts.x : random(minX, maxX);
     const requestedY = Number.isFinite(opts.y) ? opts.y : random(minY, maxY);
+    const meta = behaviorMeta(profile.behaviorType);
 
     const bubble = {
       id: 'bubble-' + nextId++,
+      profile: profile,
+      worryId: profile.id,
       text: text,
+      category: profile.category,
+      behaviorType: profile.behaviorType,
+      behaviorColor: meta.color || '#7F9CC8',
       x: clamp(requestedX, minX, maxX),
       y: clamp(requestedY, minY, maxY),
       radius: radius,
+      baseRadius: radius,
       vx: Number.isFinite(opts.vx) ? opts.vx : Math.cos(angle) * speed,
       vy: Number.isFinite(opts.vy) ? opts.vy : Math.sin(angle) * speed,
       opacity: Number.isFinite(opts.opacity)
@@ -151,7 +214,16 @@ const BubbleGame = (function () {
       eraseDuration: 0,
       eraseBurst: false,
       eraseStartScale: 1,
-      eraseStartOpacity: 1
+      eraseStartOpacity: 1,
+      age: 0,
+      hitCount: 0,
+      requiredHits: 1,
+      hoverReveal: profile.behaviorType === 'B10_BLUR' ? 0.10 : 0,
+      burstCooldown: random(0.4, 1.6),
+      behaviorFlash: 0,
+      behaviorPulse: random(0, Math.PI * 2),
+      selected: false,
+      focusRadius: Math.min(maxR * 1.28, Math.max(radius, 94))
     };
     bubbles.push(bubble);
     notifyBubbleCount();
@@ -203,7 +275,12 @@ const BubbleGame = (function () {
 
   function detachCanvas() {
     if (canvas && pointerHandler) canvas.removeEventListener('pointerdown', pointerHandler);
+    if (canvas && pointerMoveHandler) canvas.removeEventListener('pointermove', pointerMoveHandler);
+    if (canvas && pointerLeaveHandler) canvas.removeEventListener('pointerleave', pointerLeaveHandler);
     pointerHandler = null;
+    pointerMoveHandler = null;
+    pointerLeaveHandler = null;
+    pointer.active = false;
     if (resizeObserver) {
       resizeObserver.disconnect();
       resizeObserver = null;
@@ -238,6 +315,16 @@ const BubbleGame = (function () {
       handleClick(event.clientX - rect.left, event.clientY - rect.top);
     };
     canvas.addEventListener('pointerdown', pointerHandler);
+    pointerMoveHandler = function (event) {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = event.clientX - rect.left;
+      pointer.y = event.clientY - rect.top;
+      pointer.active = true;
+    };
+    pointerLeaveHandler = function () { pointer.active = false; };
+    canvas.addEventListener('pointermove', pointerMoveHandler, { passive: true });
+    canvas.addEventListener('pointerleave', pointerLeaveHandler, { passive: true });
 
     if ('ResizeObserver' in window) {
       resizeObserver = new ResizeObserver(resizeCanvas);
@@ -254,6 +341,8 @@ const BubbleGame = (function () {
     worries = safeWorries(inputWorries);
     callbacks = nextCallbacks || {};
     mode = 'calm';
+    observeFocusId = null;
+    pointer.active = false;
     chaosLevel = 0;
     if (nextCanvas) mount(nextCanvas, { interactive: false, mode: 'calm' });
     addInitialBubbles(CONFIG.INITIAL_BUBBLE_COUNT);
@@ -366,7 +455,7 @@ const BubbleGame = (function () {
   }
 
   function applyBubbleRepulsion(dt) {
-    if (mode === 'erasing') return;
+    if (mode === 'erasing' || mode === 'observe-focus') return;
     for (let i = 0; i < bubbles.length; i += 1) {
       const a = bubbles[i];
       if (a.state === 'bursting') continue;
@@ -376,7 +465,8 @@ const BubbleGame = (function () {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const distanceSq = dx * dx + dy * dy;
-        const minDistance = (a.radius + b.radius) * (isSoftMode() ? 0.68 : 0.78);
+        const involvesCluster = (a.behaviorType === 'B5_CLUSTER' || b.behaviorType === 'B5_CLUSTER') && (mode === 'calm' || mode === 'growth');
+        const minDistance = (a.radius + b.radius) * (isSoftMode() ? 0.68 : involvesCluster ? 0.48 : 0.78);
         if (distanceSq <= 0.001 || distanceSq >= minDistance * minDistance) continue;
         const distance = Math.sqrt(distanceSq);
         const nx = dx / distance;
@@ -532,6 +622,362 @@ const BubbleGame = (function () {
     }
   }
 
+
+  function nearestBubble(source, predicate) {
+    let nearest = null;
+    let best = Infinity;
+    bubbles.forEach(function (candidate) {
+      if (candidate === source || candidate.state === 'bursting') return;
+      if (predicate && !predicate(candidate)) return;
+      const dx = candidate.x - source.x;
+      const dy = candidate.y - source.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < best) { best = d2; nearest = candidate; }
+    });
+    return nearest;
+  }
+
+  function emitBehavior(kind, bubble, extra) {
+    if (typeof callbacks.onBehavior !== 'function') return;
+    callbacks.onBehavior(Object.assign({
+      kind: kind,
+      bubble: bubble,
+      behaviorType: bubble.behaviorType,
+      behaviorName: behaviorMeta(bubble.behaviorType).name,
+      mode: mode
+    }, extra || {}));
+  }
+
+  function applyBehaviorMotion(bubble, dt, time) {
+    const intensity = currentBehaviorIntensity();
+    bubble.age += dt;
+    bubble.behaviorFlash = Math.max(0, bubble.behaviorFlash - dt * 2.6);
+
+    if (bubble.behaviorType === 'B1_LIGHT' && !isSoftMode()) {
+      bubble.vy -= (3.2 + intensity * 4.2) * dt;
+      bubble.vx += Math.sin(time * 1.15 + bubble.phase) * dt * (2.0 + intensity * 4.0);
+    }
+
+    if (bubble.behaviorType === 'B2_ESCAPE' && pointer.active && mode !== 'return' && mode !== 'observe-select' && mode !== 'observe-focus') {
+      const dx = bubble.x - pointer.x;
+      const dy = bubble.y - pointer.y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const trigger = bubble.radius * (Number(CONFIG.ESCAPE_POINTER_RANGE_FACTOR) || 3.2) + intensity * 150;
+      if (distance < trigger) {
+        const force = (1 - distance / trigger) * (95 + 300 * intensity) * dt;
+        bubble.vx += dx / distance * force;
+        bubble.vy += dy / distance * force;
+      }
+    }
+
+    if (bubble.behaviorType === 'B5_CLUSTER' && (mode === 'calm' || mode === 'growth')) {
+      const target = nearestBubble(bubble);
+      if (target) {
+        const dx = target.x - bubble.x;
+        const dy = target.y - bubble.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const range = mode === 'growth' ? 390 : 300;
+        if (distance < range) {
+          const force = (mode === 'growth' ? 50 + 130 * intensity : 30 + 45 * intensity) * dt;
+          bubble.vx += dx / distance * force;
+          bubble.vy += dy / distance * force;
+        }
+      }
+    }
+
+    if (bubble.behaviorType === 'B7_LINKED' && (mode === 'calm' || mode === 'growth')) {
+      const target = nearestBubble(bubble);
+      if (target) {
+        const dx = target.x - bubble.x;
+        const dy = target.y - bubble.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        if (distance > 120 && distance < 420) {
+          const force = (12 + intensity * 24) * dt;
+          bubble.vx += dx / distance * force;
+          bubble.vy += dy / distance * force;
+        }
+      }
+    }
+
+    if (bubble.behaviorType === 'B8_BURST' && (mode === 'calm' || mode === 'growth')) {
+      bubble.burstCooldown -= dt;
+      if (bubble.burstCooldown <= 0) {
+        const angle = random(0, Math.PI * 2);
+        const kick = mode === 'growth' ? random(120, 220) * (0.75 + intensity * 0.65) : random(82, 145);
+        bubble.vx += Math.cos(angle) * kick;
+        bubble.vy += Math.sin(angle) * kick;
+        bubble.behaviorFlash = 1;
+        bubble.burstCooldown = mode === 'growth' ? random(0.55, Math.max(0.85, 2.1 - intensity * 1.1)) : random(1.5, 3.0);
+      }
+    }
+
+    if (bubble.behaviorType === 'B9_PRESSURE' && (mode === 'calm' || mode === 'growth')) {
+      const maxRadius = mode === 'growth' ? CONFIG.BUBBLE_MAX_RADIUS * (1.18 + intensity * 0.48) : CONFIG.BUBBLE_MAX_RADIUS * 1.18;
+      const growPerSec = mode === 'growth' ? 3.2 + intensity * 8.4 : 1.45;
+      bubble.radius = Math.min(maxRadius, bubble.radius + dt * growPerSec);
+    }
+
+    if (bubble.behaviorType === 'B6_STUBBORN' && (mode === 'calm' || mode === 'growth')) {
+      bubble.vx *= Math.pow(0.72, dt);
+      bubble.vy *= Math.pow(0.72, dt);
+    }
+
+    if (bubble.behaviorType === 'B10_BLUR') {
+      const near = pointer.active && Math.hypot(pointer.x - bubble.x, pointer.y - bubble.y) < bubble.radius * 2.4;
+      const targetReveal = near ? 1 : mode === 'growth' ? 0.06 + (1 - intensity) * 0.12 : isSoftMode() ? 0.38 : 0.14;
+      bubble.hoverReveal += (targetReveal - bubble.hoverReveal) * Math.min(1, dt * (near ? 7.5 : 3.2));
+    } else {
+      bubble.hoverReveal += (1 - bubble.hoverReveal) * Math.min(1, dt * 3);
+    }
+
+    if (mode === 'observe-focus') {
+      if (bubble.id === observeFocusId) {
+        bubble.selected = true;
+        bubble.vx *= Math.pow(0.12, dt);
+        bubble.vy *= Math.pow(0.12, dt);
+        bubble.x += (width * 0.5 - bubble.x) * Math.min(1, dt * 2.4);
+        bubble.y += (height * 0.52 - bubble.y) * Math.min(1, dt * 2.4);
+        bubble.radius += (bubble.focusRadius - bubble.radius) * Math.min(1, dt * 2.2);
+        bubble.opacity += (0.96 - bubble.opacity) * Math.min(1, dt * 2.5);
+      } else {
+        bubble.vx *= Math.pow(0.45, dt);
+        bubble.vy *= Math.pow(0.45, dt);
+        bubble.opacity += (0.12 - bubble.opacity) * Math.min(1, dt * 1.8);
+      }
+    }
+  }
+
+  function burstDelete(bubble, kind) {
+    bubble.state = 'bursting';
+    bubble.burstElapsed = 0;
+    bubble.burstKind = kind || 'delete';
+    spawnParticles(bubble, false);
+  }
+
+  function scheduleBehaviorRespawn(bubble, delayMin, delayMax) {
+    const profile = bubble.profile;
+    const radius = bubble.baseRadius || bubble.radius;
+    const id = window.setTimeout(function () {
+      returnTimers = returnTimers.filter(function (timer) { return timer !== id; });
+      if (!canvas || mode === 'erasing') return;
+      createBubble(profile, {
+        entering: true,
+        radius: random(radius * 0.82, radius * 1.02),
+        opacity: random(0.58, 0.84)
+      });
+    }, Math.round(random(delayMin, delayMax)));
+    returnTimers.push(id);
+  }
+
+  function spawnSplitEchoes(bubble) {
+    const count = Math.max(2, Number(CONFIG.CALM_SPLIT_ECHO_COUNT) || 3);
+    const lifeMs = Math.max(300, Number(CONFIG.CALM_SPLIT_ECHO_LIFE_MS) || 760);
+    const color = bubble.behaviorColor || '#E06B76';
+    const baseAngle = random(0, Math.PI * 2);
+    for (let i = 0; i < count; i += 1) {
+      const angle = baseAngle + (Math.PI * 2 * i) / count;
+      const life = lifeMs / 1000 * random(0.78, 1.08);
+      particles.push({ x: bubble.x + Math.cos(angle) * bubble.radius * 0.12, y: bubble.y + Math.sin(angle) * bubble.radius * 0.12, vx: Math.cos(angle) * random(38, 70), vy: Math.sin(angle) * random(38, 70), size: random(8, 14), life: life, maxLife: life, color: color, shape: 'ring' });
+    }
+    spawnRipple(bubble, false);
+  }
+
+  function dashAway(bubble, minSpeed, maxSpeed) {
+    const angle = pointer.active ? Math.atan2(bubble.y - pointer.y, bubble.x - pointer.x) : random(0, Math.PI * 2);
+    const speed = random(minSpeed, maxSpeed);
+    bubble.vx = Math.cos(angle) * speed;
+    bubble.vy = Math.sin(angle) * speed;
+    bubble.state = 'rejecting';
+    bubble.rejectElapsed = 0;
+    bubble.behaviorFlash = 1;
+    spawnRipple(bubble, true);
+  }
+
+  function handleCalmBehaviorHit(bubble) {
+    const type = bubble.behaviorType;
+    if (type === 'B1_LIGHT') {
+      burstDelete(bubble, 'delete');
+      if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true });
+      return true;
+    }
+    if (type === 'B2_ESCAPE') {
+      const dodgeLimit = Math.max(1, Number(CONFIG.ESCAPE_CALM_DODGES) || 1);
+      if (bubble.hitCount < dodgeLimit) {
+        bubble.hitCount += 1; dashAway(bubble, 170, 245); emitBehavior('escape', bubble, { signature: true, hitCount: bubble.hitCount }); return true;
+      }
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); return true;
+    }
+    if (type === 'B3_SPLIT') {
+      spawnSplitEchoes(bubble); burstDelete(bubble, 'delete');
+      if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true });
+      emitBehavior('split-preview', bubble, { signature: true }); return true;
+    }
+    if (type === 'B4_RETURN') {
+      burstDelete(bubble, 'return');
+      scheduleBehaviorRespawn(bubble, Number(CONFIG.RETURN_CALM_DELAY_MIN_MS) || 1050, Number(CONFIG.RETURN_CALM_DELAY_MAX_MS) || 1550);
+      emitBehavior('return', bubble, { signature: true }); return true;
+    }
+    if (type === 'B5_CLUSTER') {
+      const neighbors = bubbles.filter(function (item) { return item !== bubble && item.state === 'normal'; }).sort(function (a, b) { return Math.hypot(a.x - bubble.x, a.y - bubble.y) - Math.hypot(b.x - bubble.x, b.y - bubble.y); }).slice(0, 3);
+      neighbors.forEach(function (target) { const dx = bubble.x - target.x, dy = bubble.y - target.y, distance = Math.max(1, Math.hypot(dx, dy)); target.vx += dx / distance * 125; target.vy += dy / distance * 125; target.scale = Math.max(target.scale, 1.08); target.behaviorFlash = 0.8; });
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); emitBehavior('cluster', bubble, { signature: true, affected: neighbors.length }); return true;
+    }
+    if (type === 'B6_STUBBORN') {
+      bubble.requiredHits = Math.max(2, Number(CONFIG.STUBBORN_CALM_HITS) || 2); bubble.hitCount += 1;
+      if (bubble.hitCount < bubble.requiredHits) { bubble.state = 'rejecting'; bubble.rejectElapsed = 0; bubble.behaviorFlash = 1; spawnRipple(bubble, true); emitBehavior('stubborn', bubble, { signature: true, hitCount: bubble.hitCount, requiredHits: bubble.requiredHits }); return true; }
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); return true;
+    }
+    if (type === 'B7_LINKED') {
+      const target = nearestBubble(bubble);
+      if (target) { target.radius = Math.min(CONFIG.BUBBLE_MAX_RADIUS * 1.42, target.radius * 1.34); target.scale = Math.max(target.scale, 1.16); target.behaviorFlash = 1; const dx = target.x - bubble.x, dy = target.y - bubble.y, distance = Math.max(1, Math.hypot(dx, dy)); target.vx += dx / distance * 95; target.vy += dy / distance * 95; }
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); emitBehavior('linked', bubble, { signature: true, target: target }); return true;
+    }
+    if (type === 'B8_BURST') {
+      const dodgeLimit = Math.max(1, Number(CONFIG.BURST_CALM_DODGES) || 1);
+      if (bubble.hitCount < dodgeLimit) { bubble.hitCount += 1; dashAway(bubble, 220, 315); emitBehavior('burst', bubble, { signature: true, hitCount: bubble.hitCount }); return true; }
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); return true;
+    }
+    if (type === 'B9_PRESSURE') {
+      bubble.requiredHits = Math.max(2, Number(CONFIG.PRESSURE_CALM_HITS) || 2); bubble.hitCount += 1; bubble.radius = Math.max(CONFIG.BUBBLE_MIN_RADIUS * 0.72, bubble.radius * 0.72); bubble.scale = 0.90; bubble.behaviorFlash = 1; spawnRipple(bubble, true);
+      if (bubble.hitCount < bubble.requiredHits) { emitBehavior('pressure', bubble, { signature: true, hitCount: bubble.hitCount, requiredHits: bubble.requiredHits }); return true; }
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); return true;
+    }
+    if (type === 'B10_BLUR') {
+      if (bubble.hoverReveal < 0.72 && bubble.hitCount < 1) { bubble.hitCount += 1; bubble.hoverReveal = 1; bubble.state = 'rejecting'; bubble.rejectElapsed = 0; bubble.behaviorFlash = 1; spawnRipple(bubble, true); emitBehavior('blur', bubble, { signature: true, revealed: true }); return true; }
+      burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true }); return true;
+    }
+    burstDelete(bubble, 'delete'); if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble }); return true;
+  }
+
+  function handleGrowthBehaviorHit(bubble) {
+    const intensity = currentBehaviorIntensity();
+    const type = bubble.behaviorType;
+
+    if (type === 'B2_ESCAPE' && Math.random() < 0.52 + intensity * 0.45) {
+      const angle = pointer.active ? Math.atan2(bubble.y - pointer.y, bubble.x - pointer.x) : random(0, Math.PI * 2);
+      const speed = random(180, 280) * (0.85 + intensity * 0.55);
+      bubble.vx = Math.cos(angle) * speed;
+      bubble.vy = Math.sin(angle) * speed;
+      bubble.state = 'rejecting';
+      bubble.rejectElapsed = 0;
+      emitBehavior('escape', bubble);
+      return true;
+    }
+
+    if (type === 'B3_SPLIT') {
+      const chance = Math.max(currentSplitChance(), 0.28 + intensity * 0.68);
+      if (Math.random() < chance) {
+        const childrenCreated = splitBubble(bubble);
+        if (childrenCreated >= CONFIG.SPLIT_MIN_CHILDREN) {
+          burstDelete(bubble, 'split');
+          if (typeof callbacks.onSplit === 'function') callbacks.onSplit({ bubble: bubble, childrenCreated: childrenCreated });
+          return true;
+        }
+      }
+    }
+
+    if (type === 'B4_RETURN' && Math.random() < 0.62 + intensity * 0.36) {
+      burstDelete(bubble, 'return');
+      scheduleBehaviorRespawn(bubble, 520, 1050);
+      emitBehavior('return', bubble);
+      return true;
+    }
+
+    if (type === 'B5_CLUSTER' && Math.random() < 0.62 + intensity * 0.34) {
+      const target = nearestBubble(bubble);
+      if (target) {
+        const dx = bubble.x - target.x;
+        const dy = bubble.y - target.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        target.vx += dx / distance * 40;
+        target.vy += dy / distance * 40;
+      }
+      burstDelete(bubble, 'delete');
+      if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true });
+      emitBehavior('cluster', bubble);
+      return true;
+    }
+
+    if (type === 'B6_STUBBORN') {
+      bubble.requiredHits = Math.max(2, Number(CONFIG.STUBBORN_GROWTH_HITS) || 3);
+      bubble.hitCount += 1;
+      if (bubble.hitCount < bubble.requiredHits) {
+        bubble.state = 'rejecting';
+        bubble.rejectElapsed = 0;
+        spawnRipple(bubble, true);
+        emitBehavior('stubborn', bubble, { hitCount: bubble.hitCount, requiredHits: bubble.requiredHits });
+        return true;
+      }
+    }
+
+    if (type === 'B7_LINKED' && Math.random() < 0.64 + intensity * 0.32) {
+      const target = nearestBubble(bubble);
+      if (target) {
+        target.radius = Math.min(CONFIG.BUBBLE_MAX_RADIUS * 1.48, target.radius * (1.24 + intensity * 0.24));
+        target.scale = Math.max(target.scale, 1.06);
+      }
+      burstDelete(bubble, 'delete');
+      if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble, behaviorEffect: true });
+      emitBehavior('linked', bubble, { target: target });
+      return true;
+    }
+
+    if (type === 'B8_BURST' && Math.random() < 0.55 + intensity * 0.40) {
+      const angle = random(0, Math.PI * 2);
+      const speed = random(230, 340);
+      bubble.vx = Math.cos(angle) * speed;
+      bubble.vy = Math.sin(angle) * speed;
+      bubble.state = 'rejecting';
+      bubble.rejectElapsed = 0;
+      emitBehavior('burst', bubble);
+      return true;
+    }
+
+    if (type === 'B9_PRESSURE') {
+      bubble.hitCount += 1;
+      bubble.radius = Math.max(CONFIG.BUBBLE_MIN_RADIUS * 0.72, bubble.radius * 0.82);
+      bubble.scale = 0.94;
+      spawnRipple(bubble, true);
+      if (bubble.hitCount < Math.max(2, Number(CONFIG.PRESSURE_GROWTH_HITS) || 3) && bubble.radius > CONFIG.BUBBLE_MIN_RADIUS * 0.72) {
+        emitBehavior('pressure', bubble, { hitCount: bubble.hitCount });
+        return true;
+      }
+    }
+
+    if (type === 'B10_BLUR' && bubble.hoverReveal < 0.72) {
+      bubble.hoverReveal = Math.min(1, bubble.hoverReveal + 0.42);
+      bubble.state = 'rejecting';
+      bubble.rejectElapsed = 0;
+      emitBehavior('blur', bubble);
+      return true;
+    }
+
+    // 轻散型和其他行为没有触发特殊反应时，仍保留少量“系统不稳定”概率，
+    // 避免只输入一个普通烦恼时整个失控阶段完全没有变化。
+    if (type === 'B1_LIGHT' && transitionProgress > 0.55 && Math.random() < currentSplitChance() * 0.22) {
+      const childrenCreated = splitBubble(bubble);
+      if (childrenCreated >= CONFIG.SPLIT_MIN_CHILDREN) {
+        burstDelete(bubble, 'split');
+        if (typeof callbacks.onSplit === 'function') callbacks.onSplit({ bubble: bubble, childrenCreated: childrenCreated });
+        return true;
+      }
+    }
+
+    burstDelete(bubble, 'delete');
+    if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble });
+    return true;
+  }
+
+  function selectForObservation(bubble) {
+    observeFocusId = bubble.id;
+    mode = 'observe-focus';
+    interactive = false;
+    bubbles.forEach(function (item) { item.selected = item.id === bubble.id; });
+    if (typeof callbacks.onObserveSelect === 'function') {
+      callbacks.onObserveSelect({ bubble: bubble, text: bubble.text, profile: bubble.profile });
+    }
+  }
+
   function update(dt, time) {
     if (mode === 'erasing' && updateErasure(dt)) return;
 
@@ -570,6 +1016,7 @@ const BubbleGame = (function () {
         }
       }
 
+      applyBehaviorMotion(bubble, dt, time);
       bubble.scale += (1 - bubble.scale) * Math.min(1, dt * 7);
       if (settling) {
         // 「停下来看看」：泡泡逐渐减速，最终几乎静止。
@@ -614,6 +1061,7 @@ const BubbleGame = (function () {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, width, height);
     drawAmbient(time);
+    drawBehaviorLinks();
     ripples.forEach(drawRipple);
     bubbles.forEach(function (bubble) { drawBubble(bubble, time); });
     particles.forEach(drawParticle);
@@ -657,6 +1105,53 @@ const BubbleGame = (function () {
     ctx.restore();
   }
 
+  function drawBehaviorLinks() {
+    if (!ctx || mode === 'erasing' || mode === 'blank' || mode === 'return') return;
+    const linked = bubbles.filter(function (bubble) { return bubble.behaviorType === 'B7_LINKED' && bubble.state !== 'bursting' && bubble.opacity > 0.16; });
+    if (!linked.length) return;
+    ctx.save(); ctx.lineWidth = mode === 'growth' ? 1.8 : 1.35;
+    linked.forEach(function (bubble) {
+      const nearest = nearestBubble(bubble); if (!nearest) return;
+      const d = Math.hypot(nearest.x - bubble.x, nearest.y - bubble.y); if (d > 430) return;
+      const alpha = mode === 'growth' ? 0.32 + currentBehaviorIntensity() * 0.34 : 0.28;
+      const gradient = ctx.createLinearGradient(bubble.x, bubble.y, nearest.x, nearest.y);
+      gradient.addColorStop(0, 'rgba(226,108,174,' + alpha.toFixed(3) + ')');
+      gradient.addColorStop(0.5, 'rgba(238,174,211,' + (alpha * 0.75).toFixed(3) + ')');
+      gradient.addColorStop(1, 'rgba(190,139,177,' + (alpha * 0.45).toFixed(3) + ')');
+      ctx.strokeStyle = gradient; ctx.setLineDash([7, 7]); ctx.beginPath(); ctx.moveTo(bubble.x, bubble.y); ctx.lineTo(nearest.x, nearest.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(245,205,229,' + Math.min(0.7, alpha + 0.16).toFixed(3) + ')'; ctx.beginPath(); ctx.arc((bubble.x + nearest.x) / 2, (bubble.y + nearest.y) / 2, 3.2, 0, Math.PI * 2); ctx.fill();
+    }); ctx.restore();
+  }
+
+  function drawBehaviorSignature(bubble, r, time) {
+    if (isSoftMode() || r < 8) return;
+    const type = bubble.behaviorType, intensity = mode === 'growth' ? 0.72 + currentBehaviorIntensity() * 0.28 : 0.72;
+    const pulse = 0.5 + 0.5 * Math.sin(time * 3.2 + bubble.behaviorPulse), color = bubble.behaviorColor || '#8FA9D2';
+    ctx.save(); ctx.globalAlpha = Math.min(0.92, bubble.opacity * intensity); ctx.strokeStyle = color; ctx.fillStyle = color;
+    if (type === 'B1_LIGHT') {
+      [0.34,0.58,0.82].forEach(function(f,i){ ctx.globalAlpha=0.26+i*0.10; ctx.beginPath(); ctx.arc(-r*0.18+i*r*0.17,-r*(0.65+f*0.28)-pulse*4,Math.max(1.8,r*(0.025+i*0.008)),0,Math.PI*2); ctx.fill(); });
+    } else if (type === 'B2_ESCAPE') {
+      const angle=Math.atan2(bubble.vy,bubble.vx)+Math.PI; for(let i=0;i<2;i+=1){ const offset=(i-0.5)*r*0.22; ctx.lineWidth=Math.max(1.4,r*0.022); ctx.beginPath(); ctx.moveTo(Math.cos(angle)*r*0.72+Math.cos(angle+Math.PI/2)*offset,Math.sin(angle)*r*0.72+Math.sin(angle+Math.PI/2)*offset); ctx.lineTo(Math.cos(angle)*r*(1.15+pulse*0.12)+Math.cos(angle+Math.PI/2)*offset,Math.sin(angle)*r*(1.15+pulse*0.12)+Math.sin(angle+Math.PI/2)*offset); ctx.stroke(); }
+    } else if (type === 'B3_SPLIT') {
+      [-1,1].forEach(function(dir){ctx.globalAlpha=0.48+pulse*0.22;ctx.lineWidth=Math.max(1.2,r*0.018);ctx.beginPath();ctx.arc(dir*r*0.68,r*0.10,r*(0.14+pulse*0.025),0,Math.PI*2);ctx.stroke();});
+    } else if (type === 'B4_RETURN') {
+      ctx.globalAlpha=0.36+pulse*0.22;ctx.lineWidth=Math.max(1.2,r*0.018);ctx.setLineDash([5,7]);ctx.beginPath();ctx.arc(0,0,r*(1.13+pulse*0.04),0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+    } else if (type === 'B5_CLUSTER') {
+      for(let i=0;i<3;i+=1){const a=time*0.65+bubble.phase+i*Math.PI*2/3;ctx.globalAlpha=0.50;ctx.beginPath();ctx.arc(Math.cos(a)*r*0.88,Math.sin(a)*r*0.88,Math.max(2,r*0.045),0,Math.PI*2);ctx.fill();}
+    } else if (type === 'B6_STUBBORN') {
+      ctx.globalAlpha=0.48;ctx.lineWidth=Math.max(2.1,r*0.038);ctx.beginPath();ctx.arc(0,0,r*0.91,0,Math.PI*2);ctx.stroke();
+    } else if (type === 'B7_LINKED') {
+      ctx.globalAlpha=0.58;ctx.lineWidth=Math.max(1.5,r*0.025);ctx.beginPath();ctx.moveTo(-r*0.32,r*0.48);ctx.quadraticCurveTo(0,r*0.66,r*0.32,r*0.48);ctx.stroke();ctx.beginPath();ctx.arc(-r*0.34,r*0.48,r*0.055,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(r*0.34,r*0.48,r*0.055,0,Math.PI*2);ctx.fill();
+    } else if (type === 'B8_BURST') {
+      const angle=Math.atan2(bubble.vy,bubble.vx)+Math.PI;ctx.globalAlpha=0.42+bubble.behaviorFlash*0.35;ctx.lineWidth=Math.max(1.4,r*0.022);[-0.22,0,0.22].forEach(function(offset){ctx.beginPath();ctx.moveTo(Math.cos(angle)*r*0.78+Math.cos(angle+Math.PI/2)*r*offset,Math.sin(angle)*r*0.78+Math.sin(angle+Math.PI/2)*r*offset);ctx.lineTo(Math.cos(angle)*r*(1.28+bubble.behaviorFlash*0.35)+Math.cos(angle+Math.PI/2)*r*offset,Math.sin(angle)*r*(1.28+bubble.behaviorFlash*0.35)+Math.sin(angle+Math.PI/2)*r*offset);ctx.stroke();});
+    } else if (type === 'B9_PRESSURE') {
+      [1.08,1.20].forEach(function(factor,i){ctx.globalAlpha=(0.20+pulse*0.20)*(1-i*0.25);ctx.lineWidth=Math.max(1.4,r*0.02);ctx.beginPath();ctx.arc(0,0,r*(factor+pulse*0.04),0,Math.PI*2);ctx.stroke();});
+    } else if (type === 'B10_BLUR') {
+      ctx.globalAlpha=0.34;ctx.lineWidth=Math.max(1.2,r*0.018);ctx.setLineDash([2,8]);ctx.beginPath();ctx.arc(0,0,r*1.06,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
   function drawBubble(bubble, time) {
     const r = bubble.radius * bubble.scale;
     if (r <= 0.5) return;
@@ -667,28 +1162,33 @@ const BubbleGame = (function () {
     const shakeY = rejecting ? Math.cos(rejectProgress * Math.PI * 8) * (1 - rejectProgress) * 4 : 0;
     ctx.translate(bubble.x + shakeX, bubble.y + shakeY);
     ctx.globalAlpha = bubble.opacity;
+    if (bubble.behaviorType === 'B10_BLUR') {
+      const blurPx = Math.max(0, (1 - bubble.hoverReveal) * (mode === 'growth' ? 7.2 : isSoftMode() ? 2.8 : 5.4));
+      ctx.filter = blurPx > 0.2 ? 'blur(' + blurPx.toFixed(2) + 'px)' : 'none';
+    }
 
     const growthPulse = mode === 'growth' ? 1 + Math.sin(time * (2.6 + chaosLevel * 2.5) + bubble.phase) * (0.012 + chaosLevel * 0.025) : 1;
     const rejectScale = rejecting ? 1 + Math.sin(rejectProgress * Math.PI) * 0.16 : 1;
     ctx.scale(growthPulse * rejectScale, growthPulse * rejectScale);
 
     const red = mode === 'growth' ? chaosLevel : 0;
-    const glowColor = isSoftMode()
-      ? 'rgba(143, 166, 199, 0.18)'
-      : 'rgba(' + Math.round(lerp(91, 210, red)) + ',' + Math.round(lerp(143, 72, red)) + ',' + Math.round(lerp(216, 78, red)) + ',' + (0.20 + red * 0.17).toFixed(3) + ')';
+    const behaviorRgb = hexToRgb(bubble.behaviorColor);
+    const neutralRgb = { r: 92, g: 142, b: 207 };
+    const typeWeight = mode === 'growth'
+      ? Number(CONFIG.BEHAVIOR_COLOR_GROWTH_WEIGHT) || 0.88
+      : isSoftMode() ? 0.32 : Number(CONFIG.BEHAVIOR_COLOR_CALM_WEIGHT) || 0.58;
+    let bubbleRgb = mixRgb(neutralRgb, behaviorRgb, typeWeight);
+    if (mode === 'growth') bubbleRgb = mixRgb(bubbleRgb, { r: 206, g: 72, b: 82 }, chaosLevel * 0.30);
+    const lightRgb = mixRgb(bubbleRgb, { r: 244, g: 248, b: 255 }, isSoftMode() ? 0.54 : 0.62);
+    const darkRgb = mixRgb(bubbleRgb, { r: 22, g: 28, b: 43 }, 0.58);
+    const glowColor = 'rgba(' + bubbleRgb.r + ',' + bubbleRgb.g + ',' + bubbleRgb.b + ',' + (isSoftMode() ? 0.18 : 0.24 + red * 0.12).toFixed(3) + ')';
     ctx.shadowColor = glowColor;
     ctx.shadowBlur = isSoftMode() ? 17 : 17 + red * 16;
 
     const g = ctx.createRadialGradient(-r * 0.28, -r * 0.36, r * 0.08, 0, 0, r);
-    if (isSoftMode()) {
-      g.addColorStop(0, 'rgba(222, 232, 245, 0.48)');
-      g.addColorStop(0.55, 'rgba(133, 157, 194, 0.30)');
-      g.addColorStop(1, 'rgba(68, 82, 109, 0.16)');
-    } else {
-      g.addColorStop(0, 'rgba(' + Math.round(lerp(197, 241, red)) + ',' + Math.round(lerp(220, 140, red)) + ',' + Math.round(lerp(252, 146, red)) + ',' + (0.68 - red * 0.02).toFixed(3) + ')');
-      g.addColorStop(0.52, 'rgba(' + Math.round(lerp(82, 168, red)) + ',' + Math.round(lerp(132, 58, red)) + ',' + Math.round(lerp(200, 68, red)) + ',' + (0.46 + red * 0.05).toFixed(3) + ')');
-      g.addColorStop(1, 'rgba(' + Math.round(lerp(34, 70, red)) + ',' + Math.round(lerp(57, 19, red)) + ',' + Math.round(lerp(93, 29, red)) + ',0.30)');
-    }
+    g.addColorStop(0, 'rgba(' + lightRgb.r + ',' + lightRgb.g + ',' + lightRgb.b + ',' + (isSoftMode() ? 0.46 : 0.70) + ')');
+    g.addColorStop(0.55, 'rgba(' + bubbleRgb.r + ',' + bubbleRgb.g + ',' + bubbleRgb.b + ',' + (isSoftMode() ? 0.30 : 0.48) + ')');
+    g.addColorStop(1, 'rgba(' + darkRgb.r + ',' + darkRgb.g + ',' + darkRgb.b + ',' + (isSoftMode() ? 0.17 : 0.31) + ')');
 
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -696,9 +1196,7 @@ const BubbleGame = (function () {
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = isSoftMode()
-      ? 'rgba(221, 235, 255, 0.34)'
-      : 'rgba(' + Math.round(lerp(221, 244, red)) + ',' + Math.round(lerp(235, 150, red)) + ',' + Math.round(lerp(255, 156, red)) + ',' + (0.42 + red * 0.10).toFixed(3) + ')';
+    ctx.strokeStyle = 'rgba(' + lightRgb.r + ',' + lightRgb.g + ',' + lightRgb.b + ',' + (isSoftMode() ? 0.34 : 0.46 + red * 0.10).toFixed(3) + ')';
     ctx.lineWidth = rejecting ? 2.2 : 1.2;
     ctx.stroke();
 
@@ -707,6 +1205,21 @@ const BubbleGame = (function () {
     ctx.strokeStyle = 'rgba(255,255,255,0.42)';
     ctx.lineWidth = Math.max(1, r * 0.025);
     ctx.stroke();
+
+    drawBehaviorSignature(bubble, r, time);
+
+    if (bubble.behaviorType === 'B6_STUBBORN' && bubble.hitCount > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(235,240,248,' + Math.min(0.58, 0.18 + bubble.hitCount * 0.16).toFixed(2) + ')';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.10, -r * 0.58);
+      ctx.lineTo(r * 0.02, -r * 0.18);
+      ctx.lineTo(-r * 0.08, r * 0.08);
+      ctx.lineTo(r * 0.14, r * 0.48);
+      ctx.stroke();
+      ctx.restore();
+    }
 
     drawText(bubble.text, r, bubble.textFade);
     ctx.restore();
@@ -773,10 +1286,11 @@ const BubbleGame = (function () {
   function drawParticle(particle) {
     ctx.save();
     ctx.globalAlpha = Math.max(0, particle.life / particle.maxLife);
-    ctx.fillStyle = particle.color;
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-    ctx.fill();
+    if (particle.shape === 'ring') {
+      ctx.strokeStyle = particle.color; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.fillStyle = particle.color; ctx.beginPath(); ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -850,7 +1364,7 @@ const BubbleGame = (function () {
       );
       const speed = random(CONFIG.SPLIT_SPEED_MIN, CONFIG.SPLIT_SPEED_MAX);
       const offset = Math.max(8, bubble.radius * 0.14);
-      createBubble(bubble.text, {
+      createBubble(bubble.profile, {
         x: bubble.x + Math.cos(angle) * offset,
         y: bubble.y + Math.sin(angle) * offset,
         radius: childRadius,
@@ -868,14 +1382,14 @@ const BubbleGame = (function () {
 
   /** 重现阶段：消散后在**别处**重新出现，延迟 800~1200ms 随机。 */
   function respawnReturnBubble(bubble) {
-    const text = bubble.text;
+    const profile = bubble.profile;
     const minDelay = Math.max(180, Number(CONFIG.RETURN_RESPAWN_DELAY_MIN_MS) || 800);
     const maxDelay = Math.max(minDelay, Number(CONFIG.RETURN_RESPAWN_DELAY_MAX_MS) || 1200);
     const delay = Math.round(random(minDelay, maxDelay));
     const id = window.setTimeout(function () {
       returnTimers = returnTimers.filter(function (timer) { return timer !== id; });
       if (mode !== 'return' || !canvas) return;
-      createBubble(text, {
+      createBubble(profile, {
         entering: true,
         radius: random(CONFIG.BUBBLE_MIN_RADIUS * 0.86, CONFIG.BUBBLE_MAX_RADIUS * 0.94),
         opacity: random(0.34, 0.50)
@@ -893,47 +1407,16 @@ const BubbleGame = (function () {
       const dy = y - bubble.y;
       const hitRadius = bubble.radius * bubble.scale + 10;
       if (dx * dx + dy * dy <= hitRadius * hitRadius) {
-        if (mode === 'growth') {
-          // 是否分裂由 transitionProgress 决定的概率抽取：
-          // 前期多数点击仍能正常删除，后期几乎每次都分裂。
-          const shouldSplit = Math.random() < currentSplitChance();
-          const childrenCreated = shouldSplit ? splitBubble(bubble) : 0;
-          if (childrenCreated >= CONFIG.SPLIT_MIN_CHILDREN) {
-            bubble.state = 'bursting';
-            bubble.burstElapsed = 0;
-            bubble.burstKind = 'split';
-            spawnParticles(bubble, false);
-            if (typeof callbacks.onSplit === 'function') {
-              callbacks.onSplit({ bubble: bubble, childrenCreated: childrenCreated });
-            }
-          } else if (shouldSplit) {
-            // 抽中分裂但已到性能上限：保留“删除被拒绝”的抖动反馈。
-            bubble.state = 'rejecting';
-            bubble.rejectElapsed = 0;
-            spawnParticles(bubble, true);
-            spawnRipple(bubble, true);
-            if (typeof callbacks.onReject === 'function') callbacks.onReject({ bubble: bubble });
-          } else {
-            // 未抽中分裂：这一次删除仍然生效。
-            bubble.state = 'bursting';
-            bubble.burstElapsed = 0;
-            bubble.burstKind = 'delete';
-            spawnParticles(bubble, false);
-            if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble });
-          }
+        if (mode === 'observe-select') {
+          selectForObservation(bubble);
+        } else if (mode === 'growth') {
+          handleGrowthBehaviorHit(bubble);
         } else if (mode === 'return') {
-          bubble.state = 'bursting';
-          bubble.burstElapsed = 0;
-          bubble.burstKind = 'return';
-          spawnParticles(bubble, false);
+          burstDelete(bubble, 'return');
           respawnReturnBubble(bubble);
           if (typeof callbacks.onReturnDelete === 'function') callbacks.onReturnDelete({ bubble: bubble });
         } else {
-          bubble.state = 'bursting';
-          bubble.burstElapsed = 0;
-          bubble.burstKind = 'delete';
-          spawnParticles(bubble, false);
-          if (typeof callbacks.onDelete === 'function') callbacks.onDelete({ bubble: bubble });
+          handleCalmBehaviorHit(bubble);
         }
         return true;
       }
@@ -981,6 +1464,24 @@ const BubbleGame = (function () {
   function stopNormalPhase() {
     if (normalTimer) window.clearTimeout(normalTimer);
     normalTimer = 0;
+  }
+
+  function startObserveSelection() {
+    stopGrowth();
+    stopNormalPhase();
+    clearReturnTimers();
+    settling = false;
+    observeFocusId = null;
+    mode = 'observe-select';
+    interactive = true;
+    bubbles.forEach(function (bubble) {
+      bubble.state = 'normal';
+      bubble.selected = false;
+      bubble.opacity = Math.max(0.30, Math.min(0.58, bubble.opacity));
+      bubble.vx *= 0.52;
+      bubble.vy *= 0.52;
+    });
+    start();
   }
 
   /** 「停下来看看」：逐帧阻尼，让泡泡缓慢静止。 */
@@ -1116,19 +1617,19 @@ const BubbleGame = (function () {
     const initialDelay = Math.max(0, Number(opts.initialDelayMs) || 0);
     const interval = Math.max(100, Number(opts.intervalMs) || 700);
     const requestedCount = Math.max(worries.length, Number(opts.count) || worries.length);
-    const sequenceTexts = Array.from({ length: requestedCount }, function (_, index) {
+    const sequenceProfiles = Array.from({ length: requestedCount }, function (_, index) {
       return worries[index % worries.length];
     });
-    sequenceTexts.forEach(function (text, index) {
+    sequenceProfiles.forEach(function (profile, index) {
       const id = window.setTimeout(function () {
         returnTimers = returnTimers.filter(function (timer) { return timer !== id; });
-        createBubble(text, {
+        createBubble(profile, {
           entering: true,
           radius: random(CONFIG.BUBBLE_MIN_RADIUS * 0.88, CONFIG.BUBBLE_MAX_RADIUS * 0.96),
           opacity: random(0.34, 0.50)
         });
         if (index === 0 && typeof opts.onFirst === 'function') opts.onFirst();
-        if (index === sequenceTexts.length - 1 && typeof opts.onComplete === 'function') opts.onComplete();
+        if (index === sequenceProfiles.length - 1 && typeof opts.onComplete === 'function') opts.onComplete();
       }, initialDelay + index * interval);
       returnTimers.push(id);
     });
@@ -1149,7 +1650,7 @@ const BubbleGame = (function () {
 
   function getDebugSnapshot() {
     return bubbles.map(function (bubble) {
-      return { id: bubble.id, x: bubble.x, y: bubble.y, radius: bubble.radius, state: bubble.state, text: bubble.text };
+      return { id: bubble.id, x: bubble.x, y: bubble.y, radius: bubble.radius, vx: bubble.vx, vy: bubble.vy, state: bubble.state, text: bubble.text, behaviorType: bubble.behaviorType, hitCount: bubble.hitCount, requiredHits: bubble.requiredHits, hoverReveal: bubble.hoverReveal, selected: bubble.selected };
     });
   }
 
@@ -1184,6 +1685,8 @@ const BubbleGame = (function () {
     callbacks = {};
     avoidRects = [];
     mode = 'calm';
+    observeFocusId = null;
+    pointer.active = false;
     chaosLevel = 0;
     transitionProgress = 0;
     interactive = false;
@@ -1208,6 +1711,7 @@ const BubbleGame = (function () {
     handleClick: handleClick,
     startNormalPhase: startNormalPhase,
     stopNormalPhase: stopNormalPhase,
+    startObserveSelection: startObserveSelection,
     settle: settle,
     startGrowth: startGrowth,
     stopGrowth: stopGrowth,

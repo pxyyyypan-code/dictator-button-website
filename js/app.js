@@ -1,7 +1,6 @@
 /**
  * app.js —— 初始化、事件绑定、全局数据与 UX-01~UX-14 流程协调
- * V0.5.3：延长正常删除阶段、渐变进入失控、原地爆裂清空，
- *         并在烦恼重现后交给用户主动选择「继续删除 / 停下来看看」。
+ * V0.7：强化烦恼行为差异，同时保留灵感库、主动观察与既有剧情结构。
  */
 'use strict';
 
@@ -30,7 +29,11 @@ const appData = {
   returnChoiceVisible: false,
   returnChoiceResolved: false,
   continueDeleteCount: 0,
-  returnExtraUntil: 0
+  returnExtraUntil: 0,
+  suggestionCategory: 'all',
+  selectedWorryText: '',
+  finalChoice: '',
+  observeSelected: false
 };
 
 const App = (function () {
@@ -101,6 +104,10 @@ const App = (function () {
     appData.returnChoiceResolved = false;
     appData.continueDeleteCount = 0;
     appData.returnExtraUntil = 0;
+    appData.suggestionCategory = 'all';
+    appData.selectedWorryText = '';
+    appData.finalChoice = '';
+    appData.observeSelected = false;
     BubbleGame.destroy();
   }
 
@@ -109,6 +116,27 @@ const App = (function () {
   function setHint(message) {
     const node = bind('worryHint');
     if (node) node.textContent = message || '';
+  }
+
+  function worryTexts() {
+    return appData.worries.map(function (item) { return item.text; });
+  }
+
+  function addWorryProfile(profile) {
+    if (!profile || !profile.text) return;
+    const text = String(profile.text).trim();
+    if (!text) return;
+    if (appData.worries.length >= CONFIG.MAX_WORRIES_MVP) {
+      setHint('本次体验最多记录 ' + CONFIG.MAX_WORRIES_MVP + ' 条烦恼。');
+      return;
+    }
+    if (appData.worries.some(function (item) { return item.text === text; })) {
+      setHint('这条烦恼已经记录过了。');
+      return;
+    }
+    appData.worries.push(profile);
+    setHint('已记录 ' + appData.worries.length + ' 条。');
+    renderWorries();
   }
 
   function addWorry() {
@@ -121,21 +149,20 @@ const App = (function () {
       field.focus();
       return;
     }
-    if (appData.worries.length >= CONFIG.MAX_WORRIES_MVP) {
-      setHint('本次体验最多记录 ' + CONFIG.MAX_WORRIES_MVP + ' 条烦恼。');
-      return;
-    }
-    if (appData.worries.includes(text)) {
-      setHint('这条烦恼已经记录过了。');
-      field.focus();
-      return;
-    }
 
-    appData.worries.push(text);
-    field.value = '';
-    setHint('已记录 ' + appData.worries.length + ' 条。');
-    renderWorries();
+    addWorryProfile(WorryData.createProfile(text));
+    if (appData.worries.some(function (item) { return item.text === text; })) field.value = '';
     field.focus();
+  }
+
+  function addPresetWorry(presetId) {
+    const preset = WorryData.presets.find(function (item) { return item.id === Number(presetId); });
+    if (!preset) return;
+    addWorryProfile(WorryData.createProfile(preset.text, {
+      presetId: preset.id,
+      category: preset.category,
+      behaviorType: preset.behaviorType
+    }));
   }
 
   function removeWorry(index) {
@@ -143,6 +170,40 @@ const App = (function () {
     appData.worries.splice(index, 1);
     setHint(appData.worries.length ? '已移除，共保留 ' + appData.worries.length + ' 条。' : '尚未记录烦恼。');
     renderWorries();
+  }
+
+  function renderWorryCategories() {
+    const container = bind('worryCategories');
+    if (!container) return;
+    container.innerHTML = '';
+    const all = [{ id: 'all', label: '随便看看' }].concat(WorryData.categories);
+    all.forEach(function (category) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'worry-category-chip';
+      button.textContent = category.label;
+      button.dataset.action = 'worry-category';
+      button.dataset.category = category.id;
+      button.classList.toggle('is-active', appData.suggestionCategory === category.id);
+      container.appendChild(button);
+    });
+  }
+
+  function renderWorrySuggestions(category) {
+    if (category) appData.suggestionCategory = category;
+    const container = bind('worrySuggestions');
+    if (!container) return;
+    container.innerHTML = '';
+    WorryData.examples(appData.suggestionCategory, 6).forEach(function (preset) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'worry-suggestion';
+      button.textContent = preset.text;
+      button.dataset.action = 'use-worry-preset';
+      button.dataset.presetId = String(preset.id);
+      container.appendChild(button);
+    });
+    renderWorryCategories();
   }
 
   function renderWorries() {
@@ -155,10 +216,10 @@ const App = (function () {
         li.textContent = '尚未记录烦恼';
         editable.appendChild(li);
       } else {
-        appData.worries.forEach(function (text, index) {
+        appData.worries.forEach(function (profile, index) {
           const li = document.createElement('li');
           const span = document.createElement('span');
-          span.textContent = text;
+          span.textContent = profile.text;
           const remove = document.createElement('button');
           remove.type = 'button';
           remove.className = 'worry-list__remove';
@@ -175,9 +236,9 @@ const App = (function () {
     const confirmList = bind('worryListConfirm');
     if (confirmList) {
       confirmList.innerHTML = '';
-      appData.worries.forEach(function (text) {
+      appData.worries.forEach(function (profile) {
         const li = document.createElement('li');
-        li.textContent = text;
+        li.textContent = profile.text;
         confirmList.appendChild(li);
       });
     }
@@ -267,6 +328,10 @@ const App = (function () {
       Math.max(0.01, 1 - CONFIG.BUTTON_REVEAL_CHAOS_START), 0, 1);
     const device = bind('dictatorInline');
     if (device) {
+      if (!appData.buttonUnlocked) {
+        device.style.top = '';
+        device.style.bottom = '';
+      }
       device.classList.toggle('is-visible', reveal > 0.01 || appData.buttonUnlocked);
       device.style.opacity = String(appData.buttonUnlocked ? 1 : reveal);
       device.style.transform = 'translateX(-50%) translateY(' + Math.round((1 - reveal) * 24) + 'px) scale(' + (0.90 + reveal * 0.10).toFixed(3) + ')';
@@ -299,15 +364,18 @@ const App = (function () {
    */
   function updateGrowthCopy() {
     if (appData.buttonUnlocked || appData.currentScene === 'ux-09') {
-      setContinuousCopy('DANGER · FINAL AUTHORIZATION', '紧急清除协议已开放', '它可以一次清除全部烦恼，但你无法中断执行过程。');
+      setContinuousCopy('DANGER · FINAL AUTHORIZATION', '紧急清除协议已开放', '如果你仍想让它们全部消失，可以启动最终授权。');
       setText('systemMetricValue', '最终授权');
       return;
     }
-    if (appData.transitionProgress < CONFIG.TRANSITION_TITLE_SWITCH) {
-      setContinuousCopy('DELETE TEST', '删除似乎开始失效', '有些泡泡没有消失。它们正在重新聚集。');
+    if (appData.transitionProgress < 0.28) {
+      setContinuousCopy('DELETE TEST', '点击泡泡，尝试删除烦恼', '删除测试仍在继续。');
+      setText('systemMetricValue', '响应偏差');
+    } else if (appData.transitionProgress < CONFIG.TRANSITION_TITLE_SWITCH) {
+      setContinuousCopy('DELETE TEST', '删除响应出现偏差', '系统正在重新校准……');
       setText('systemMetricValue', '出现异常');
     } else {
-      setContinuousCopy('DELETE TEST', '为什么越来越多？', '每一次删除尝试，都可能让它分裂成更多泡泡。');
+      setContinuousCopy('DELETE TEST', '为什么越来越多？', '对象数量与删除记录开始不一致。');
       setText('systemMetricValue', '逐渐失控');
     }
   }
@@ -334,8 +402,8 @@ const App = (function () {
       device.style.opacity = '1';
       device.style.transform = 'translateX(-50%) translateY(0) scale(1)';
     }
-    setText('dictatorLabel', '紧急清除协议');
-    setText('inlineButtonHint', '最终授权已开放');
+    setText('dictatorLabel', '独裁者按钮 · 最终授权');
+    setText('inlineButtonHint', '这是唯一保留在场中央的按钮。一旦按下，无法中断。');
     setText('systemMetricValue', '最终授权');
     setImmersiveStatus('');
     setImmersivePhase('ready');
@@ -379,8 +447,10 @@ const App = (function () {
         return;
       }
       const elapsed = performance.now() - appData.normalPhaseStartedAt;
-      if (elapsed >= CONFIG.NORMAL_PHASE_MIN_MS &&
-          appData.successfulDeleteCount >= CONFIG.NORMAL_DELETE_THRESHOLD) {
+      const normalGoalMet = elapsed >= CONFIG.NORMAL_PHASE_MIN_MS &&
+        appData.successfulDeleteCount >= CONFIG.NORMAL_DELETE_THRESHOLD;
+      const maxWaitReached = elapsed >= CONFIG.NORMAL_PHASE_MAX_MS;
+      if (normalGoalMet || maxWaitReached) {
         stopNormalTicker();
         beginGrowthTransition();
       }
@@ -391,8 +461,8 @@ const App = (function () {
     if (appData.growthStarted) return;
     appData.growthStarted = true;
     stopNormalTicker();
-    // 不提示“阶段切换”，只让状态栏出现第一处异常。
-    setImmersiveStatus('删除请求出现异常……');
+    // 第一次异常先发生，再由极短的系统提示接住，不直接解释原因。
+    setImmersiveStatus('响应异常');
     SceneManager.addTimer(function () {
       if (appData.currentScene === 'ux-07') SceneManager.goToId('ux-08');
     }, 420);
@@ -404,11 +474,10 @@ const App = (function () {
         appData.clickCount += 1;
       },
       onDelete: function () {
-        appData.successfulDeleteCount += 1;
         if (appData.currentScene === 'ux-07') {
+          appData.successfulDeleteCount += 1;
           setImmersiveStatus('删除成功');
         } else {
-          // 失控阶段的“这次居然删掉了”，不再报“删除成功”。
           appData.deleteAttemptCount += 1;
           setImmersiveStatus('这一次它消失了');
         }
@@ -422,8 +491,41 @@ const App = (function () {
       },
       onReject: function () {
         appData.deleteAttemptCount += 1;
-        setImmersiveStatus('它没有消失，增殖仍在继续');
+        setImmersiveStatus('响应失败');
         evaluateChaosAndUnlock();
+      },
+      onBehavior: function (effect) {
+        const noDeleteKinds = ['escape', 'return', 'stubborn', 'burst', 'pressure', 'blur'];
+        if (noDeleteKinds.includes(effect.kind)) appData.deleteAttemptCount += 1;
+        const copy = {
+          escape: '它躲开了。',
+          return: '它又在别处出现了。',
+          cluster: '附近的泡泡被牵动了。',
+          stubborn: '它裂开了一点，却还在。',
+          linked: '另一个泡泡也发生了变化。',
+          burst: '它突然移开了。',
+          pressure: '它变小了，却没有消失。',
+          blur: '先看清它，才能真正处理。',
+          'split-preview': '它消失前留下了几个分裂残影。'
+        };
+        setImmersiveStatus(copy[effect.kind] || '对象行为发生变化。');
+        syncGameStats();
+        evaluateChaosAndUnlock();
+      },
+      onObserveSelect: function (effect) {
+        if (appData.currentScene !== 'ux-11' || appData.observeSelected) return;
+        appData.observeSelected = true;
+        const scene = immersiveScene();
+        if (scene) scene.classList.add('is-focus');
+        appData.selectedWorryText = effect.text || '';
+        appData.finalChoice = '停下来看看';
+        setContinuousCopy('OBSERVATION', '先看看它', effect.text ? '“' + effect.text + '”' : '');
+        setText('systemMetricValue', '正在观察');
+        setImmersiveStatus('');
+        setText('themeFocus', effect.text ? '你停下来看到的是：“' + effect.text + '”。' : '');
+        SceneManager.addTimer(function () {
+          if (appData.currentScene === 'ux-11') SceneManager.goToId('ux-12');
+        }, CONFIG.OBSERVE_FOCUS_MS);
       },
       onReturnDelete: function () {
         appData.returnDeleteAttemptCount += 1;
@@ -491,6 +593,8 @@ const App = (function () {
   }
 
   function beginReturnSequence() {
+    const scene = immersiveScene();
+    if (scene) scene.classList.remove('is-observing', 'is-focus');
     setImmersivePhase('return');
     applyChaosVisuals(0);
     setContinuousCopy('SYSTEM ECHO', '它们正在回来', '请先看着这些烦恼重新出现。');
@@ -566,10 +670,10 @@ const App = (function () {
     const panel = bind('returnChoice');
     if (!panel) return;
     appData.returnChoiceVisible = true;
-    // 用完一次后「继续删除」不再出现，只留下「停下来看看」。
+    const exhausted = appData.continueDeleteCount >= CONFIG.MAX_CONTINUE_DELETE_COUNT;
+    setText('returnChoiceQuestion', exhausted ? '它又回来了。现在，你准备怎么做？' : '它们总会回来。你还想继续删除吗？');
     const continueButton = bind('returnContinue');
     if (continueButton) {
-      const exhausted = appData.continueDeleteCount >= CONFIG.MAX_CONTINUE_DELETE_COUNT;
       continueButton.hidden = exhausted;
       continueButton.disabled = exhausted;
     }
@@ -594,8 +698,8 @@ const App = (function () {
     appData.continueDeleteCount += 1;
     hideReturnChoice();
     appData.returnExtraUntil = performance.now() + CONFIG.RETURN_EXTRA_INTERACTION_MS;
-    setContinuousCopy('UNEXPECTED RETURN', '它还会再回来一次', '删除仍然可以继续，但结果不会改变。');
-    setImmersiveStatus('它还在这里。');
+    setContinuousCopy('UNEXPECTED RETURN', '再试一次', '你仍然可以继续点击。');
+    setImmersiveStatus('');
     BubbleGame.setMode('return');
     BubbleGame.setInteractive(true);
   }
@@ -605,45 +709,48 @@ const App = (function () {
     if (appData.currentScene !== 'ux-11') return;
     if (appData.returnChoiceResolved) return;
     appData.returnChoiceResolved = true;
+    appData.finalChoice = '停下来看看';
     appData.returnExtraUntil = 0;
     stopReturnTicker();
     hideReturnChoice();
-    BubbleGame.setInteractive(false);
-    BubbleGame.settle();
-    setContinuousCopy('UNEXPECTED RETURN', '它们仍然会回来', '删除没有让烦恼真正离开。');
-    setImmersiveStatus('');
-    SceneManager.addTimer(function () {
-      if (appData.currentScene === 'ux-11') SceneManager.goToId('ux-12');
-    }, CONFIG.RETURN_SETTLE_DELAY_MS);
+    const scene = immersiveScene();
+    if (scene) scene.classList.add('is-observing');
+    setContinuousCopy('OBSERVATION', '那就先别删了。', '选一个泡泡看看。');
+    setText('systemMetricValue', '观察');
+    setImmersiveStatus('选择一个现在最想看清的烦恼');
+    BubbleGame.startObserveSelection();
+    window.requestAnimationFrame(refreshAvoidRects);
   }
 
   /* ---------------- 主题与总结（UX-12~UX-14） ---------------- */
 
   function startThemeReadTimer() {
     const nextButton = bind('themeNext');
+    if (!nextButton) return;
+    setText('themeFocus', appData.selectedWorryText ? '你停下来看到的是：“' + appData.selectedWorryText + '”。' : '');
     const countdown = bind('themeCountdown');
-    if (!nextButton || !countdown) return;
+    if (countdown) countdown.textContent = '有些东西无法通过“删除”解决。看见它，也许就是另一种开始。';
     nextButton.disabled = true;
-    nextButton.textContent = '阅读中';
-    countdown.textContent = '先让这句话停留片刻。';
+    nextButton.textContent = '继续观察';
     SceneManager.addTimer(function () {
       if (appData.currentScene !== 'ux-12') return;
       nextButton.disabled = false;
-      nextButton.textContent = '查看体验总结';
-      countdown.textContent = '你可以继续了。';
+      nextButton.textContent = '查看体验记录';
     }, CONFIG.THEME_MIN_READ_MS);
   }
 
   function renderSummary() {
     const list = bind('summaryList');
     if (!list) return;
-    const worryText = appData.worries.length ? '“' + appData.worries.join('”“') + '”' : '那些尚未说出口的烦恼';
+    const texts = worryTexts();
+    const worryText = texts.length ? '“' + texts.join('”“') + '”' : '那些尚未说出口的烦恼';
     const rows = [
-      '你曾试图删除：' + worryText,
-      '真正消失过：' + appData.successfulDeleteCount + ' 次',
-      '失控后，你又进行了 ' + appData.deleteAttemptCount + ' 次删除尝试，并触发 ' + appData.splitCount + ' 次分裂。',
-      '它们最终仍然出现了，但已经不再像最初那样急迫。',
-      '也许需要改变的，不是它们是否存在，而是你与它们相处的方式。'
+      '本次实验对象：' + worryText,
+      '正常阶段，你真正删除了 ' + appData.successfulDeleteCount + ' 次。',
+      '失控后，你又进行了 ' + appData.deleteAttemptCount + ' 次删除尝试，并触发 ' + appData.splitCount + ' 次明显分裂。',
+      '烦恼重现后，你再次尝试了 ' + appData.returnDeleteAttemptCount + ' 次。',
+      appData.selectedWorryText ? '最后，你停下来观察了：“' + appData.selectedWorryText + '”。' : '最后，你选择停下来看看。',
+      '有些东西无法通过“删除”解决。看见它，也许就是另一种开始。'
     ];
     list.innerHTML = '';
     rows.forEach(function (text) {
@@ -672,6 +779,7 @@ const App = (function () {
     if (scene) {
       scene.style.setProperty('--chaos-level', '0');
       scene.dataset.phase = 'calm';
+      scene.classList.remove('is-observing', 'is-focus');
     }
     setImmersivePhase('calm');
     setContinuousCopy('DELETE TEST', '点击泡泡，尝试删除烦恼', '先观察它们如何消失。点击空白不会产生惩罚。');
@@ -679,10 +787,13 @@ const App = (function () {
     setText('systemMetricValue', '删除有效');
     setImmersiveStatus('');
     hideReturnChoice();
+    setText('returnChoiceQuestion', '它们总会回来。你还想继续删除吗？');
     const device = bind('dictatorInline');
     if (device) {
       device.classList.remove('is-visible', 'is-interactive');
       device.style.opacity = '0';
+      device.style.top = '';
+      device.style.bottom = '';
       device.style.transform = 'translateX(-50%) translateY(24px) scale(.9)';
     }
     const button = bind('inlineButton');
@@ -716,6 +827,7 @@ const App = (function () {
     SceneManager.registerHooks('ux-04', {
       onEnter: function () {
         renderWorries();
+        renderWorrySuggestions(appData.suggestionCategory || 'all');
         const field = document.getElementById('worry-text');
         if (field) field.focus();
       }
@@ -749,6 +861,9 @@ const App = (function () {
         appData.returnChoiceResolved = false;
         appData.continueDeleteCount = 0;
         appData.returnExtraUntil = 0;
+        appData.selectedWorryText = '';
+        appData.finalChoice = '';
+        appData.observeSelected = false;
         stopAllTickers();
         hideReturnChoice();
         resetImmersiveUi();
@@ -857,6 +972,9 @@ const App = (function () {
       case 'restart': restart(); break;
       case 'add-worry': addWorry(); break;
       case 'remove-worry': removeWorry(Number(target.dataset.index)); break;
+      case 'worry-category': renderWorrySuggestions(target.dataset.category || 'all'); break;
+      case 'refresh-worry-suggestions': renderWorrySuggestions(appData.suggestionCategory || 'all'); break;
+      case 'use-worry-preset': addPresetWorry(Number(target.dataset.presetId)); break;
       case 'trigger-inline-button': triggerInlineButton(); break;
       case 'return-continue': continueDeleting(); break;
       case 'return-stop': stopAndObserve(); break;
@@ -904,6 +1022,7 @@ const App = (function () {
     SceneManager.onChange(updateProgress);
     bindEvents();
     renderWorries();
+    renderWorrySuggestions('all');
     resetImmersiveUi();
     syncGameStats();
     SceneManager.reset();
