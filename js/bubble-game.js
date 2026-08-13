@@ -46,6 +46,18 @@ const BubbleGame = (function () {
   const hexCache = new Map();      // 颜色字符串 → rgb
   const textLineCache = new Map(); // 文本分行结果（measureText 逐字调用，很贵）
 
+  // 泡泡文字与页面同源：站酷仓耳渔阳体，回退链与 CSS 的 --ff 保持一致。
+  const CANVAS_FONT_STACK = '"Canger YuYangTi", "Microsoft YaHei", "PingFang SC", sans-serif';
+
+  /* 字体是 font-display: swap 异步加载的：先用系统字回退渲染，
+     字体到位后字形宽度变化，之前按回退字算出的分行结果会偏。
+     这里在字体就绪后清一次缓存，让分行按真实字形重算。 */
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () {
+      textLineCache.clear();
+    });
+  }
+
   function random(min, max) {
     return min + Math.random() * (max - min);
   }
@@ -1370,7 +1382,7 @@ const BubbleGame = (function () {
     ctx.fillStyle = isSoftMode() ? 'rgba(232,238,247,0.70)' : 'rgba(250,252,255,0.92)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '400 ' + fontSize + 'px "Microsoft YaHei", "PingFang SC", sans-serif';
+    ctx.font = '400 ' + fontSize + 'px ' + CANVAS_FONT_STACK;
     const maxWidth = radius * 1.45;
     const lines = wrapTextCached(text, maxWidth, fontSize);
     const lineHeight = fontSize * 1.25;

@@ -86,10 +86,23 @@
 | --- | --- |
 | `index.html` | 14 个后台 UX 节点与连续全屏交互容器 |
 | `css/style.css` | 情绪化 UI、全屏 Canvas、边缘渐红、按钮显现与空白/重现状态 |
+| `assets/fonts/` | 站酷仓耳渔阳体 W01~W05（woff2），页面与 Canvas 共用 |
 | `js/config.js` | 全部可配置参数、状态枚举与视觉容器映射 |
 | `js/scene-manager.js` | 后台场景切换、共享视觉容器、钩子与定时器清理 |
 | `js/bubble-game.js` | 泡泡生成、全屏运动、避让、分裂、清空、重现与再次出现 |
 | `js/app.js` | 数据统计、chaosLevel、后台解锁条件、连续剧情与总结 |
+
+## 字体
+
+正文字体为**站酷仓耳渔阳体**（免费商用），以 woff2 形式内置在 `assets/fonts/`，无需安装或联网。
+
+- 五个字重文件的 OS/2 都标为 `usWeightClass 400`，浏览器无法自行推断粗细层级，
+  因此在 `css/style.css` 顶部的 `@font-face` 里显式把 W01~W05 映射到 200/300/400/500/600。
+  改字重映射时改这里，不要改字体文件。
+- `--ff` 是页面唯一的字体入口；Canvas 里的泡泡文字走 `js/bubble-game.js` 的 `CANVAS_FONT_STACK`，
+  两处回退链需保持一致。
+- 字体是 `font-display: swap` 异步加载的，字形到位后泡泡分行缓存会在 `document.fonts.ready` 时清一次，
+  避免分行按回退字体的宽度算错。
 
 ## 手动验收重点
 

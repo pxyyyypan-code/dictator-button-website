@@ -6,6 +6,8 @@
 - 禁止新增后端、数据库、登录、云端保存、外部 AI/API、React/Vue 或多人联机。
 - 优先适配桌面端 16:9：1366×768、1440×900、1920×1080。
 - 阈值与时长统一放在 `js/config.js`，不得散落在业务代码中。
+- 字体统一走 `css/style.css` 的 `--ff` 与 `js/bubble-game.js` 的 `CANVAS_FONT_STACK`，
+  不要在组件或绘制代码里另写 `font-family`。
 
 ## 核心闭环
 

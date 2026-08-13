@@ -12,6 +12,53 @@
  * 尺寸遵循 AC-01：标题 ≥40pt、正文 ≥26pt、主按钮高 ≥48px。
  */
 
+/* =====================================================================
+   0. 字体：站酷仓耳渔阳体 W01~W05
+   五个字重文件的 OS/2 都标为 400，浏览器无法自行推断层级，
+   因此在 @font-face 中显式声明 200/300/400/500/600 的映射。
+   font-display: swap —— 首屏先用系统字回退，避免 0.8MB 阻塞叙事开场。
+   ===================================================================== */
+
+@font-face {
+  font-family: "Canger YuYangTi";
+  src: url("../assets/fonts/CangerYuYangTi-W01.woff2") format("woff2");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Canger YuYangTi";
+  src: url("../assets/fonts/CangerYuYangTi-W02.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Canger YuYangTi";
+  src: url("../assets/fonts/CangerYuYangTi-W03.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Canger YuYangTi";
+  src: url("../assets/fonts/CangerYuYangTi-W04.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Canger YuYangTi";
+  src: url("../assets/fonts/CangerYuYangTi-W05.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 * { box-sizing: border-box; }
 
 :root {
@@ -33,7 +80,7 @@
   --c-warn-ink: #d9a24a;    /* 提示文字：克制，不用大面积红框 */
 
   /* ---------- 字体层级 ---------- */
-  --ff: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+  --ff: "Canger YuYangTi", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
   --fs-tag: 18px;           /* 编号 / 阶段标识 */
   --fs-title: 56px;         /* 标题 ≥40pt */
   --fs-body: 35px;          /* 正文 ≥26pt */
