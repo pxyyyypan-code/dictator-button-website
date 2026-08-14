@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 380" width="420" height="380" role="presentation">
+  <!-- 口袋主体：上缘平、下缘半圆，初稿里就是这个形状 -->
+  <path d="M 40 60 L 380 60 A 170 170 0 0 1 40 60 Z" fill="#F7EEE1"/>
+  <path d="M 40 60 L 380 60" stroke="#04566C" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M 40 60 A 170 170 0 0 0 380 60" stroke="#04566C" stroke-width="7" fill="none"/>
+  <!-- 缝线：沿开口内侧走一圈虚线 -->
+  <path d="M 62 78 A 148 148 0 0 0 358 78" stroke="#0289B4" stroke-width="3"
+        stroke-dasharray="10 12" stroke-linecap="round" fill="none" opacity="0.55"/>
+  <!-- 铃铛 -->
+  <circle cx="210" cy="286" r="34" fill="#FBF5EC" stroke="#04566C" stroke-width="6"/>
+  <path d="M 178 278 L 242 278" stroke="#04566C" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="210" cy="296" r="7" fill="#04566C"/>
+  <path d="M 210 303 L 210 316" stroke="#04566C" stroke-width="6" stroke-linecap="round"/>
+</svg>

@@ -1,15 +1,28 @@
 /**
- * style.css —— 情绪化基础 UI 定调（视觉系统 + 五阶段情绪）
+ * style.css —— V0.8 视觉层：22世纪未来道具体验馆
+ *
+ * 配色整体反转：V0.7 是深蓝黑 + 冷光，V0.8 按 U1~U12 初稿改成
+ * **米白纸底 + 哆啦A梦青**，只有独裁者按钮和失控边缘保留警示红。
+ * 色值不是凭感觉调的，是从初稿位图上取样得到的，改之前先看 §1 的注释。
  *
  * 结构：
- *   1. 颜色 / 字体 / 间距 / 圆角 / 阴影 / 动效变量
- *   2. 五个情绪阶段的主题令牌（A 进入 → B 暴露 → C 失控 → D 清空 → E 重现）
- *   3. 基础排版与舞台
- *   4. 组件：按钮 / 独裁者按钮 / 输入 / 列表 / 进度 / 弹窗
- *   5. 场景专属（UX-01 / 04 / 07 / 09 / 10 / 11 / 12）
- *   6. 动效与 prefers-reduced-motion
+ *   0. 字体 @font-face
+ *   1. 令牌：颜色 / 字号 / 间距 / 圆角 / 动效
+ *   2. 基础排版与舞台
+ *   3. 通用组件：按钮 / 输入 / 进度 / 弹窗
+ *   4. u01 首页
+ *   5. u02 / u05 / u11 / u12 双栏版式
+ *   6. u03 选择烦恼
+ *   7. u04 老虎机
+ *   8. u06~u10 沉浸段（共用容器 + phase-* 换装）
+ *   9. 动效与 prefers-reduced-motion
  *
- * 尺寸遵循 AC-01：标题 ≥40pt、正文 ≥26pt、主按钮高 ≥48px。
+ * 三条硬约束（改这个文件时最容易踩）：
+ *   · canvas 不得加 border / padding，其祖先不得加 transform——会让点击坐标整体偏移；
+ *   · u06~u10 期间 canvas 及其祖先不得 display:none——挂载尺寸 <2px 会让动画循环
+ *     永久起不来而且完全静默，只能用 opacity / filter 隐藏；
+ *   · .progress 横跨视口底部，必须保持 pointer-events:none，
+ *     否则会吃掉压在它下面的 u10 出口按钮，流程永久卡死。
  */
 
 /* =====================================================================
@@ -75,37 +88,54 @@
 
 * { box-sizing: border-box; }
 
-:root {
-  /* ---------- 颜色原子 ---------- */
-  --c-void: #070912;        /* 深蓝黑背景 */
-  --c-deep: #0d1120;
-  --c-violet: #1b1a2e;      /* 紫灰蓝输入背景 */
-  --c-violet-lift: #232338;
-  --c-dora: #4a7dc8;        /* 克制的哆啦A梦蓝 */
-  --c-dora-soft: #6f9ad8;
-  --c-alert: #c02b26;       /* 独裁者按钮警示红：仅关键节点 */
-  --c-alert-lift: #e03a33;
-  --c-blank: #eef0f3;       /* 空白场景颜色 */
-  --c-blank-ink: #6b7280;
-  --c-return: #7f8ba6;      /* 重现阶段的低饱和蓝灰 */
-  --c-ink: #e8ecf4;         /* 冷灰白主文字 */
-  --c-ink-2: #97a1b8;       /* 灰蓝辅助文字 */
-  --c-ink-3: #5c6680;       /* 编号与最弱信息 */
-  --c-warn-ink: #d9a24a;    /* 提示文字：克制，不用大面积红框 */
+/* =====================================================================
+   1. 令牌
+   ===================================================================== */
 
-  /* ---------- 字体层级 ---------- */
+:root {
+  /* ---------- 颜色原子：全部取样自 U1~U12 初稿 ---------- */
+  --c-paper: #F7EEE1;         /* 主纸底，U2/U3/U5/U10/U12 的背景 */
+  --c-paper-3: #FDFBF6;       /* U5 的更亮纸底，也用于青底上的反白块 */
+  --c-paper-warm: #F9F0E1;    /* U1 入口卡片 */
+
+  --c-teal: #0289B4;          /* 主青：U4/U6 大色块、按钮 */
+  --c-teal-bright: #049CBF;   /* 纸底上的大标题与主按钮，比主青亮一档 */
+  --c-teal-mute: #0382AA;     /* U7 失控段：更闷的青，与 U6 拉开 */
+  --c-teal-deep: #04566C;     /* U8 深色标题、描边 */
+  --c-teal-ink: #018BA9;      /* U12 标题 */
+  --c-mint-soft: #DCEFF4;     /* 淡薄荷：U5 道具底盘的圆 */
+
+  --c-ink: #273944;           /* 石板墨：纸底上的深色标题（U5 第一行） */
+  --c-ink-2: #4A5C68;         /* 正文 */
+  /* 编号、STEP 标签等最弱信息。原来是 #8A98A2，纸底上只有 2.58，
+     小字过不了 WCAG AA 的 4.5。这一档是中性灰，压深不影响画面调性
+     （不像青色那样一动就跑色），所以压到刚过线。
+     青色系维持不动：量初稿 U2，它自己的小青字也只有 2.97~3.08，
+     那是这套配色的固有取舍，改深就不是初稿的样子了。 */
+  --c-ink-3: #5C6E7A;         /* 纸底 4.61 */
+
+  --c-alert: #D94636;         /* 警示红：只给独裁者按钮与注意事项 */
+  --c-alert-bright: #F5654F;  /* U7 视口边缘的红 */
+
+  /* ---------- 字体 ---------- */
   --ff: "Canger YuYangTi", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
   /* 手写体只走 .u-hand，不要在别处直接写 font-family。 */
   --ff-hand: "Qiantu Marker", "Canger YuYangTi", "Microsoft YaHei", sans-serif;
-  --fs-tag: 18px;           /* 编号 / 阶段标识 */
-  --fs-title: 56px;         /* 标题 ≥40pt */
-  --fs-body: 35px;          /* 正文 ≥26pt */
-  --fs-btn: 26px;
-  --fs-note: 22px;          /* 辅助信息 */
-  --lh-title: 1.24;
-  --lh-body: 1.62;
-  --ls-tag: 0.32em;
-  --ls-title: 0.02em;
+
+  /* 字号刻度由 assets/dev/_measure-pitch.py 量初稿得出，改之前先重跑量稿。
+     量的是**字步进**（相邻汉字的起笔间距 = 字号 ×(1+字距)），不是墨迹高度：
+     墨高会被标点和字面率带偏，同一字号下「记忆面包」能比「这个按钮，」高十来像素。
+     clamp 的中值对准 1440，两端覆盖 1366 与 1920。 */
+  --fs-tag: clamp(13px, 1.15vw, 18px);      /* ≈16px @1440 */
+  --fs-display: clamp(56px, 5.4vw, 100px);  /* ≈78px @1440；初稿步进 u02:74 u12:80 u10:82 */
+  --fs-title: clamp(30px, 3.1vw, 48px);     /* 次级标题 */
+  --fs-body: clamp(19px, 1.82vw, 28px);     /* ≈26px @1440，初稿正文步进 26 */
+  --fs-btn: clamp(20px, 1.8vw, 30px);       /* ≈26px @1440，初稿按钮字步进 26 */
+  --fs-note: clamp(14px, 1.2vw, 18px);
+  /* 量初稿两行标题的行距：u02 ≈95/74=1.29、u12 ≈96/79=1.22，取中。 */
+  --lh-display: 1.25;
+  --lh-body: 1.72;
+  --ls-tag: 0.30em;
 
   /* ---------- 间距与尺寸 ---------- */
   --sp-1: 8px;
@@ -113,151 +143,64 @@
   --sp-3: 24px;
   --sp-4: 36px;
   --sp-5: 56px;
-  --sp-6: 88px;
-  --w-content: 1100px;
-  --w-text: 900px;
-  --w-list: 760px;
+  --w-content: 1360px;
+  --w-text: 640px;
+  --scene-pad-x: clamp(40px, 5vw, 108px);
+  --scene-pad-y: clamp(36px, 5vh, 76px);
 
-  /* ---------- 圆角与阴影 ---------- */
-  --r-s: 8px;
+  /* ---------- 圆角与阴影 ----------
+     初稿是扁平风：按钮直角、卡片小圆角、只有滑轨是胶囊。
+     不要为了「好看」加大面积阴影，那会立刻破掉这套画风。 */
+  --r-s: 4px;
   --r-m: 12px;
-  --r-l: 20px;
+  --r-l: 24px;
   --r-pill: 999px;
-  --sh-soft: 0 18px 50px rgba(0, 0, 0, 0.42);
-  --sh-lift: 0 10px 28px rgba(0, 0, 0, 0.34);
-  --sh-glow: 0 0 0 1px rgba(122, 158, 214, 0.22), 0 0 32px rgba(74, 125, 200, 0.18);
-  --sh-alert: 0 0 0 1px rgba(224, 58, 51, 0.4), 0 0 46px rgba(192, 43, 38, 0.34);
+  --sh-card: 0 18px 44px rgba(39, 57, 68, 0.10);
+  --sh-lift: 0 10px 26px rgba(39, 57, 68, 0.12);
 
   /* ---------- 动效 ---------- */
   --t-fast: 160ms;
   --t-mid: 420ms;
-  --t-scene: 560ms;
+  --t-scene: 520ms;
   --t-slow: 900ms;
-  --t-breath: 3600ms;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 0.84, 0.44, 1);
 
-  /* ---------- 主题令牌：默认= 阶段A ---------- */
-  --bg: var(--c-void);
-  --bg-2: var(--c-deep);
+  /* ---------- 语义令牌：默认=纸底 ---------- */
+  --bg: var(--c-paper);
   --ink: var(--c-ink);
   --ink-dim: var(--c-ink-2);
   --ink-faint: var(--c-ink-3);
-  --panel: rgba(255, 255, 255, 0.035);
-  --line: rgba(150, 170, 210, 0.16);
-  --accent: var(--c-dora);
-  --glow: rgba(74, 125, 200, 0.16);   /* 微弱冷色光晕 */
-  --glow-size: 62vw;
-  --glow-y: 42%;
-  --density: 0;                        /* 画面密度：阶段C 递增 */
-  --scene-pad: var(--sp-6);
-}
-/* =====================================================================
-   2. 五个情绪阶段
-   用 :has() 根据当前可见场景切换主题令牌，
-   因此无需给 14 个场景标签逐个加 class，也不需要 JS 参与。
-   ===================================================================== */
-
-/* ---------- 阶段A｜进入与好奇：UX-01~03 安静、陌生、略带期待 ---------- */
-body:has(.scene--active:is([data-scene="ux-01"], [data-scene="ux-02"], [data-scene="ux-03"])) {
-  --bg: var(--c-void);
-  --glow: rgba(74, 125, 200, 0.16);
-  --glow-size: 64vw;
-  --glow-y: 40%;
-  --scene-pad: var(--sp-6);
+  --accent: var(--c-teal-bright);
+  --line: rgba(2, 137, 180, 0.24);
 }
 
-/* ---------- 阶段B｜自我暴露：UX-04~06 私人、犹豫、轻微紧张 ---------- */
-body:has(.scene--active:is([data-scene="ux-04"], [data-scene="ux-05"], [data-scene="ux-06"])) {
-  --bg: #12131f;
-  --bg-2: var(--c-violet);
-  --panel: rgba(120, 116, 168, 0.10);
-  --line: rgba(150, 145, 200, 0.20);
-  --glow: rgba(112, 104, 168, 0.17);
-  --glow-size: 46vw;
-  --glow-y: 46%;
-  --accent: var(--c-dora);
-  --scene-pad: var(--sp-5);
+/* 青底页（u04 老虎机 / u11 总结 / u06~u10 沉浸段）整体换一套语义令牌，
+   这样 .btn / .scene__tag 之类的通用组件不必为每个场景再写一遍。 */
+body[data-current-scene="u04"],
+body[data-current-scene="u11"],
+.scene--on-primary,
+.scene--slot {
+  --bg: var(--c-teal);
+  --ink: var(--c-paper);
+  --ink-dim: rgba(247, 238, 225, 0.86);
+  --ink-faint: rgba(247, 238, 225, 0.62);
+  --accent: var(--c-paper);
+  --line: rgba(247, 238, 225, 0.34);
 }
 
-/* ---------- 阶段C｜释放与失控：UX-07~09 逐级升压 ---------- */
-/* C-1 释放：色彩仍柔和 */
-body:has(.scene--active[data-scene="ux-07"]) {
-  --bg: #101526;
-  --panel: rgba(120, 150, 200, 0.09);
-  --line: rgba(150, 175, 215, 0.22);
-  --glow: rgba(80, 130, 195, 0.20);
-  --glow-size: 52vw;
-  --density: 0.34;
-  --scene-pad: var(--sp-4);
-}
+/* u11 的青比 u04 略浅一档（初稿取样 #0485AA vs #0289B4）。 */
+body[data-current-scene="u11"] { --bg: #0485AA; }
 
-/* C-2 焦虑：密度与对比升高，暖色警示渗入 */
-body:has(.scene--active[data-scene="ux-08"]) {
-  --bg: #14121c;
-  --ink-dim: #a9a2ae;
-  --panel: rgba(170, 130, 130, 0.10);
-  --line: rgba(200, 150, 145, 0.26);
-  --glow: rgba(150, 80, 78, 0.22);
-  --glow-size: 44vw;
-  --density: 0.72;
-  --scene-pad: var(--sp-3);
-}
-
-/* C-3 失控临界：画面收紧，只为红按钮让位 */
-body:has(.scene--active[data-scene="ux-09"]) {
-  --bg: #120d10;
-  --ink-dim: #a2939a;
-  --panel: rgba(180, 110, 105, 0.09);
-  --line: rgba(200, 120, 115, 0.28);
-  --glow: rgba(178, 46, 40, 0.26);
-  --glow-size: 40vw;
-  --glow-y: 54%;
-  --accent: var(--c-alert);
-  --density: 1;
-  --scene-pad: var(--sp-3);
-}
-
-/* ---------- 阶段D｜彻底清空：UX-10 空洞、失重、不确定 ---------- */
-body:has(.scene--active[data-scene="ux-10"]) {
-  --bg: var(--c-blank);
-  --bg-2: var(--c-blank);
-  --ink: #4a5160;
-  --ink-dim: var(--c-blank-ink);
-  --ink-faint: #aeb4bf;
-  --panel: rgba(0, 0, 0, 0.015);
-  --line: rgba(90, 100, 120, 0.14);
-  --accent: #8b93a3;
-  --glow: rgba(255, 255, 255, 0);
-  --density: 0;
-  --scene-pad: var(--sp-6);
-}
-
-/* ---------- 阶段E｜重现与接纳：UX-11~14 柔和、克制、释然 ---------- */
-body:has(.scene--active:is([data-scene="ux-11"], [data-scene="ux-12"],
-                           [data-scene="ux-13"], [data-scene="ux-14"])) {
-  --bg: #1a2130;
-  --bg-2: #202836;
-  --ink: #dfe5ee;
-  --ink-dim: var(--c-return);
-  --panel: rgba(170, 186, 210, 0.07);
-  --line: rgba(160, 178, 205, 0.18);
-  --accent: #6f8fc0;
-  --glow: rgba(127, 139, 166, 0.15);
-  --glow-size: 58vw;
-  --glow-y: 48%;
-  --density: 0;
-  --scene-pad: var(--sp-5);
-}
-
-/* 重现阶段逐场收束：到 UX-14 留下情绪余韵 */
-body:has(.scene--active[data-scene="ux-14"]) {
-  --bg: #151b28;
-  --glow: rgba(127, 139, 166, 0.10);
-}
+/* 沉浸段的底色由 .scene--immersive 连同 phase-* 自己掌管——它是 fixed 满屏的，
+   body 只在切场的那一帧露出来。跟着一起变，避免闪一下纸白或青。
+   u09（phase-blank）是纸底，其余四段是青底。 */
+body[data-current-scene="u06"],
+body[data-current-scene="u07"],
+body[data-current-scene="u08"] { --bg: var(--c-teal); }
 
 /* =====================================================================
-   3. 基础排版与舞台
+   2. 基础排版与舞台
    ===================================================================== */
 
 html, body {
@@ -267,12 +210,12 @@ html, body {
   font-family: var(--ff);
   color: var(--ink);
   background: var(--bg);
-  /* 阶段间的情绪过渡：底色缓慢推移，而非硬切 */
+  /* 场景之间底色缓慢推移，而不是硬切——从纸底走进青色房间的感觉。 */
   transition: background-color var(--t-slow) var(--ease), color var(--t-mid) var(--ease);
 }
 
 body {
-  overflow-x: hidden;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -286,65 +229,61 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* 冷色光晕层：未来实验装置的单一光源感 */
-body::before {
-  content: "";
-  position: fixed;
-  left: 50%;
-  top: var(--glow-y);
-  width: var(--glow-size);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle, var(--glow) 0%, transparent 68%);
-  pointer-events: none;
-  z-index: 0;
-  transition: width var(--t-slow) var(--ease), top var(--t-slow) var(--ease),
-              background var(--t-slow) var(--ease);
-}
-
-/* 展览空间的地平线：极细一道，暗示装置所在的台面 */
-body::after {
-  content: "";
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 96px;
+.u-visually-hidden {
+  position: absolute;
+  width: 1px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--line) 22%, var(--line) 78%, transparent);
-  opacity: 0.7;
-  pointer-events: none;
-  z-index: 0;
-  transition: opacity var(--t-mid) var(--ease);
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* 16:9 横向舞台（文档 §1.2） */
+.is-hidden { display: none; }
+
+/* 16:9 横向舞台。**不要用 transform: scale() 做等比缩放**——
+   .scene--immersive 的 canvas 就挂在这棵树下，祖先一旦有 transform，
+   getBoundingClientRect 与鼠标坐标就会整体错位，点不中泡泡。
+   需要留边时只改 padding / max-width。 */
 .stage {
   position: relative;
   z-index: 1;
+  display: grid;
+  place-items: center;
   width: 100%;
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--scene-pad) var(--sp-5) calc(var(--sp-6) + var(--sp-3));
-  transition: padding var(--t-slow) var(--ease);
+  padding: var(--scene-pad-y) var(--scene-pad-x);
 }
 
-/* ---------- 场景显隐：单页切换的核心（结构不变） ---------- */
+/* ---------- 场景显隐：单页切换的核心 ---------- */
 .scene {
   display: none;
   width: 100%;
   max-width: var(--w-content);
-  text-align: center;
 }
 
 .scene--active {
   display: block;
-  /* 先淡出再淡入：由 opacity + blur + translateY 组成 */
   animation: scene-in var(--t-scene) var(--ease-out) both;
 }
 
-/* 编号 / 阶段标识：最弱层级 */
+/* 站点标识：每页左上角的小字，青底页换成纸色。 */
+.site-mark {
+  position: absolute;
+  left: var(--scene-pad-x);
+  top: var(--scene-pad-y);
+  margin: 0;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--c-teal);
+}
+
+.site-mark--light { color: var(--c-paper); }
+
+/* STEP 标识：最弱层级，大字距全大写 */
 .scene__tag {
   margin: 0 0 var(--sp-3);
   font-size: var(--fs-tag);
@@ -352,264 +291,186 @@ body::after {
   letter-spacing: var(--ls-tag);
   text-transform: uppercase;
   color: var(--ink-faint);
-  transition: color var(--t-mid) var(--ease);
 }
 
-/* AC-01：标题 ≥40pt ≈ 53px */
+.scene__tag--wide { letter-spacing: 0.42em; }
+
+/* 双栏页的大标题走 --fs-display；沉浸段另有覆盖（见 §8）。 */
 .scene__title {
-  margin: 0 auto var(--sp-3);
+  margin: 0 0 var(--sp-3);
   max-width: var(--w-text);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  line-height: var(--lh-title);
-  letter-spacing: var(--ls-title);
-  color: var(--ink);
+  font-size: var(--fs-display);
+  font-weight: 500;
+  line-height: var(--lh-display);
+  letter-spacing: 0.01em;
+  color: var(--accent);
   text-wrap: balance;
-  transition: color var(--t-mid) var(--ease);
 }
 
-/* AC-01：正文 ≥26pt ≈ 35px */
+/* 标题里的每一行单独成块，才能像初稿那样两行左对齐、逐行淡入。 */
+.theme-line,
+.match__lead,
+.match__name {
+  display: block;
+}
+
 .scene__desc {
-  margin: 0 auto var(--sp-4);
+  margin: 0 0 var(--sp-4);
   max-width: var(--w-text);
   font-size: var(--fs-body);
   font-weight: 300;
   line-height: var(--lh-body);
   color: var(--ink-dim);
   text-wrap: pretty;
-  transition: color var(--t-mid) var(--ease);
 }
 
 .scene__actions {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   align-items: center;
-  justify-content: center;
   flex-wrap: wrap;
   margin-top: var(--sp-4);
 }
 
+.scene__actions--center { justify-content: center; }
+
+.page-counter {
+  font-size: var(--fs-note);
+  letter-spacing: 0.20em;
+  color: var(--ink-faint);
+}
+
 /* =====================================================================
-   4. 组件
+   3. 通用组件
    ===================================================================== */
 
-/* ---------- 普通按钮：克制，hover 仅轻微光晕 + 1~2px 位移 ---------- */
+/* ---------- 按钮：初稿是**直角**扁平块，不要加圆角和阴影 ----------
+   高度由 _measure-pitch.py 扫初稿的实心青块得出：u02 55、u10 56、u12 61、u05 63，
+   取 60；宽度靠左右内边距自然撑开（初稿的四字按钮 199 宽、26px 字 → 左右各 ≈47）。 */
 .btn {
   position: relative;
-  min-height: 56px;             /* AC-01：≥48px */
-  padding: 0 var(--sp-4);
+  min-height: 60px;
+  /* 左右内边距不用 --sp-4：初稿的四字按钮 199 宽、字 26px，
+     扣掉字与字距后每边约 44，比 36 宽出小半个字。 */
+  padding: 0 clamp(28px, 3.05vw, 58px);
   font-family: inherit;
   font-size: var(--fs-btn);
   font-weight: 400;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--ink);
-  background: var(--panel);
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: var(--r-s);
   cursor: pointer;
-  /* 点击反馈 ≤200ms（AC-03 / AC-05） */
   transition: background-color var(--t-fast) var(--ease),
               border-color var(--t-fast) var(--ease),
-              box-shadow var(--t-fast) var(--ease),
-              transform var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease),
               opacity var(--t-fast) var(--ease);
 }
 
-.btn:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
-  box-shadow: var(--sh-glow);
-}
-
-.btn:active { transform: translateY(0); }
+.btn:hover { border-color: var(--accent); }
 
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
-/* 主操作：最高层级，但仍以细边与内敛底色表达 */
+/* 主操作：实心青块 + 纸色字。 */
 .btn--primary {
-  color: #f4f7fb;
-  background: color-mix(in srgb, var(--accent) 82%, #0b0f18);
-  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--c-paper-3);
+  background: var(--c-teal-bright);
+  border-color: var(--c-teal-bright);
 }
 
 .btn--primary:hover {
-  background: color-mix(in srgb, var(--accent) 94%, #0b0f18);
+  background: var(--c-teal);
+  border-color: var(--c-teal);
 }
 
-/* 返回 / 退出：层级明确低于主操作，但始终可见可找到 */
-.btn--ghost,
-.btn:not(.btn--primary):not(.btn--danger) {
+.btn--primary:active { background: var(--c-teal-deep); border-color: var(--c-teal-deep); }
+
+/* 青底页上的主操作反过来：纸色实心块 + 青字（U11 的「查看体验记录」）。 */
+.btn--on-primary {
+  color: var(--c-teal);
+  background: var(--c-paper);
+  border-color: var(--c-paper);
+}
+
+.btn--on-primary:hover { background: var(--c-paper-3); border-color: var(--c-paper-3); }
+
+/* 次级：只有下划线，无边框无底色。 */
+.btn--link,
+.btn--ghost {
+  min-height: 44px;
+  padding: 0 var(--sp-1);
   color: var(--ink-dim);
   background: transparent;
-}
-
-.btn--ghost {
   border-color: transparent;
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--ink-dim) 40%, transparent);
-  text-underline-offset: 6px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 7px;
 }
 
+.btn--link:hover,
 .btn--ghost:hover {
-  color: var(--ink);
-  box-shadow: none;
+  color: var(--accent);
   border-color: transparent;
+}
+
+.btn--link.btn--on-primary,
+.btn--ghost.btn--on-primary {
+  color: var(--c-paper);
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn--compact {
+  min-height: 46px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-note);
 }
 
 .btn[disabled] {
   opacity: 0.34;
   cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
 }
 
-.btn[disabled]:hover { transform: none; box-shadow: none; }
+.btn[disabled]:hover { border-color: var(--line); }
 
-.is-hidden { display: none; }
-
-/* ---------- 独裁者按钮：独立样式，UX-09 的唯一视觉中心 ----------
-   危险（警示红 + 外扩红环）、诱惑（缓慢呼吸）、不可逆（按下后彻底冷却）。 */
+/* ---------- 独裁者按钮：全站唯一的红 ----------
+   危险、诱惑、不可逆。它是低多边形插画风里唯一允许发光的东西。 */
 .btn--danger {
-  min-height: 96px;
+  min-height: 72px;
   padding: 0 var(--sp-5);
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: #fff4f3;
-  background:
-    radial-gradient(120% 140% at 50% 0%, var(--c-alert-lift) 0%, var(--c-alert) 58%, #8d1b17 100%);
-  border: 1px solid color-mix(in srgb, var(--c-alert-lift) 70%, transparent);
-  border-radius: var(--r-pill);
-  box-shadow: var(--sh-alert);
-  animation: dictator-breath var(--t-breath) var(--ease) infinite;
+  font-size: var(--fs-btn);
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  color: var(--c-paper-3);
+  background: var(--c-alert);
+  border: 1px solid var(--c-alert-bright);
+  border-radius: var(--r-s);
 }
 
-.btn--danger:hover {
-  transform: translateY(-2px) scale(1.015);
-  background:
-    radial-gradient(120% 140% at 50% 0%, #f04b43 0%, var(--c-alert-lift) 58%, #a01f1a 100%);
-  box-shadow: 0 0 0 1px rgba(240, 75, 67, 0.55), 0 0 70px rgba(224, 58, 51, 0.5);
-}
+.btn--danger:hover { background: var(--c-alert-bright); }
 
-.btn--danger:active { transform: translateY(0) scale(0.99); }
-
-/* 触发后：锁定即冷却，去掉呼吸与红光，表达不可逆 */
 .btn--danger[disabled] {
   opacity: 1;
-  color: #8d8288;
-  background: #241a1c;
-  border-color: rgba(200, 120, 115, 0.20);
-  box-shadow: none;
-  animation: none;
+  color: rgba(247, 238, 225, 0.46);
+  background: rgba(217, 70, 54, 0.30);
+  border-color: rgba(217, 70, 54, 0.36);
 }
 
-/* ---------- 输入框：情绪容器 ---------- */
-.worry-input {
-  position: relative;
-  display: flex;
-  gap: var(--sp-2);
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto var(--sp-2);
-}
-
-.worry-input__field {
-  width: 560px;
-  min-height: 68px;
-  padding: 0 var(--sp-3);
-  font-family: inherit;
-  font-size: var(--fs-btn);
-  font-weight: 300;
-  color: var(--ink);
-  background: linear-gradient(180deg, var(--c-violet) 0%, #16162a 100%);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--sh-lift);
-  transition: border-color var(--t-mid) var(--ease),
-              box-shadow var(--t-mid) var(--ease);
-}
-
-.worry-input__field::placeholder {
-  color: color-mix(in srgb, var(--ink-dim) 62%, transparent);
-  font-weight: 300;
-}
-
-/* 聚焦：边缘光缓慢增强（呼吸），而非硬边高亮 */
-.worry-input__field:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
-  animation: field-breath 3200ms var(--ease) infinite;
-}
-
-/* 空输入提示：克制的暖色文字，不用大面积刺眼红框 */
+/* ---------- 提示文字 ---------- */
 .worry-hint {
-  min-height: 32px;
-  margin: 0 auto var(--sp-3);
+  min-height: 28px;
+  margin: var(--sp-2) 0 0;
   font-size: var(--fs-note);
   font-weight: 300;
   letter-spacing: 0.04em;
-  color: var(--c-warn-ink);
-  transition: color var(--t-mid) var(--ease);
+  color: var(--c-teal);
 }
 
-/* ---------- 烦恼列表 / 总结列表 ---------- */
-.worry-list, .summary-list {
-  list-style: none;
-  margin: 0 auto var(--sp-3);
-  padding: 0;
-  max-width: var(--w-list);
-  text-align: left;
-}
-
-.worry-list li, .summary-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  margin-bottom: 10px;
-  padding: 18px var(--sp-3);
-  font-size: var(--fs-btn);
-  font-weight: 300;
-  color: var(--ink);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  border-radius: var(--r-s);
-  animation: item-in var(--t-mid) var(--ease-out) both;
-  transition: background-color var(--t-fast) var(--ease);
-}
-
-.worry-list__empty {
-  justify-content: center;
-  border-left-color: transparent;
-  color: var(--ink-faint);
-  font-style: italic;
-}
-
-.worry-list__remove {
-  min-height: 40px;
-  padding: 0 var(--sp-2);
-  font-family: inherit;
-  font-size: 18px;
-  color: var(--ink-faint);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-s);
-  cursor: pointer;
-  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
-}
-
-.worry-list__remove:hover {
-  color: var(--ink-dim);
-  border-color: var(--line);
-}
-
-.worry-list--readonly li { justify-content: flex-start; }
-
-/* ---------- 进度提示：细线 + 编号 + 光点，不做后台步骤条 ---------- */
+/* ---------- 进度条 ---------- */
 .progress {
   position: fixed;
   left: 0;
@@ -623,56 +484,55 @@ body::after {
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-3);
-  font-size: 15px;
+  padding: var(--sp-3);
+  font-size: 13px;
   font-weight: 300;
   letter-spacing: var(--ls-tag);
   text-transform: uppercase;
   color: var(--ink-faint);
-  background: none;
-  border: 0;
   transition: color var(--t-mid) var(--ease), opacity var(--t-mid) var(--ease);
 }
 
-/* 细线轨道 + 随场景推进的光点（位置由 --progress-x 提供） */
 .progress::before {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: calc(var(--sp-3) + 26px);
-  width: 260px;
+  bottom: calc(var(--sp-3) + 24px);
+  width: 240px;
   height: 1px;
   transform: translateX(-50%);
-  background: linear-gradient(90deg, transparent, var(--line), transparent);
+  background: var(--line);
 }
 
 .progress::after {
   content: "";
   position: absolute;
-  left: calc(50% - 130px + 260px * var(--progress-x, 0));
-  bottom: calc(var(--sp-3) + 24px);
+  left: calc(50% - 120px + 240px * var(--progress-x, 0));
+  bottom: calc(var(--sp-3) + 22px);
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 80%, transparent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--accent);
   transition: left var(--t-slow) var(--ease), background-color var(--t-mid) var(--ease);
 }
 
-/* 阶段D 清空：进度与地平线一并隐去，只留空白 */
-body:has(.scene--active[data-scene="ux-10"]) .progress { opacity: 0; }
-body:has(.scene--active[data-scene="ux-10"])::after { opacity: 0; }
+/* 沉浸段（u06~u10）是满屏演出，底部不留任何界面元素。 */
+body:is([data-current-scene="u06"], [data-current-scene="u07"],
+        [data-current-scene="u08"], [data-current-scene="u09"],
+        [data-current-scene="u10"]) .progress {
+  opacity: 0;
+}
 
 /* ---------- 退出确认弹窗 ---------- */
 .modal {
   display: none;
   position: fixed;
   inset: 0;
+  z-index: 100;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 7, 13, 0.78);
-  backdrop-filter: blur(6px);
-  z-index: 10;
+  background: rgba(39, 57, 68, 0.42);
+  backdrop-filter: blur(4px);
 }
 
 .modal--open {
@@ -681,218 +541,1303 @@ body:has(.scene--active[data-scene="ux-10"])::after { opacity: 0; }
 }
 
 .modal__panel {
-  width: min(680px, 90vw);
+  width: min(560px, 90vw);
   padding: var(--sp-5);
   text-align: center;
-  background: linear-gradient(180deg, #171c2b 0%, #11151f 100%);
+  color: var(--c-ink);
+  background: var(--c-paper-3);
   border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  box-shadow: var(--sh-soft);
+  border-radius: var(--r-m);
+  box-shadow: var(--sh-card);
   animation: modal-in var(--t-mid) var(--ease-out) both;
 }
 
 .modal__title {
   margin: 0 0 var(--sp-2);
-  font-size: 38px;
+  font-size: var(--fs-title);
   font-weight: 500;
-  color: var(--ink);
+  color: var(--c-teal);
 }
 
 .modal__desc {
-  margin: 0 0 var(--sp-2);
-  font-size: var(--fs-btn);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-note);
   font-weight: 300;
   line-height: var(--lh-body);
-  color: var(--ink-dim);
+  color: var(--c-ink-2);
+}
+
+.modal .scene__actions { justify-content: center; margin-top: 0; }
+
+/* =====================================================================
+   4. u01 首页
+   波纹铺满视口、道具漂浮在四角、正中一张纸色卡片。
+   ===================================================================== */
+
+.scene--intro {
+  position: relative;
+  display: none;
+  min-height: 100vh;
+  place-items: center;
+}
+
+.scene--intro.scene--active {
+  display: grid;
+}
+
+/* 同心波纹由 assets/dev/_build-ui-art.py 生成成 SVG——
+   位图缩放会糊，几何图形交给矢量。 */
+.intro-ripple {
+  /* 自转的是元素本身，背景被裁在元素的盒子里——盒子若只有视口大小，
+     转起来它自己的四个直角会扫进画面，边上出现一条斜切直线。
+     所以盒子要做成**正方形**并放大到盖过视口对角线：转到任意角度时，
+     始终有一个直径 = 边长的内切圆盖住视口。
+     环距是等比的（见 _build-ui-art.py），放大不改变疏密，只影响覆盖。 */
+  --ripple-size: max(150vh, 150vw);
+
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: -2;
+  width: var(--ripple-size);
+  height: var(--ripple-size);
+  /* 用负 margin 居中而不是 translate：这里的 transform 归自转动画独占，
+     写了 translate 会被 rotate 覆盖掉。 */
+  margin-top: calc(var(--ripple-size) / -2);
+  margin-left: calc(var(--ripple-size) / -2);
+  background: url("../assets/images/ui/intro-ripple.svg") center / 100% 100% no-repeat;
+  background-color: var(--c-paper);
+  animation: ripple-turn 180s linear infinite;
+}
+
+/* 四件漂浮道具。容器在 HTML 里是空的、app.js 也不往里写东西，
+   所以这里用多层 background 摆位——不需要为装饰再造 DOM。 */
+.intro-gadgets {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  /* 用的是从 U1 裁下来的低多边形实色图，不是 assets/images/gadgets 那套细线描——
+     那套是道具图鉴用的线稿风，任意门还是紫的，摆在首页跟初稿完全两个画风。
+     尺寸与位置由 _build-ui-art.py 的连通块 bbox 折算成 vw/vh，别凭感觉调。
+     记忆面包 左中 · 竹蜻蜓 右上 · 缩小灯 中偏右 · 任意门 右下（出血到屏外） */
+  background-image:
+    url("../assets/images/ui/intro-bread.webp"),
+    url("../assets/images/ui/intro-copter.webp"),
+    url("../assets/images/ui/intro-lamp.webp"),
+    url("../assets/images/ui/intro-door.webp");
+  background-size: 14.8vw auto, 11vw auto, 4.3vw auto, 31.1vw auto;
+  /* 面包和缩小灯的横坐标比初稿各让开一截：初稿卡片只占 1672 宽的一半多，
+     我这边卡片是 min(720px,62vw)，在 1440 档相对更宽，照搬初稿坐标会被卡片压住。
+     纵坐标不动——上下关系跟初稿一致。 */
+  background-position: 4vw 45.5vh, 74.2vw 16.2vh, 66.5vw 24vh, 63.2vw 44.2vh;
+  animation: float-drift 14s var(--ease) infinite alternate;
+}
+
+.intro-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-2);
+  width: min(720px, 62vw);
+  padding: clamp(40px, 5vw, 68px) var(--sp-5) clamp(32px, 4vw, 52px);
+  font-family: inherit;
+  color: var(--c-teal);
+  background: var(--c-paper-warm);
+  border: 1px solid var(--c-teal);
+  border-radius: var(--r-l);
+  cursor: pointer;
+  box-shadow: var(--sh-card);
+  transition: background-color var(--t-mid) var(--ease),
+              border-color var(--t-mid) var(--ease);
+}
+
+.intro-card:hover { background: var(--c-paper-3); }
+
+.intro-card:focus-visible {
+  outline: 2px solid var(--c-teal);
+  outline-offset: 8px;
+}
+
+.intro-card__title {
+  font-size: clamp(34px, 3.6vw, 58px);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: 0.03em;
+}
+
+/* 初稿是两色标题：第一行近墨的深青、第二行主青。 */
+.intro-card__title:first-of-type { color: var(--c-teal-deep); }
+.intro-card__title:nth-of-type(2) { color: var(--c-teal); }
+
+.intro-card__enter {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  color: var(--c-teal-deep);
 }
 
 /* =====================================================================
-   5. 场景专属
+   5. u02 / u05 / u11 / u12 双栏版式
+   左文右图，约 50/50。四页共用一套骨架，差异靠 §5.x 的小节补。
    ===================================================================== */
 
-/* ---------- 占位框：统一为「装置待安装」的语气 ---------- */
-.placeholder-box {
-  margin: 0 auto var(--sp-3);
-  max-width: var(--w-text);
-  padding: var(--sp-4) var(--sp-3);
+.scene--split {
+  position: relative;
+  align-items: center;
+  gap: clamp(32px, 4vw, 80px);
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  min-height: min(76vh, 720px);
+  padding-top: clamp(56px, 8vh, 108px);
+}
+
+.scene--split.scene--active { display: grid; }
+
+.split__text {
+  min-width: 0;
+  align-self: center;
+}
+
+.split__visual {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  gap: var(--sp-3);
+}
+
+/* ---------- u02：低多边形哆啦A梦坐在青色圆盘上 ---------- */
+.doraemon {
+  width: min(30vw, 420px);
+  aspect-ratio: 1 / 1;
+  background: center / contain no-repeat;
+}
+
+.doraemon--sit {
+  background-image: url("../assets/images/ui/doraemon-sit.webp");
+}
+
+/* ---------- u05：匹配结果 ---------- */
+/* 初稿是两色标题：第一行石板墨、第二行青，靠这个对比把道具名顶出来。
+   两行**字号相差不大**（量到的步进 78 / 88），不是「小引导语＋大道具名」——
+   0.62em 那版把第一行压到 40，和初稿差了整整一倍。 */
+.match__lead {
+  color: var(--c-ink);
+  font-size: 1em;
+  font-weight: 400;
+}
+
+.match__name {
+  color: var(--c-teal-bright);
+  margin-top: 0.06em;
+  font-size: 1.12em;
+}
+
+/* 配对说明：右侧拉一条虚线到一个圆点，初稿里用它把「烦恼—道具」连起来。 */
+.match__formula {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.10em;
+  color: var(--c-teal);
+}
+
+.match__formula::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  min-width: 60px;
+  background: repeating-linear-gradient(90deg,
+              var(--c-teal) 0 6px, transparent 6px 14px);
+  opacity: 0.6;
+}
+
+.match__image {
+  width: min(24vw, 320px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  padding: clamp(20px, 2.4vw, 40px);
+  background: var(--c-mint-soft);
+  border-radius: 50%;
+}
+
+.match__tip {
+  margin: 0;
   font-size: var(--fs-note);
   font-weight: 300;
   letter-spacing: 0.08em;
   color: var(--ink-faint);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  transition: border-color var(--t-mid) var(--ease), background-color var(--t-mid) var(--ease);
 }
 
-.placeholder-box--canvas {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 260px;
-  /* 装置网格：密度随阶段C 的 --density 升高 */
-  background:
-    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% calc(64px - 26px * var(--density)),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / calc(64px - 26px * var(--density)) 100%,
-    var(--panel);
-  background-blend-mode: normal;
-  opacity: calc(0.5 + 0.5 * var(--density));
-}
+/* ---------- u11：个性化总结（青底纸字） ---------- */
+.scene--on-primary { color: var(--c-paper); }
 
-.placeholder-box--small {
-  padding: var(--sp-2) var(--sp-3);
-  font-size: 17px;
-}
+.scene--on-primary .scene__title { color: #F5E8D5; }
+.scene--on-primary .scene__tag { color: rgba(255, 255, 237, 0.82); }
 
-/* ---------- UX-01：安静、神秘的体验馆入口 ---------- */
-/* 标题字距缓慢收拢，像装置刚被唤醒 */
-[data-scene="ux-01"] .scene__title {
-  font-size: 64px;
-  font-weight: 300;
-  animation: title-track var(--t-slow) var(--ease-out) both;
-}
-
-[data-scene="ux-01"] .scene__tag { animation: fade-in var(--t-slow) var(--ease) both; }
-
-[data-scene="ux-01"] .scene__desc {
-  animation: fade-up var(--t-slow) var(--ease-out) 220ms both;
-}
-
-/* 独裁者按钮此刻只是远处一枚隐约线索，不构成视觉中心 */
-.hint-relic {
-  margin: var(--sp-4) auto var(--sp-3);
-  width: 168px;
-  height: 168px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 42%,
-              rgba(192, 43, 38, 0.16) 0%, rgba(192, 43, 38, 0.05) 44%, transparent 70%);
-  border: 1px solid rgba(192, 43, 38, 0.12);
-  opacity: 0.5;
-  animation: relic-breath 7s var(--ease) infinite;
-}
-
-/* ---------- UX-04：私人、犹豫的烦恼输入 ---------- */
-[data-scene="ux-04"] .scene__title,
-[data-scene="ux-05"] .scene__title { font-weight: 400; }
-
-/* 输入装置外壳：把表单包成一台记录设备 */
-[data-scene="ux-04"] .worry-input {
-  padding: var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  background: rgba(120, 116, 168, 0.05);
-  box-shadow: var(--sh-lift);
-}
-
-/* ---------- UX-07：从释放走向混乱的游戏区域占位 ---------- */
-[data-scene="ux-07"] .placeholder-box--canvas,
-[data-scene="ux-08"] .placeholder-box--canvas {
-  /* 轻微错位与模糊，仅作用于装饰层，不影响文字阅读与点击 */
-  filter: blur(calc(0.4px * var(--density)));
-}
-
-[data-scene="ux-08"] .scene__title {
-  /* 极轻错位：焦虑感，幅度控制在 1px 内以保证可读 */
-  animation: drift 5200ms var(--ease) infinite;
-}
-
-/* ---------- UX-09：危险、诱惑、不可逆 ---------- */
-/* 让按钮独占焦点：同场景其他元素退到最低存在感 */
-[data-scene="ux-09"] .scene__desc { opacity: 0.72; }
-[data-scene="ux-09"] .placeholder-box { opacity: 0.4; }
-
-[data-scene="ux-09"] .scene__actions {
-  gap: var(--sp-4);
-  margin-top: var(--sp-5);
-}
-
-/* ---------- UX-10：彻底清空 ---------- */
-/* 隐去大部分界面信息，只保留静止与留白；文字延迟浮现 */
-[data-scene="ux-10"] .scene__tag { opacity: 0; }
-
-[data-scene="ux-10"] .scene__title {
-  font-size: 44px;
-  font-weight: 200;
-  letter-spacing: 0.1em;
-  animation: fade-in 1400ms var(--ease) 900ms both;
-}
-
-[data-scene="ux-10"] .scene__desc {
-  font-size: 28px;
-  animation: fade-in 1200ms var(--ease) 1600ms both;
-}
-
-[data-scene="ux-10"] .placeholder-box {
-  background: transparent;
-  border-color: rgba(90, 100, 120, 0.12);
-  animation: fade-in 1200ms var(--ease) 2000ms both;
-}
-
-[data-scene="ux-10"] .scene__actions {
-  animation: fade-in 900ms var(--ease) 2400ms both;
-}
-
-/* ---------- UX-11：烦恼重现（更浅、更透明） ---------- */
-[data-scene="ux-11"] .worry-list li {
-  color: var(--ink-dim);
-  background: rgba(170, 186, 210, 0.05);
-  border-left-color: rgba(160, 178, 205, 0.28);
-  opacity: 0.72;
-  /* 缓慢逐条浮现，无对抗性 */
-  animation: fade-up 1600ms var(--ease-out) both;
-}
-
-[data-scene="ux-11"] .worry-list li:nth-child(2) { animation-delay: 400ms; }
-[data-scene="ux-11"] .worry-list li:nth-child(3) { animation-delay: 800ms; }
-
-[data-scene="ux-11"] .placeholder-box--canvas { opacity: 0.34; }
-
-/* ---------- UX-12：通过文字、停顿与留白表达主题 ---------- */
-[data-scene="ux-12"] .scene__title {
-  max-width: 20ch;
-  font-size: 60px;
-  font-weight: 300;
-  line-height: 1.4;
-  letter-spacing: 0.04em;
-}
-
-/* 逐句出现：每句之间留出停顿 */
-[data-scene="ux-12"] .theme-line {
-  display: block;
-  animation: fade-up 1500ms var(--ease-out) both;
-}
-
-[data-scene="ux-12"] .theme-line:nth-child(1) { animation-delay: 300ms; }
-[data-scene="ux-12"] .theme-line:nth-child(2) { animation-delay: 1900ms; }
-
-[data-scene="ux-12"] .scene__desc {
-  font-size: 26px;
-  opacity: 0.72;
-  animation: fade-in 1200ms var(--ease) 3400ms both;
-}
-
-[data-scene="ux-12"] .scene__actions {
-  margin-top: var(--sp-6);
-  animation: fade-in 1000ms var(--ease) 4000ms both;
-}
-
-/* ---------- UX-13 / UX-14：收束，保留余韵 ---------- */
-[data-scene="ux-13"] .summary-list li { border-left-color: rgba(160, 178, 205, 0.3); }
-
-[data-scene="ux-14"] .scene__title {
-  font-weight: 300;
+.summary-focus {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-body);
+  font-weight: 400;
   letter-spacing: 0.06em;
+  color: var(--c-paper);
+}
+
+.summary-body {
+  margin: 0;
+  max-width: var(--w-text);
+  font-size: var(--fs-body);
+  font-weight: 300;
+  line-height: var(--lh-body);
+  color: rgba(247, 238, 225, 0.88);
+}
+
+/* 四次元口袋：袋口虚线缝边 + 铃铛，同样是生成的 SVG。 */
+.pocket {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(30vw, 420px);
+  aspect-ratio: 420 / 380;
+  background: url("../assets/images/ui/pocket.svg") center / contain no-repeat;
+}
+
+.pocket__gadget {
+  width: 42%;
+  height: auto;
+  margin-top: 4%;
+  object-fit: contain;
+}
+
+.pocket__tag {
+  position: absolute;
+  left: 50%;
+  bottom: -14%;
+  transform: translateX(-50%);
+  padding: 6px 18px;
+  white-space: nowrap;
+  font-size: var(--fs-note);
+  letter-spacing: 0.08em;
+  color: var(--c-teal);
+  background: var(--c-paper);
+  border-radius: var(--r-pill);
+}
+
+/* ---------- u12：体验记录时间线 ---------- */
+.log-timeline {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2) 0 var(--sp-2) 78px;
+  align-self: center;
+  min-width: 0;
+}
+
+/* 竖线：贯穿所有节点，落在编号圆心上（78px 左内距 − 27px 半径 = 51px）。 */
+.log-timeline::before {
+  content: "";
+  position: absolute;
+  left: 26px;
+  top: 34px;
+  bottom: 34px;
+  width: 2px;
+  background: var(--c-teal);
+  opacity: 0.42;
+}
+
+.log-node {
+  position: relative;
+  min-height: 68px;
+  margin-bottom: var(--sp-3);
+  animation: fade-up var(--t-mid) var(--ease-out) var(--log-delay, 0ms) both;
+}
+
+.log-node:last-child { margin-bottom: 0; }
+
+.log-node__index {
+  position: absolute;
+  left: -78px;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  font-size: var(--fs-note);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--c-paper-3);
+  background: var(--c-teal);
+  border-radius: 50%;
+}
+
+.log-node__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--c-teal-ink);
+}
+
+.log-node__value {
+  display: block;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--c-ink-2);
 }
 
 /* =====================================================================
-   6. 动效
-   只使用 opacity / blur / translateY / letter-spacing / box-shadow。
-   无泡泡运动、无爆炸、无粒子、无强烈震动、无音效。
+   6. u03 选择烦恼
+   9 个大类散在四周，选中的那个飞到正中放大；细分条目在它上方成排。
+   ===================================================================== */
+
+/* 这一页的孩子**全是绝对定位**的，撑不起父级——min-height 是唯一的高度来源。
+   设成 auto 或省略都会让整块塌成 0px，九个大类挤成一条横线。 */
+.scene--pick {
+  position: relative;
+  min-height: calc(100vh - var(--scene-pad-y) * 2);
+}
+
+.scene--pick.scene--active { display: block; }
+
+/* 右下角探头的哆啦A梦。纯装饰，别挡住点击。 */
+.scene--pick::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: min(16vw, 230px);
+  aspect-ratio: 273 / 298;
+  background: url("../assets/images/ui/doraemon-peek.webp") bottom right / contain no-repeat;
+  pointer-events: none;
+}
+
+/* 九个大类：绝对定位散布在上半屏与两侧，
+   中间 30%~70% 留给放大后的那一个，左下留给标题文案。 */
+.worry-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.worry-particle {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: clamp(88px, 9vw, 132px);
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--c-teal);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform var(--t-mid) var(--ease),
+              opacity var(--t-mid) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+
+/* 图在标签上方。用 ::before 承载插画，标签仍是按钮自己的文本节点。 */
+.worry-particle::before {
+  content: "";
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: center / contain no-repeat;
+}
+
+/* 插画绑 data-category（app.js 会写 category.id），不绑 nth-child：
+   位置只是版面槽位、乱序无所谓，插画却是身份，串了就是「家庭」配错图。
+   九张图都是竖幅、比例各不相同，contain 在方框里等高不等宽——这正是要的效果。 */
+.worry-particle[data-category="C01"]::before { background-image: url("../assets/images/worries/worry-01.webp"); }
+.worry-particle[data-category="C02"]::before { background-image: url("../assets/images/worries/worry-02.webp"); }
+.worry-particle[data-category="C03"]::before { background-image: url("../assets/images/worries/worry-03.webp"); }
+.worry-particle[data-category="C04"]::before { background-image: url("../assets/images/worries/worry-04.webp"); }
+.worry-particle[data-category="C05"]::before { background-image: url("../assets/images/worries/worry-05.webp"); }
+.worry-particle[data-category="C06"]::before { background-image: url("../assets/images/worries/worry-06.webp"); }
+.worry-particle[data-category="C07"]::before { background-image: url("../assets/images/worries/worry-07.webp"); }
+.worry-particle[data-category="C08"]::before { background-image: url("../assets/images/worries/worry-08.webp"); }
+.worry-particle[data-category="C09"]::before { background-image: url("../assets/images/worries/worry-09.webp"); }
+
+/* 槽位：九个大类只能落在**五块禁区之外**。坐标是相对 .scene--pick 的百分比，
+   下面这五块是量三档截图（1366 / 1440 / 1920）取的并集，改坐标前先重量一遍：
+     · 左上  x5~24%   y3~8%    站点标识「22世纪未来道具体验馆」
+     · 中上  x33~68%  y8~15%   细分条目那排（只在选中态出现，idle 是空的，
+                                所以上一版只有选中态穿帮——两种态都得让）
+     · 中部  x40~60%  y8~60%   放大件（translate -50% + scale 1.75）连同下方确认按钮
+     · 左下  x0~48%   y62~100% STEP + 大标题 + 提示 + 自由输入
+     · 右下  x82~100% y66~100% 探头的哆啦A梦
+   一个槽位连底下那行标签实占约 10%×21%（三档下都在 ±2% 内），
+   留白按这个尺寸算，别只盯左上角坐标。
+   上一版是照初稿坐标抄的：初稿的文案块窄，我这边宽，于是站点标识、细分条目、
+   大标题三处同时被压住——三档分辨率上都能看到字叠字。 */
+.worry-particle:nth-child(1) { left: 2%;  top: 14%; }
+.worry-particle:nth-child(2) { left: 15%; top: 10%; }
+.worry-particle:nth-child(3) { left: 3%;  top: 40%; }
+.worry-particle:nth-child(4) { left: 16%; top: 38%; }
+.worry-particle:nth-child(5) { left: 52%; top: 70%; }
+.worry-particle:nth-child(6) { left: 68%; top: 2%; }
+.worry-particle:nth-child(7) { left: 86%; top: 8%; }
+.worry-particle:nth-child(8) { left: 68%; top: 30%; }
+.worry-particle:nth-child(9) { left: 87%; top: 38%; }
+
+.worry-particle:hover { transform: translateY(-6px); }
+
+.worry-particle:focus-visible {
+  outline: 2px solid var(--c-teal);
+  outline-offset: 6px;
+  border-radius: var(--r-s);
+}
+
+/* 选中的那个飞到画面正中并放大——初稿的核心动作。
+   left/top 覆盖上面的散布坐标，所以九个位置都能收敛到同一点。 */
+.worry-particle.is-active {
+  left: 50%;
+  top: 30%;
+  z-index: 2;
+  transform: translate(-50%, -50%) scale(1.75);
+  color: var(--c-teal-deep);
+  font-weight: 500;
+}
+
+.worry-particle.is-active:hover { transform: translate(-50%, -50%) scale(1.78); }
+
+/* 有人被选中时，其余的退到背景里。 */
+.worry-particles:has(.is-active) .worry-particle:not(.is-active) { opacity: 0.34; }
+
+/* 细分条目：一排横向标签，选中的加下划线。 */
+.worry-subs {
+  position: absolute;
+  left: 50%;
+  top: 8%;
+  z-index: 3;
+  display: flex;
+  gap: clamp(20px, 2.4vw, 42px);
+  transform: translateX(-50%);
+  min-height: 44px;
+}
+
+.worry-sub {
+  padding: 6px 2px 10px;
+  font-family: inherit;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--c-ink-2);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+
+.worry-sub:hover { color: var(--c-teal); }
+
+.worry-sub.is-active {
+  color: var(--c-teal);
+  font-weight: 500;
+  border-bottom-color: var(--c-teal);
+}
+
+.worry-sub:focus-visible { outline: 2px solid var(--c-teal); outline-offset: 3px; }
+
+/* 确认按钮：正中偏下，正好在放大后的插画下方。 */
+.scene--pick .scene__actions--center {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  z-index: 3;
+  margin: 0;
+  transform: translateX(-50%);
+}
+
+/* 左下角的文案块：STEP + 大标题 + 自由输入。 */
+.scene--pick .scene__tag {
+  position: absolute;
+  left: 0;
+  bottom: 30%;
+  margin: 0;
+}
+
+.scene--pick .scene__title {
+  position: absolute;
+  left: 0;
+  bottom: 16%;
+  max-width: min(48vw, 620px);
+  margin: 0;
+  font-size: clamp(30px, 3.2vw, 50px);
+}
+
+.scene--pick .worry-hint {
+  position: absolute;
+  left: 0;
+  bottom: 11%;
+  margin: 0;
+}
+
+.worry-free {
+  position: absolute;
+  left: 0;
+  bottom: 2%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* 初稿里这是一条下划线，不是输入框——所以只留底边。 */
+.worry-free__field {
+  width: min(30vw, 380px);
+  min-height: 46px;
+  padding: 0 2px;
+  font-family: inherit;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  color: var(--c-ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.worry-free__field::placeholder { color: var(--c-ink-3); }
+
+.worry-free__field:focus {
+  outline: none;
+  border-bottom-color: var(--c-teal);
+}
+
+/* 分类推测面板：常驻 DOM，由 is-visible 控制显隐。
+   用 opacity + visibility，不用 display——避免 aria-live 播报被打断。 */
+.classify-panel {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-2);
+  width: min(520px, 60vw);
+  padding: var(--sp-3);
+  transform: translateX(-50%);
+  text-align: center;
+  background: var(--c-paper-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--sh-lift);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear var(--t-mid);
+}
+
+.classify-panel.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear 0s;
+}
+
+.classify-panel__guess {
+  margin: 0;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--c-ink);
+}
+
+.classify-panel__actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+/* =====================================================================
+   7. u04 老虎机
+   满屏青底，正中一枚纸色胶囊，三列滚轮之间只用细线分隔。
+   ===================================================================== */
+
+.scene--slot {
+  position: relative;
+  display: none;
+  place-items: center;
+  align-content: center;
+  gap: var(--sp-4);
+  min-height: min(78vh, 740px);
+  text-align: center;
+}
+
+.scene--slot.scene--active { display: grid; }
+
+.scene--slot .site-mark { position: static; }
+
+.slot__lead {
+  margin: 0;
+  max-width: none;
+  font-size: var(--fs-title);
+  font-weight: 500;
+  color: var(--c-paper);
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(72vw, 900px);
+  /* 外角是胶囊、中间分隔线是直角——overflow:hidden 让内部格子被外形裁掉。 */
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  background: var(--c-paper);
+}
+
+/* 一格的高度就是滚轮窗口的高度：21 个格子叠在里面，只露出当前这一格。 */
+.slot__reel {
+  height: clamp(140px, 15vw, 200px);
+  overflow: hidden;
+  border-left: 1px solid rgba(2, 137, 180, 0.28);
+}
+
+.slot__reel:first-child { border-left: 0; }
+
+.slot__cell {
+  display: grid;
+  place-items: center;
+  height: clamp(140px, 15vw, 200px);
+}
+
+.slot__cell img {
+  width: clamp(72px, 8vw, 108px);
+  height: auto;
+  object-fit: contain;
+}
+
+/* 空位格：滚轮里那个「什么都没匹配到」的缺口。 */
+.slot__cell--empty::before {
+  content: "";
+  width: clamp(48px, 5vw, 68px);
+  height: 2px;
+  background: rgba(2, 137, 180, 0.22);
+}
+
+.slot__worry {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  color: var(--c-paper);
+}
+
+.slot__skip {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  color: var(--c-paper);
+}
+
+/* =====================================================================
+   8. u06~u10 沉浸段
+   五个逻辑场景共用这一个 section 与这一块 canvas，只靠 phase-* 换装。
+   千万不要在这里写 display:none / transform：见文件头的三条硬约束。
+   ===================================================================== */
+
+.scene--immersive {
+  --chaos-level: 0;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  overflow: hidden;
+  text-align: left;
+  color: var(--c-paper);
+  background: var(--c-teal);
+  isolation: isolate;
+  transition: background-color 1100ms var(--ease), color 600ms var(--ease);
+}
+
+/* scene-in 带 translateY，是 transform——canvas 的祖先绝不能有，
+   否则点击坐标整体偏移。所以沉浸段单独关掉入场动画。 */
+.scene--immersive.scene--active {
+  display: block;
+  animation: none;
+}
+
+.bubble-canvas {
+  display: block;
+  /* 不加 border / padding：会让位图坐标与 CSS 盒子错位。 */
+  border: 0;
+  padding: 0;
+}
+
+.bubble-canvas--interactive { cursor: pointer; }
+
+.bubble-canvas--immersive {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  transition: opacity 900ms var(--ease), filter 900ms var(--ease);
+}
+
+/* 警戒感来自整幅画面的边缘，而不是给游戏区单独画一个框。 */
+.immersive-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.immersive-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--chaos-level);
+  box-shadow: inset 0 0 0 2px var(--c-alert-bright);
+  transition: opacity 280ms linear;
+  pointer-events: none;
+}
+
+.immersive-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: calc(var(--chaos-level) * 0.7);
+  background: radial-gradient(ellipse at center,
+              transparent 52%, rgba(217, 70, 54, 0.16) 100%);
+  transition: opacity 280ms linear;
+  pointer-events: none;
+}
+
+.immersive-header {
+  position: absolute;
+  z-index: 4;
+  top: clamp(28px, 4.2vh, 56px);
+  left: clamp(32px, 4vw, 72px);
+  width: min(560px, 42vw);
+  pointer-events: none;
+  /* left/top/width 也要过渡：u08 搬去右半屏、u09 收到正中，
+     都是靠改这三个值完成的，不带过渡会硬跳。 */
+  transition: opacity 700ms var(--ease), color 700ms var(--ease),
+              left 700ms var(--ease), top 700ms var(--ease),
+              width 700ms var(--ease), margin-left 700ms var(--ease);
+}
+
+/* 左上角的道具徽标。失控阶段整块变灰，表达「效果正在减弱」。 */
+.gadget-hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--sp-3);
+  transition: opacity 700ms var(--ease), filter 700ms var(--ease);
+}
+
+.gadget-hud__icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.gadget-hud__name {
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--c-paper);
+}
+
+.gadget-hud.is-weakened {
+  opacity: 0.42;
+  filter: grayscale(1);
+}
+
+.immersive-header .scene__tag {
+  margin-bottom: 12px;
+  color: rgba(247, 238, 225, 0.60);
+}
+
+.immersive-header .scene__title {
+  max-width: none;
+  margin-bottom: 10px;
+  font-size: clamp(26px, 2.5vw, 38px);
+  font-weight: 500;
+  line-height: 1.28;
+  color: var(--c-paper);
+}
+
+.immersive-header .scene__desc {
+  max-width: none;
+  margin: 0;
+  font-size: var(--fs-note);
+  line-height: 1.6;
+  color: rgba(247, 238, 225, 0.74);
+}
+
+/* 右上角计数。三格的更新责任分散在 app.js 多处，不要拆到不同容器里。 */
+.game-hud--immersive {
+  position: absolute;
+  z-index: 5;
+  right: clamp(32px, 4vw, 72px);
+  top: clamp(72px, 9vh, 116px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  transition: opacity 500ms var(--ease);
+}
+
+.hud-pill {
+  font-size: var(--fs-note);
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  color: rgba(247, 238, 225, 0.76);
+}
+
+.hud-pill strong {
+  font-size: 1.5em;
+  font-weight: 500;
+  color: var(--c-paper);
+}
+
+.hud-pill--status strong { font-size: 1em; }
+
+.immersive-exit {
+  position: absolute;
+  z-index: 7;
+  right: clamp(32px, 4vw, 72px);
+  top: clamp(24px, 3.2vh, 42px);
+  color: rgba(247, 238, 225, 0.72);
+}
+
+.immersive-exit:hover { color: var(--c-paper); }
+
+.immersive-whisper {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: clamp(88px, 12vh, 132px);
+  min-height: 24px;
+  margin: 0;
+  transform: translateX(-50%);
+  font-size: var(--fs-note);
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  color: rgba(247, 238, 225, 0.78);
+  pointer-events: none;
+  transition: opacity 400ms var(--ease);
+}
+
+/* ---------- u08 独裁者按钮：右半屏 ---------- */
+.dictator-inline {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  bottom: clamp(28px, 4vh, 50px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  width: min(390px, 78vw);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms linear,
+              filter 460ms var(--ease),
+              transform 460ms var(--ease),
+              top 460ms var(--ease),
+              bottom 460ms var(--ease),
+              width 460ms var(--ease);
+  filter: blur(5px);
+}
+
+.dictator-inline.is-visible { filter: blur(0); }
+
+/* 完全解锁后移到右半屏——初稿 U8 是 50/50 分屏，按钮占右半。
+
+   这里**按顶边定位，不做垂直居中**。上一版写的是 top:54% + translateY(-50%)，
+   等于把「按钮块中心」钉在 54%，块自己有多高完全不进算式：
+   连标签、圆环、两行提示和红色警示，整块约 350px，在 1366×768 上是 46% 屏高，
+   顶边被顶到 31%，而右半屏的两行大标题要一直排到 42% —— 标题和红钮直接叠在一起。
+   改成顶边对齐 43%：初稿里按钮上沿正好落在 390/941 ≈ 41%，往下让 2% 给我这边
+   略宽的标题块。三档下标题底边分别是 42%(1366) / 38%(1440) / 38%(1920)，都在 43% 之上。 */
+.dictator-inline.is-interactive {
+  pointer-events: auto;
+  left: 75%;
+  top: 43%;
+  bottom: auto;
+  width: min(460px, 44vw);
+  /* 只留水平居中。JS 解锁时写的内联 transform 与这里同形，加 !important 是为了
+     压住 applyChaosVisuals 里那条带 translateY 的过渡值。 */
+  transform: translateX(-50%) !important;
+}
+
+.dictator-inline__label {
+  font-size: var(--fs-note);
+  letter-spacing: 0.26em;
+  color: rgba(247, 238, 225, 0.78);
+  text-transform: uppercase;
+}
+
+.dictator-inline__button {
+  min-height: 66px;
+  padding: 0 var(--sp-4);
+}
+
+/* 解锁后变成圆形红钮：初稿里那枚低多边形按钮的平面化身。 */
+.dictator-inline.is-interactive .dictator-inline__button {
+  display: grid;
+  place-items: center;
+  width: clamp(150px, 15vw, 200px);
+  min-width: clamp(150px, 15vw, 200px);
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+  padding: 0 var(--sp-2);
+  text-align: center;
+  line-height: 1.3;
+  font-size: var(--fs-btn);
+  border-radius: 50%;
+}
+
+/* 按住 2 秒的圆环进度。阶段 5 由 JS 推 --hold-progress（0~1），
+   现在先把静态样式定好，免得那时再动版式。 */
+.dictator-inline__ring {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: clamp(150px, 15vw, 200px);
+  aspect-ratio: 1 / 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  background: conic-gradient(var(--c-paper) calc(var(--hold-progress, 0) * 360deg),
+                             transparent 0);
+  /* 只留一圈：中间挖空，露出下面的红钮。 */
+  mask: radial-gradient(circle, transparent 0 calc(50% - 6px), #000 calc(50% - 6px));
+  -webkit-mask: radial-gradient(circle, transparent 0 calc(50% - 6px), #000 calc(50% - 6px));
+  transition: opacity var(--t-fast) linear;
+}
+
+.dictator-inline.is-interactive .dictator-inline__ring {
+  top: calc(var(--fs-note) * 1.6 + var(--sp-2));
+  opacity: 1;
+}
+
+.dictator-inline__hint,
+.dictator-inline__warn {
+  max-width: min(420px, 40vw);
+  text-align: center;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+}
+
+.dictator-inline__hint { color: rgba(247, 238, 225, 0.78); }
+
+/* 「效果为暂时性」这句是唯一的红字，初稿里也是这么处理的。 */
+.dictator-inline__warn { color: #FFD9D2; }
+
+/* ---------- u10 出口面板 ----------
+   它是通往 u11 的唯一路径，缺了会静默卡死在 u10。
+   位置固定：hover 只改颜色，绝不位移或缩放。 */
+.return-choice {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: clamp(28px, 4vh, 54px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  width: min(520px, 86vw);
+  margin-left: calc(min(520px, 86vw) / -2);
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  /* 缓慢出现：1200ms 线性淡入，避免突然弹出打断情绪。 */
+  transition: opacity 1200ms linear, visibility 0s linear 1200ms;
+}
+
+.return-choice.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 1200ms linear, visibility 0s linear 0s;
+}
+
+.return-choice .scene__tag { margin: 0; color: rgba(247, 238, 225, 0.60); }
+
+.return-choice__question {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 500;
+  color: var(--c-paper);
+}
+
+.return-choice__note {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-note);
+  font-weight: 300;
+  color: rgba(247, 238, 225, 0.74);
+}
+
+.return-choice .btn--primary {
+  color: var(--c-teal);
+  background: var(--c-paper);
+  border-color: var(--c-paper);
+}
+
+.return-choice .btn--primary:hover { background: var(--c-paper-3); border-color: var(--c-paper-3); }
+
+/* ---------- phase-*：五个阶段的换装 ----------
+   由 app.js 的 setImmersivePhase() 切换，
+   calm / growth / ready / erasing / blank / return。 */
+
+/* u07 失控：底色转闷，边缘开始渗红。 */
+.scene--immersive.phase-growth { background: var(--c-teal-mute); }
+
+/* ---- u08 最终选择：左半青（泡泡）、右半纸（决策） ----
+   初稿 U8 是硬 50/50 分屏，不是「按钮浮在青色场上」。
+   右半的纸色面板是 scene 的 ::before：泡泡仍在整幅画布上跑，
+   只是被 refreshAvoidRects 挡在左半屏，不需要改画布尺寸。 */
+.scene--immersive.phase-ready { background: var(--c-teal-mute); }
+
+.scene--immersive.phase-ready::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 50%;
+  background: var(--c-paper);
+  /* 右半屏是决策区，点击不该再穿透到画布上去删泡泡。 */
+  pointer-events: auto;
+}
+
+/* 决策页的边缘是干净的：红只留给按钮本身。 */
+.scene--immersive.phase-ready .immersive-frame::before,
+.scene--immersive.phase-ready .immersive-frame::after {
+  opacity: 0;
+}
+
+/* 文案整块搬到右半屏，翻成纸底上的深青。
+   它是 refreshAvoidRects 的第一个避让矩形，泡泡会自动让开这块。 */
+.scene--immersive.phase-ready .immersive-header {
+  left: 56%;
+  top: clamp(30px, 5.5vh, 72px);
+  width: min(38vw, 500px);
+}
+
+/* 淡出的道具徽标还占着 40px 图标 + 24px 下边距，把 STEP/标题/说明整体下推 8% 屏高，
+   说明段落于是压到 55%，正好穿过 43% 起跳的红钮。用 height:0 把盒子一并压平。
+   不用 display:none：徽标里的 data-bind 节点必须留在渲染树上（见 CLAUDE.md）。 */
+.scene--immersive.phase-ready .gadget-hud {
+  opacity: 0;
+  height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+.scene--immersive.phase-ready .immersive-header .scene__tag { color: var(--c-teal); }
+
+/* 初稿这行的字步进是 66~68，和左栏大标题只差一档，不是「小一号的副标题」。 */
+.scene--immersive.phase-ready .immersive-header .scene__title {
+  margin-bottom: var(--sp-2);
+  font-size: clamp(46px, 4.6vw, 84px);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--c-teal-deep);
+}
+
+.scene--immersive.phase-ready .immersive-header .scene__desc {
+  font-size: var(--fs-body);
+  color: var(--c-ink-2);
+}
+
+/* 按钮周围的字压在纸上，必须翻成深色，否则纸底白字直接消失。 */
+.scene--immersive.phase-ready .dictator-inline__label { color: var(--c-teal); }
+.scene--immersive.phase-ready .dictator-inline__hint { color: var(--c-ink-2); }
+.scene--immersive.phase-ready .dictator-inline__warn { color: var(--c-alert); }
+.scene--immersive.phase-ready .dictator-inline__ring {
+  background: conic-gradient(var(--c-teal-deep) calc(var(--hold-progress, 0) * 360deg),
+                             rgba(4, 86, 108, 0.16) 0);
+}
+
+.scene--immersive.phase-ready .immersive-exit { color: var(--c-teal); }
+.scene--immersive.phase-ready .immersive-exit:hover { color: var(--c-teal-deep); }
+
+/* 右上角计数是青底上的白字，落到纸上会看不见——这一页直接收起来。 */
+.scene--immersive.phase-ready .game-hud--immersive,
+.scene--immersive.phase-ready .immersive-whisper { opacity: 0; }
+
+/* u09 连续清空 / 空白：初稿 U9 是**纸底**，不是黑屏——
+   删干净之后剩下的不是虚无，是一张空白的纸。 */
+.scene--immersive.phase-erasing .game-hud--immersive,
+.scene--immersive.phase-erasing .immersive-exit,
+.scene--immersive.phase-erasing .dictator-inline,
+.scene--immersive.phase-blank .game-hud--immersive,
+.scene--immersive.phase-blank .immersive-exit,
+.scene--immersive.phase-blank .dictator-inline,
+.scene--immersive.phase-return .dictator-inline {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.scene--immersive.phase-erasing .immersive-frame::before,
+.scene--immersive.phase-erasing .immersive-frame::after,
+.scene--immersive.phase-blank .immersive-frame::before,
+.scene--immersive.phase-blank .immersive-frame::after,
+.scene--immersive.phase-return .immersive-frame::before,
+.scene--immersive.phase-return .immersive-frame::after {
+  opacity: 0;
+}
+
+.scene--immersive.phase-erasing .immersive-whisper,
+.scene--immersive.phase-blank .immersive-whisper {
+  opacity: 0;
+}
+
+.scene--immersive.phase-blank { background: var(--c-paper); }
+
+/* 空白阶段用 opacity 藏画布，**不能 display:none**——
+   尺寸归零会让动画循环永久停摆，而且完全静默。 */
+.scene--immersive.phase-blank .bubble-canvas--immersive { opacity: 0; }
+
+/* 只剩正中一句「它们消失了。」，STEP 与说明都退场。 */
+.scene--immersive.phase-erasing .immersive-header,
+.scene--immersive.phase-blank .immersive-header {
+  left: 50%;
+  top: 46%;
+  width: min(760px, 70vw);
+  margin-left: calc(min(760px, 70vw) / -2);
+  text-align: center;
+}
+
+.scene--immersive.phase-blank .immersive-header .scene__tag,
+.scene--immersive.phase-blank .immersive-header .scene__desc,
+.scene--immersive.phase-blank .gadget-hud,
+.scene--immersive.phase-erasing .gadget-hud {
+  opacity: 0;
+}
+
+/* 淡出的那几行还占着高度，会把标题往下顶：
+   道具徽标 40+24、STEP 一行 20+12，加起来近 100px，
+   于是「它们消失了。」落在 59% 屏高，初稿量出来是 48%——低了整整一行。
+   所以在这一相把它们的盒子一并压平。用 height:0 而不是 display:none：
+   这几个都是 data-bind 节点，撤出渲染树会连带影响 aria-live 的播报。 */
+.scene--immersive.phase-blank .immersive-header .scene__tag,
+.scene--immersive.phase-blank .immersive-header .scene__desc,
+.scene--immersive.phase-blank .gadget-hud {
+  height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* 上面压平之后，标题顶边就等于 header 顶边。
+   初稿 U9 标题中心在 450/941 ≈ 48%，标题行高约 5.4vh，倒推顶边 ≈ 42%。 */
+.scene--immersive.phase-blank .immersive-header { top: 42%; }
+
+.scene--immersive.phase-blank .immersive-header .scene__title {
+  font-size: var(--fs-display);
+  font-weight: 500;
+  color: var(--c-teal-bright);
+}
+
+/* ---- u10 烦恼重现 ----
+   初稿 U10 是**纸底**，不是青底：泡泡变回青色，浮在一张白纸上回来。
+   文案与出口挪到左半屏、改左对齐，右下角哆啦A梦探头看着。 */
+.scene--immersive.phase-return { background: var(--c-paper); }
+
+.scene--immersive.phase-return .bubble-canvas--immersive { opacity: 1; }
+
+/* 这一页的话全由出口面板来说，顶部 HUD 整体退场。
+   opacity 归零后 refreshAvoidRects 会自动把它排除，泡泡不会绕着空气走。 */
+.scene--immersive.phase-return .immersive-header,
+.scene--immersive.phase-return .game-hud--immersive,
+.scene--immersive.phase-return .immersive-whisper { opacity: 0; }
+
+.scene--immersive.phase-return .immersive-exit { color: var(--c-teal); opacity: 0.72; }
+.scene--immersive.phase-return .immersive-exit:hover { color: var(--c-teal-deep); }
+
+/* 出口面板：从底部居中挪到左半屏、改左对齐。
+   left/margin-left 一起改——底部居中那套是靠负 margin 顶回去的。 */
+.scene--immersive.phase-return .return-choice {
+  left: clamp(32px, 4.5vw, 84px);
+  top: 50%;
+  bottom: auto;
+  width: min(46vw, 600px);
+  margin-left: 0;
+  margin-top: -15vh;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.scene--immersive.phase-return .return-choice .scene__tag { color: var(--c-teal); }
+
+.scene--immersive.phase-return .return-choice__question {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-display);
+  font-weight: 600;
+  line-height: var(--lh-display);
+  color: var(--c-teal-bright);
+}
+
+.scene--immersive.phase-return .return-choice__note {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-body);
+  color: var(--c-ink-2);
+}
+
+/* 纸底上要实心青按钮，不能继续用青底那套「纸色实心块」。 */
+.scene--immersive.phase-return .return-choice .btn--primary {
+  margin-top: var(--sp-2);
+  color: var(--c-paper-3);
+  background: var(--c-teal);
+  border-color: var(--c-teal);
+}
+
+.scene--immersive.phase-return .return-choice .btn--primary:hover {
+  background: var(--c-teal-bright);
+  border-color: var(--c-teal-bright);
+}
+
+.scene--immersive.phase-return::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: min(15vw, 210px);
+  aspect-ratio: 273 / 298;
+  background: url("../assets/images/ui/doraemon-peek.webp") bottom right / contain no-repeat;
+  pointer-events: none;
+}
+
+/* 观察阶段（V0.7 遗留的 is-observing / is-focus，app.js 仍会摘挂）。 */
+.scene--immersive.is-observing .game-hud--immersive,
+.scene--immersive.is-observing .immersive-exit,
+.scene--immersive.is-focus .game-hud--immersive,
+.scene--immersive.is-focus .immersive-exit,
+.scene--immersive.is-focus .immersive-whisper {
+  opacity: 0 !important;
+}
+
+/* =====================================================================
+   9. 动效
    ===================================================================== */
 
 @keyframes scene-in {
-  from { opacity: 0; filter: blur(6px); transform: translateY(14px); }
-  to   { opacity: 1; filter: blur(0);   transform: translateY(0); }
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-in {
@@ -905,1082 +1850,70 @@ body:has(.scene--active[data-scene="ux-10"])::after { opacity: 0; }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes item-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes modal-in {
-  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* 标题字距缓慢收拢 */
-@keyframes title-track {
-  from { opacity: 0; letter-spacing: 0.3em; filter: blur(5px); }
-  to   { opacity: 1; letter-spacing: 0.02em; filter: blur(0); }
+/* 波纹极慢自转：几乎察觉不到，但画面不会死。 */
+@keyframes ripple-turn {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
-/* 输入聚焦：边缘光缓慢增强 */
-@keyframes field-breath {
-  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 0 rgba(74,125,200,0.28); }
-  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0 26px 2px rgba(74,125,200,0.26); }
+@keyframes float-drift {
+  from { transform: translateY(-10px); }
+  to   { transform: translateY(10px); }
 }
 
-/* 独裁者按钮：缓慢呼吸，表达诱惑 */
-@keyframes dictator-breath {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(224,58,51,0.34), 0 0 30px rgba(192,43,38,0.26); }
-  50%      { box-shadow: 0 0 0 1px rgba(224,58,51,0.52), 0 0 62px rgba(192,43,38,0.44); }
+/* =====================================================================
+   10. 分辨率适配
+   主档 1366 / 1440 / 1920 都靠 clamp 覆盖，这里只处理更矮或更窄的意外情况。
+   ===================================================================== */
+
+/* 1366×768 这一档竖向最紧：双栏页要收一收上下留白。 */
+@media (max-height: 800px) {
+  :root {
+    --scene-pad-y: clamp(24px, 3.2vh, 44px);
+  }
+  .scene--split { min-height: auto; padding-top: clamp(40px, 6vh, 72px); }
+  /* .scene--pick 的 min-height 绝不能设成 auto：它的孩子全是绝对定位的，
+     一旦撤掉最小高度，整块塌成 0px，九个大类会挤在同一条横线上。
+     矮屏只把它压到「视口减掉上下留白」，不是取消。 */
+  .scene--pick { min-height: calc(100vh - var(--scene-pad-y) * 2); }
+  .log-node { min-height: 60px; }
 }
 
-/* UX-01 隐约线索：极慢的明暗起伏 */
-@keyframes relic-breath {
-  0%, 100% { opacity: 0.36; }
-  50%      { opacity: 0.62; }
+@media (max-width: 1100px) {
+  .scene--split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-4);
+  }
+  .split__visual { order: -1; }
+  .doraemon, .pocket, .match__image { width: min(46vw, 300px); }
+  .worry-particle { width: clamp(72px, 11vw, 100px); }
+  .intro-card { width: min(90vw, 620px); }
+  .slot { width: 88vw; }
+  .immersive-header { width: min(70vw, 460px); }
+  .dictator-inline.is-interactive { left: 50%; width: min(360px, 80vw); }
 }
 
-/* 焦虑期的极轻错位：幅度 ≤1px，不影响阅读 */
-@keyframes drift {
-  0%, 100% { transform: translate(0, 0); }
-  25%      { transform: translate(0.6px, -0.4px); }
-  50%      { transform: translate(-0.5px, 0.5px); }
-  75%      { transform: translate(0.4px, 0.3px); }
-}
-
-/* ---------- prefers-reduced-motion：只保留简单淡入淡出 ---------- */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 120ms !important;
+    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
-  /* 保留最基本的场景淡入，去掉位移与模糊 */
-  .scene--active {
-    animation: fade-in 200ms linear both !important;
-  }
-
-  .btn:hover { transform: none; }
-  .btn--danger { animation: none; }
-  .btn--danger:hover { transform: none; }
-  .worry-input__field:focus { animation: none; }
-  .hint-relic { animation: none; opacity: 0.5; }
-  [data-scene="ux-08"] .scene__title { animation: none; }
-  [data-scene="ux-07"] .placeholder-box--canvas,
-  [data-scene="ux-08"] .placeholder-box--canvas { filter: none; }
-
-  /* 阶段D/E 的延迟浮现改为即时可见，避免长时间空屏 */
-  [data-scene="ux-10"] .scene__title,
-  [data-scene="ux-10"] .scene__desc,
-  [data-scene="ux-10"] .placeholder-box,
-  [data-scene="ux-10"] .scene__actions,
-  [data-scene="ux-11"] .worry-list li,
-  [data-scene="ux-12"] .theme-line,
-  [data-scene="ux-12"] .scene__desc,
-  [data-scene="ux-12"] .scene__actions {
-    animation: fade-in 200ms linear both !important;
-    opacity: 1;
-  }
-}
-
-/* ---------- 窄屏兜底：移动端仅保证不崩溃（文档 §1.3） ---------- */
-@media (max-width: 900px) {
-  :root {
-    --fs-title: 40px;
-    --fs-body: 26px;
-    --fs-btn: 22px;
-    --scene-pad: var(--sp-4);
-  }
-
-  .stage { padding: var(--sp-4) var(--sp-3) var(--sp-6); }
-  .worry-input { flex-wrap: wrap; }
-  .worry-input__field { width: 100%; }
-  [data-scene="ux-01"] .scene__title { font-size: 44px; }
-  [data-scene="ux-12"] .scene__title { font-size: 34px; }
-}
-
-/* =====================================================================
-   7. MVP 核心交互组件（M03~M06）
-   ===================================================================== */
-
-.scene--wide { max-width: 1240px; }
-
-.scene--wide .scene__title {
-  max-width: 1100px;
-  margin-bottom: 14px;
-  font-size: clamp(38px, 4.2vw, 54px);
-}
-
-.scene--wide .scene__desc {
-  max-width: 1040px;
-  margin-bottom: 20px;
-  font-size: clamp(21px, 2.2vw, 29px);
-}
-
-.scene__actions--quiet {
-  margin-top: 18px;
-  opacity: 0.82;
-}
-
-.archive-card,
-.protocol-card {
-  width: min(820px, 92vw);
-  margin: 0 auto var(--sp-4);
-  padding: var(--sp-3);
-  text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  box-shadow: var(--sh-lift);
-}
-
-.archive-card > div {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: var(--sp-2);
-  padding: 16px 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-.archive-card > div:last-child { border-bottom: 0; }
-.archive-card span { color: var(--ink-faint); font-size: 18px; letter-spacing: 0.12em; }
-.archive-card strong { color: var(--ink); font-size: 21px; font-weight: 400; }
-
-.protocol-card p {
-  position: relative;
-  margin: 0;
-  padding: 14px 10px 14px 34px;
-  font-size: 22px;
-  line-height: 1.55;
-  color: var(--ink-dim);
-  border-bottom: 1px solid var(--line);
-}
-.protocol-card p:last-child { border-bottom: 0; }
-.protocol-card p::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 24px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
-}
-
-.game-shell {
-  position: relative;
-  width: min(1180px, 94vw);
-  height: clamp(350px, 53vh, 550px);
-  margin: 0 auto;
-  overflow: hidden;
-  background: rgba(6, 10, 19, 0.54);
-  border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  box-shadow: var(--sh-soft), inset 0 0 80px rgba(50, 90, 150, 0.06);
-  isolation: isolate;
-}
-
-.game-shell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
-  z-index: 4;
-}
-
-.game-shell--growth {
-  background: rgba(17, 7, 12, 0.62);
-  box-shadow: var(--sh-soft), inset 0 0 100px rgba(166, 50, 55, 0.09);
-}
-
-.game-shell--soft {
-  background: rgba(25, 33, 48, 0.42);
-  box-shadow: 0 18px 60px rgba(0,0,0,0.24), inset 0 0 90px rgba(110, 145, 190, 0.05);
-}
-
-.bubble-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  cursor: default;
-  touch-action: none;
-  user-select: none;
-}
-
-.bubble-canvas--interactive { cursor: crosshair; }
-.bubble-canvas--interactive:active { cursor: grabbing; }
-
-.game-hud {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  top: 16px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  pointer-events: none;
-}
-
-.hud-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 36px;
-  padding: 0 14px;
-  font-size: 15px;
-  letter-spacing: 0.06em;
-  color: rgba(230, 238, 251, 0.74);
-  background: rgba(6, 10, 18, 0.58);
-  border: 1px solid rgba(145, 170, 210, 0.17);
-  border-radius: var(--r-pill);
-  backdrop-filter: blur(10px);
-}
-
-.hud-pill strong { color: #f4f7fc; font-size: 18px; font-weight: 500; }
-.hud-pill--status { margin-left: auto; color: rgba(180, 205, 238, 0.86); }
-.hud-pill--alert {
-  margin-left: auto;
-  color: rgba(247, 185, 184, 0.92);
-  border-color: rgba(210, 90, 94, 0.30);
-  background: rgba(60, 16, 24, 0.58);
-}
-
-.generation-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 22px;
-  pointer-events: none;
-  color: rgba(222, 232, 247, 0.78);
-  font-size: 18px;
-  letter-spacing: 0.10em;
-  text-shadow: 0 0 22px rgba(90, 140, 210, 0.42);
-}
-
-.generation-ring {
-  width: 82px;
-  height: 82px;
-  border-radius: 50%;
-  border: 1px solid rgba(120, 160, 220, 0.24);
-  border-top-color: rgba(190, 220, 255, 0.85);
-  box-shadow: 0 0 30px rgba(70, 120, 190, 0.20);
-  animation: generation-spin 1600ms linear infinite;
-}
-
-.btn--compact {
-  min-height: 58px;
-  padding: 0 26px;
-  font-size: 20px;
-  letter-spacing: 0.06em;
-}
-
-.dictator-device {
-  position: relative;
-  width: 280px;
-  height: 280px;
-  margin: 4px auto 12px;
-}
-
-.dictator-device__ring,
-.dictator-device__core {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.dictator-device__ring {
-  width: 100%;
-  height: 100%;
-  border: 1px solid rgba(220, 78, 72, 0.28);
-  box-shadow: 0 0 80px rgba(192, 43, 38, 0.16), inset 0 0 80px rgba(192, 43, 38, 0.08);
-  animation: device-ring 4600ms var(--ease) infinite;
-}
-
-.dictator-device__ring::before,
-.dictator-device__ring::after {
-  content: "";
-  position: absolute;
-  inset: 22px;
-  border-radius: inherit;
-  border: 1px dashed rgba(231, 105, 98, 0.26);
-}
-.dictator-device__ring::after { inset: 54px; animation: device-ring-reverse 5200ms linear infinite; }
-
-.dictator-device__core {
-  width: 122px;
-  height: 122px;
-  background: radial-gradient(circle at 48% 35%, #ff8d84 0%, #e23e37 20%, #b5211d 58%, #4f0d0b 100%);
-  border: 2px solid rgba(255, 184, 177, 0.40);
-  box-shadow: 0 0 0 14px rgba(100, 14, 13, 0.30), 0 0 74px rgba(224, 58, 51, 0.52);
-  animation: dictator-breath var(--t-breath) var(--ease) infinite;
-}
-
-.clear-field {
-  position: relative;
-  width: 260px;
-  height: 100px;
-  margin: 38px auto;
-}
-
-.clear-field span {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: rgba(100, 110, 128, 0.34);
-  transform: translate(-50%, -50%);
-  animation: clear-pulse 1400ms var(--ease) infinite;
-}
-.clear-field span:nth-child(2) { animation-delay: 220ms; }
-.clear-field span:nth-child(3) { animation-delay: 440ms; }
-
-@keyframes generation-spin { to { transform: rotate(360deg); } }
-@keyframes device-ring {
-  0%, 100% { transform: translate(-50%, -50%) rotate(0) scale(0.96); opacity: 0.55; }
-  50% { transform: translate(-50%, -50%) rotate(120deg) scale(1.03); opacity: 1; }
-}
-@keyframes device-ring-reverse { to { transform: rotate(-360deg); } }
-@keyframes clear-pulse {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-  45% { opacity: 0.65; }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(3.2); }
-}
-
-body:has(.scene--active[data-scene="ux-10"]) .stage {
-  background: radial-gradient(circle at center, rgba(255,255,255,0.82), transparent 42%);
-}
-
-body:has(.scene--active[data-scene="ux-10"]) .clear-field {
-  animation: fade-in 500ms var(--ease) both;
-}
-
-@media (max-height: 820px) and (min-width: 901px) {
-  :root { --fs-title: 46px; --fs-body: 26px; --scene-pad: 32px; }
-  .stage { align-items: flex-start; padding-top: 34px; }
-  .game-shell { height: clamp(310px, 48vh, 430px); }
-  .scene--wide .scene__desc { margin-bottom: 12px; }
-  .scene__actions { margin-top: 18px; }
-}
-
-@media (max-width: 900px) {
-  .game-shell { width: 96vw; height: 52vh; min-height: 330px; }
-  .game-hud { flex-wrap: wrap; }
-  .hud-pill--status, .hud-pill--alert { margin-left: 0; }
-  .archive-card > div { grid-template-columns: 1fr; gap: 6px; }
-  .dictator-device { width: 210px; height: 210px; }
-  .dictator-device__core { width: 96px; height: 96px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .generation-ring,
-  .dictator-device__ring,
-  .dictator-device__ring::after,
-  .dictator-device__core,
-  .clear-field span { animation: none !important; }
-}
-
-/* =====================================================================
-   8. V0.5 连续全屏交互（UX-07～UX-11）
-   后台节点继续推进，前台始终保留同一个 Canvas 与空间。
-   ===================================================================== */
-
-body[data-current-scene="ux-07"],
-body[data-current-scene="ux-08"],
-body[data-current-scene="ux-09"] {
-  --bg: #0d111d;
-  --bg-2: #101522;
-  --ink: #e8ecf4;
-  --ink-dim: #99a2b5;
-  --ink-faint: #687289;
-  --line: rgba(145, 170, 210, 0.16);
-  --glow: rgba(72, 116, 180, 0.12);
-  --scene-pad: 0px;
-}
-
-body[data-current-scene="ux-10"] {
-  --bg: #eef0f3;
-  --bg-2: #eef0f3;
-  --ink: #5a616f;
-  --ink-dim: #8b919d;
-  --glow: rgba(255, 255, 255, 0);
-  --scene-pad: 0px;
-}
-
-body[data-current-scene="ux-11"] {
-  --bg: #1a2130;
-  --bg-2: #202836;
-  --ink: #dfe5ee;
-  --ink-dim: #7f8ba6;
-  --glow: rgba(127, 139, 166, 0.12);
-  --scene-pad: 0px;
-}
-
-body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
-        [data-current-scene="ux-09"], [data-current-scene="ux-10"],
-        [data-current-scene="ux-11"]) {
-  overflow: hidden;
-}
-
-body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
-        [data-current-scene="ux-09"], [data-current-scene="ux-10"],
-        [data-current-scene="ux-11"])::after,
-body:is([data-current-scene="ux-07"], [data-current-scene="ux-08"],
-        [data-current-scene="ux-09"], [data-current-scene="ux-10"],
-        [data-current-scene="ux-11"]) .progress {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.scene--alias { display: none !important; }
-
-.scene--immersive {
-  --chaos-level: 0;
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  overflow: hidden;
-  text-align: left;
-  background: rgba(7, 10, 17, 0.30);
-  isolation: isolate;
-  transition: background-color 1100ms var(--ease), color 600ms var(--ease);
-}
-
-.scene--immersive.scene--active {
-  display: block;
-  animation: none;
-}
-
-.bubble-canvas--immersive {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  transition: opacity 900ms var(--ease), filter 900ms var(--ease);
-}
-
-.immersive-frame {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.immersive-frame::before,
-.immersive-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  transition: opacity 280ms linear;
-}
-
-/* 警戒感来自整幅画面的边缘，而非单独的游戏框。 */
-.immersive-frame::before {
-  opacity: var(--chaos-level);
-  box-shadow:
-    inset 0 0 0 2px rgba(220, 62, 66, 0.58),
-    inset 0 0 74px 8px rgba(186, 39, 48, 0.36);
-}
-
-.immersive-frame::after {
-  opacity: var(--chaos-level);
-  background:
-    radial-gradient(ellipse at center, transparent 45%, rgba(130, 18, 28, 0.09) 72%, rgba(110, 12, 22, 0.32) 100%);
-  box-shadow: inset 0 0 190px rgba(180, 34, 42, 0.22);
-}
-
-.immersive-header {
-  position: absolute;
-  z-index: 4;
-  top: clamp(34px, 5.2vh, 68px);
-  left: 50%;
-  width: min(920px, 76vw);
-  transform: translateX(-50%);
-  text-align: center;
-  pointer-events: none;
-  transition: opacity 700ms var(--ease), transform 700ms var(--ease), color 700ms var(--ease);
-}
-
-.immersive-header .scene__tag {
-  margin-bottom: 14px;
-  font-size: clamp(13px, 1.1vw, 17px);
-  color: rgba(150, 162, 188, 0.70);
-}
-
-.immersive-header .scene__title {
-  max-width: none;
-  margin-bottom: 12px;
-  font-size: clamp(36px, 4vw, 58px);
-  line-height: 1.18;
-  text-shadow: 0 0 30px rgba(10, 14, 24, 0.66);
-}
-
-.immersive-header .scene__desc {
-  max-width: none;
-  margin: 0;
-  font-size: clamp(17px, 1.7vw, 25px);
-  line-height: 1.55;
-  color: rgba(184, 190, 206, 0.78);
-  text-shadow: 0 2px 20px rgba(5, 8, 15, 0.85);
-}
-
-.game-hud--immersive {
-  left: clamp(24px, 3vw, 54px);
-  right: auto;
-  top: auto;
-  bottom: clamp(28px, 4vh, 52px);
-  z-index: 5;
-  width: auto;
-  max-width: min(740px, 70vw);
-  transition: opacity 500ms var(--ease), transform 500ms var(--ease);
-}
-
-.game-hud--immersive .hud-pill--status {
-  margin-left: 0;
-}
-
-.immersive-exit {
-  position: absolute;
-  z-index: 7;
-  right: clamp(22px, 3vw, 52px);
-  top: clamp(20px, 3vh, 38px);
-  min-height: 42px;
-  padding: 0 8px;
-  font-size: 16px;
-  opacity: 0.72;
-}
-
-.dictator-inline {
-  position: absolute;
-  z-index: 9;
-  left: 50%;
-  bottom: clamp(28px, 4vh, 50px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: min(390px, 78vw);
-  opacity: 0;
-  pointer-events: none;
-  transform-origin: 50% 100%;
-  transition: opacity 300ms linear,
-              filter 460ms var(--ease),
-              transform 460ms var(--ease),
-              top 460ms var(--ease),
-              bottom 460ms var(--ease),
-              width 460ms var(--ease);
-  filter: blur(5px);
-}
-
-.dictator-inline.is-visible { filter: blur(0); }
-.dictator-inline.is-interactive {
-  pointer-events: auto;
-  top: 67%;
-  bottom: auto;
-  width: min(560px, 84vw);
-  transform: translate(-50%, -50%) scale(1) !important;
-}
-
-.dictator-inline::before {
-  content: none;
-}
-
-.dictator-inline.is-interactive::before {
-  content: '';
-  position: absolute;
-  inset: 24px 50% auto 50%;
-  width: clamp(220px, 26vw, 330px);
-  height: clamp(220px, 26vw, 330px);
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 40%, rgba(255, 173, 168, 0.26) 0%, rgba(240, 73, 63, 0.12) 26%, rgba(217, 54, 45, 0.06) 48%, rgba(6, 7, 16, 0) 72%);
-  filter: blur(6px);
-  pointer-events: none;
-}
-
-.dictator-inline__label {
-  font-size: 13px;
-  letter-spacing: 0.26em;
-  color: rgba(229, 151, 153, 0.78);
-  text-transform: uppercase;
-}
-
-.dictator-inline.is-interactive .dictator-inline__label {
-  position: relative;
-  z-index: 1;
-  font-size: 14px;
-  letter-spacing: 0.34em;
-  color: rgba(255, 219, 219, 0.94);
-  text-shadow: 0 0 12px rgba(255, 124, 113, 0.30);
-}
-
-.dictator-inline__button {
-  min-height: 72px;
-  padding: 0 38px;
-  font-size: clamp(20px, 2vw, 27px);
-  letter-spacing: 0.10em;
-}
-
-.dictator-inline.is-interactive .dictator-inline__button {
-  position: relative;
-  z-index: 1;
-  width: clamp(188px, 19vw, 236px);
-  min-width: clamp(188px, 19vw, 236px);
-  aspect-ratio: 1 / 1;
-  min-height: 0;
-  padding: 0 24px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  line-height: 1.3;
-  font-size: clamp(26px, 2.2vw, 34px);
-  letter-spacing: 0.06em;
-  background:
-    radial-gradient(135% 135% at 50% 26%, #ffd2c9 0%, #ff8f77 12%, #ef523f 34%, #c92d26 63%, #711714 100%);
-  border: 2px solid rgba(255, 214, 206, 0.55);
-  box-shadow:
-    0 0 0 8px rgba(120, 18, 16, 0.22),
-    0 0 0 18px rgba(196, 49, 41, 0.14),
-    0 20px 48px rgba(0, 0, 0, 0.34),
-    0 0 84px rgba(221, 61, 52, 0.46),
-    inset 0 4px 16px rgba(255, 255, 255, 0.22),
-    inset 0 -14px 26px rgba(90, 12, 10, 0.38);
-}
-
-.dictator-inline.is-interactive .dictator-inline__button::before {
-  content: '';
-  position: absolute;
-  inset: 16px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 232, 226, 0.28);
-  pointer-events: none;
-}
-
-.dictator-inline.is-interactive .dictator-inline__button::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 12px);
-  width: clamp(160px, 20vw, 240px);
-  height: 12px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: radial-gradient(circle at center, rgba(235, 76, 64, 0.42) 0%, rgba(235, 76, 64, 0.14) 44%, rgba(235, 76, 64, 0) 74%);
-  filter: blur(7px);
-  pointer-events: none;
-}
-
-.dictator-inline__button[disabled] {
-  opacity: 0.48;
-  border-color: rgba(190, 72, 76, 0.28);
-  background: rgba(74, 23, 30, 0.48);
-  animation: none;
-}
-
-.dictator-inline__hint {
-  min-height: 20px;
-  font-size: 14px;
-  letter-spacing: 0.10em;
-  color: rgba(226, 175, 177, 0.72);
-}
-
-.dictator-inline.is-interactive .dictator-inline__hint {
-  position: relative;
-  z-index: 1;
-  max-width: min(420px, 80vw);
-  min-height: 38px;
-  text-align: center;
-  font-size: 13px;
-  line-height: 1.6;
-  letter-spacing: 0.14em;
-  color: rgba(246, 216, 217, 0.82);
-}
-
-.immersive-whisper {
-  position: absolute;
-  z-index: 6;
-  left: 50%;
-  bottom: clamp(112px, 15vh, 150px);
-  min-height: 26px;
-  margin: 0;
-  transform: translateX(-50%);
-  font-size: clamp(15px, 1.4vw, 20px);
-  letter-spacing: 0.08em;
-  color: rgba(228, 233, 242, 0.74);
-  text-shadow: 0 2px 18px rgba(0,0,0,0.72);
-  pointer-events: none;
-  transition: opacity 400ms var(--ease), color 400ms var(--ease);
-}
-
-/* 增殖阶段：只让边缘与信息逐渐转暖，不进行整屏硬切。 */
-.scene--immersive.phase-growth .immersive-header .scene__title,
-.scene--immersive.phase-ready .immersive-header .scene__title {
-  color: color-mix(in srgb, #e8ecf4 72%, #ef8f93 28%);
-}
-
-.scene--immersive.phase-ready .immersive-frame::before,
-.scene--immersive.phase-ready .immersive-frame::after {
-  opacity: 1;
-}
-
-.scene--immersive.phase-erasing .game-hud--immersive,
-.scene--immersive.phase-erasing .immersive-exit,
-.scene--immersive.phase-erasing .dictator-inline,
-.scene--immersive.phase-blank .game-hud--immersive,
-.scene--immersive.phase-blank .immersive-exit,
-.scene--immersive.phase-blank .dictator-inline,
-.scene--immersive.phase-return .dictator-inline {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-/* 重现阶段仍需显示「删除尝试 / 当前泡泡 / 系统状态」，只压低存在感。 */
-.scene--immersive.phase-return .game-hud--immersive {
-  opacity: 0.72;
-}
-
-.scene--immersive.phase-erasing .immersive-frame::before,
-.scene--immersive.phase-erasing .immersive-frame::after,
-.scene--immersive.phase-blank .immersive-frame::before,
-.scene--immersive.phase-blank .immersive-frame::after,
-.scene--immersive.phase-return .immersive-frame::before,
-.scene--immersive.phase-return .immersive-frame::after {
-  opacity: 0;
-}
-
-.scene--immersive.phase-erasing .immersive-header {
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.scene--immersive.phase-erasing .immersive-header .scene__title {
-  color: rgba(225, 227, 232, 0.84);
-}
-
-.scene--immersive.phase-erasing .immersive-whisper,
-.scene--immersive.phase-blank .immersive-whisper {
-  opacity: 0;
-}
-
-.scene--immersive.phase-blank {
-  background: #eef0f3;
-}
-
-.scene--immersive.phase-blank .bubble-canvas--immersive {
-  opacity: 0;
-  filter: brightness(1.6) saturate(0);
-}
-
-.scene--immersive.phase-blank .immersive-header {
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.scene--immersive.phase-blank .immersive-header .scene__tag,
-.scene--immersive.phase-blank .immersive-header .scene__desc {
-  opacity: 0;
-}
-
-.scene--immersive.phase-blank .immersive-header .scene__title {
-  color: rgba(88, 94, 105, 0.66);
-  text-shadow: none;
-  font-weight: 300;
-}
-
-.scene--immersive.phase-return {
-  background: rgba(22, 29, 43, 0.54);
-}
-
-.scene--immersive.phase-return .bubble-canvas--immersive {
-  opacity: 1;
-  filter: none;
-}
-
-.scene--immersive.phase-return .immersive-header {
-  top: clamp(42px, 7vh, 82px);
-}
-
-.scene--immersive.phase-return .immersive-header .scene__title {
-  color: rgba(224, 230, 239, 0.92);
-}
-
-.scene--immersive.phase-return .immersive-exit {
-  opacity: 0.54;
-}
-
-/* ---------- 重现阶段的主动选择（§五） ---------- */
-/*
- * 位置固定：面板与两个按钮都不随 hover 变化尺寸或位移，
- * hover 只改变背景色、边框、发光与透明度。
- */
-.return-choice {
-  position: absolute;
-  z-index: 8;
-  left: 50%;
-  bottom: clamp(28px, 4vh, 54px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  width: min(520px, 86vw);
-  margin-left: calc(min(520px, 86vw) / -2);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  /* 缓慢出现：1200ms 线性淡入，避免突然弹出打断情绪 */
-  transition: opacity 1200ms linear, visibility 0s linear 1200ms;
-}
-
-.return-choice.is-visible {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity 1200ms linear, visibility 0s linear 0s;
-}
-
-.return-choice__question {
-  margin: 0;
-  text-align: center;
-  font-size: clamp(17px, 1.7vw, 23px);
-  letter-spacing: 0.10em;
-  font-weight: 300;
-  color: rgba(228, 233, 242, 0.88);
-  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.74);
-}
-
-.return-choice__actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: clamp(14px, 2vw, 26px);
-}
-
-/* 固定宽高：hover / active 都不改变盒模型，按钮不会移动 */
-.return-choice__btn {
-  min-width: 156px;
-  min-height: 54px;
-  padding: 0 26px;
-  font-size: clamp(15px, 1.4vw, 18px);
-  letter-spacing: 0.08em;
-  transform: none;
-  transition: background-color var(--t-fast) var(--ease),
-              border-color var(--t-fast) var(--ease),
-              box-shadow var(--t-fast) var(--ease),
-              opacity var(--t-fast) var(--ease);
-}
-
-.return-choice__btn:hover,
-.return-choice__btn:focus-visible,
-.return-choice__btn:active {
-  /* 明确禁止位移与缩放（§五） */
-  transform: none;
-}
-
-.return-choice__btn:hover {
-  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
-  box-shadow: var(--sh-glow);
-  opacity: 0.94;
-}
-
-/* 选择界面出现时，把点击反馈整体上移，避免两行文字挤在一起。 */
-.return-choice.is-visible ~ .immersive-whisper {
-  bottom: clamp(196px, 25vh, 250px);
-}
-
-.return-choice__btn[hidden] { display: none; }
-
-.return-choice__btn[disabled] {
-  opacity: 0.4;
-  cursor: default;
-  box-shadow: none;
-}
-
-.modal { z-index: 100; }
-
-@media (max-width: 900px) {
-  .immersive-header { width: 88vw; top: 54px; }
-  .immersive-header .scene__title { font-size: 34px; }
-  .immersive-header .scene__desc { font-size: 17px; }
-  .game-hud--immersive {
-    left: 18px;
-    bottom: 18px;
-    max-width: 62vw;
-    gap: 6px;
-  }
-  .game-hud--immersive .hud-pill {
-    min-height: 30px;
-    padding: 0 10px;
-    font-size: 12px;
-  }
-  .game-hud--immersive .hud-pill strong { font-size: 14px; }
-  .dictator-inline { bottom: 22px; width: 280px; }
-  .dictator-inline__button { min-height: 58px; padding: 0 24px; }
-  .dictator-inline.is-interactive { top: 70%; width: min(340px, 88vw); }
-  .dictator-inline.is-interactive .dictator-inline__button { width: 168px; min-width: 168px; font-size: 22px; }
-  .immersive-whisper { bottom: 104px; width: 80vw; text-align: center; }
-  .return-choice {
-    bottom: 20px;
-    width: 88vw;
-    margin-left: -44vw;
-    gap: 12px;
-  }
-  .return-choice__actions { gap: 12px; }
-  .return-choice__btn { min-width: 132px; min-height: 48px; padding: 0 18px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scene--immersive,
-  .bubble-canvas--immersive,
-  .immersive-header,
-  .game-hud--immersive,
-  .dictator-inline,
+  /* 出口面板的 visibility 延迟必须一并清零，否则它会「已可见但点不到」。 */
   .return-choice,
-  .return-choice__btn,
-  .immersive-frame::before,
-  .immersive-frame::after {
-    transition-duration: 0.01ms !important;
-  }
   .return-choice.is-visible,
-  .return-choice:not(.is-visible) {
+  .classify-panel,
+  .classify-panel.is-visible {
     transition-delay: 0s !important;
   }
-  .dictator-inline::before { animation: none !important; }
-}
-
-/* =====================================================================
-   V0.7｜烦恼灵感库 + 强行为对象 + 观察阶段
-   ===================================================================== */
-.worry-helper {
-  width: min(900px, 92vw);
-  margin: 0 auto var(--sp-3);
-  padding: 18px 20px 16px;
-  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: var(--r-m);
-  background: rgba(108, 113, 157, 0.055);
-  text-align: left;
-}
-
-.worry-helper__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  color: var(--ink-dim);
-  font-size: 16px;
-  letter-spacing: .06em;
-}
-
-.worry-helper__refresh {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--c-dora-soft);
-  font: inherit;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 7px;
-}
-.worry-helper__refresh:hover,
-.worry-helper__refresh:focus-visible { background: rgba(111,154,216,.09); outline: none; }
-
-.worry-category-chips,
-.worry-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.worry-category-chips { margin-bottom: 12px; }
-
-.worry-category-chip,
-.worry-suggestion {
-  appearance: none;
-  font-family: inherit;
-  color: var(--ink-dim);
-  background: rgba(255,255,255,.025);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
-}
-.worry-category-chip {
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: var(--r-pill);
-  font-size: 14px;
-}
-.worry-category-chip.is-active {
-  color: var(--ink);
-  border-color: rgba(111,154,216,.46);
-  background: rgba(74,125,200,.12);
-}
-.worry-suggestion {
-  min-height: 38px;
-  padding: 7px 12px;
-  border-radius: 9px;
-  font-size: 15px;
-  text-align: left;
-}
-.worry-suggestion:hover,
-.worry-suggestion:focus-visible {
-  color: var(--ink);
-  border-color: rgba(111,154,216,.42);
-  background: rgba(74,125,200,.09);
-  outline: none;
-}
-.worry-helper__note {
-  margin: 12px 0 0;
-  color: var(--ink-faint);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.theme-focus {
-  margin-bottom: 10px !important;
-  color: color-mix(in srgb, var(--ink) 72%, var(--c-return));
-  font-size: clamp(18px, 1.8vw, 25px) !important;
-}
-
-/* 玩家选择“停下来看看”后，界面主动退让，只留下泡泡与观察提示。 */
-.scene--immersive.is-observing .game-hud--immersive,
-.scene--immersive.is-observing .immersive-exit {
-  opacity: .18;
-}
-.scene--immersive.is-observing .immersive-frame::before,
-.scene--immersive.is-observing .immersive-frame::after { opacity: 0 !important; }
-.scene--immersive.is-focus .game-hud--immersive,
-.scene--immersive.is-focus .immersive-exit,
-.scene--immersive.is-focus .immersive-whisper { opacity: 0 !important; }
-.scene--immersive.is-focus .immersive-header {
-  top: clamp(34px, 5vh, 62px);
-}
-
-/* 沉浸交互阶段隐藏 1/14 数字进度，内部状态仍保留。 */
-body[data-current-scene="ux-07"] .progress,
-body[data-current-scene="ux-08"] .progress,
-body[data-current-scene="ux-09"] .progress,
-body[data-current-scene="ux-10"] .progress,
-body[data-current-scene="ux-11"] .progress { opacity: 0; pointer-events: none; }
-
-@media (max-width: 760px) {
-  .worry-helper { padding: 14px; }
-  .worry-helper__head { align-items: flex-start; }
-  .worry-suggestion { flex: 1 1 44%; }
+  .intro-ripple,
+  .intro-gadgets { animation: none !important; }
 }
