@@ -110,7 +110,20 @@ const CONFIG = {
   OBSERVE_FOCUS_MS: 3200,
   // 兼容旧字段（不再用于自动跳转判定）。
   RETURN_INTERACTION_MIN_ATTEMPTS: 6,
-  RETURN_RESPAWN_DELAY_MS: 1000
+  RETURN_RESPAWN_DELAY_MS: 1000,
+
+  // ---- 自由输入分类器（worry-data.js 读取，纯本地词表打分，不调任何外部接口）----
+  // 打分：strong 命中 +2、weak +1、exclude −3。
+  CLASSIFY_STRONG_WEIGHT: 2,
+  CLASSIFY_WEAK_WEIGHT: 1,
+  CLASSIFY_EXCLUDE_PENALTY: 3,
+  // 最高分低于 MIN_SCORE，或与第二名的差距小于 MIN_MARGIN，就判"认不出"返回 null，
+  // 由界面请用户手选大类。宁可多问一次，也不要猜错后发错道具。
+  CLASSIFY_MIN_SCORE: 2,
+  CLASSIFY_MIN_MARGIN: 2,
+  CLASSIFY_HIGH_SCORE: 5,
+  // 自由输入没有预设关键词时，从原文截多少字塞进气泡。
+  BUBBLE_KEYWORD_MAX_CHARS: 6
 };
 
 /** 重现阶段的随机点击反馈文案：只描述“又出现了”，不出现“删除成功”。 */

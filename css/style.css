@@ -59,6 +59,20 @@
   font-display: swap;
 }
 
+/* 千图马克手写体：规格限定「仅用于少量情绪短句或烦恼关键词，不用于长正文」。
+   原始 TTF 有 10467 字、转 woff2 是 9.5MB，所以由 assets/dev/_build-fonts.py
+   按站内实际用字裁到 1125 字 / 846KB。
+   子集外的字会逐字回退，一个词里半手写半黑体很难看——所以**不要直接写
+   font-family**，改用 .u-hand，并由 FontSupport.canRenderHand() 决定加不加，
+   保证要么整词手写体、要么整词主字体。 */
+@font-face {
+  font-family: "Qiantu Marker";
+  src: url("../assets/fonts/QiantuMarker.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 * { box-sizing: border-box; }
 
 :root {
@@ -81,6 +95,8 @@
 
   /* ---------- 字体层级 ---------- */
   --ff: "Canger YuYangTi", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+  /* 手写体只走 .u-hand，不要在别处直接写 font-family。 */
+  --ff-hand: "Qiantu Marker", "Canger YuYangTi", "Microsoft YaHei", sans-serif;
   --fs-tag: 18px;           /* 编号 / 阶段标识 */
   --fs-title: 56px;         /* 标题 ≥40pt */
   --fs-body: 35px;          /* 正文 ≥26pt */
@@ -258,6 +274,16 @@ html, body {
 body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+/* 手写体开关。只由 FontSupport.applyHand() 添加——它会先确认整词都在子集里，
+   避免子集外的字逐字回退成主字体、一个词里两种字形。
+   手写体字面比仓耳渔阳体小一圈，所以配一点字号与字距补偿。 */
+.u-hand {
+  font-family: var(--ff-hand);
+  font-weight: 400;
+  font-size: 1.08em;
+  letter-spacing: 0.02em;
 }
 
 /* 冷色光晕层：未来实验装置的单一光源感 */

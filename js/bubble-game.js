@@ -49,6 +49,16 @@ const BubbleGame = (function () {
   // 泡泡文字与页面同源：站酷仓耳渔阳体，回退链与 CSS 的 --ff 保持一致。
   const CANVAS_FONT_STACK = '"Canger YuYangTi", "Microsoft YaHei", "PingFang SC", sans-serif';
 
+  /* 泡泡里画的是烦恼关键词——规格指定这类短词用千图马克手写体。
+     但手写体是按站内用字裁过的子集，自由输入的关键词可能含子集外的字，
+     Canvas 和 CSS 一样是**逐字**回退，一个词里两种字形很难看。
+     所以交给 FontSupport 按整词判断：整词都在子集里才用手写体。
+     font-support.js 没加载时退回主字体栈，不影响渲染。 */
+  function fontStackFor(text) {
+    if (typeof FontSupport === 'undefined') return CANVAS_FONT_STACK;
+    return FontSupport.fontStackFor(text);
+  }
+
   /* 字体是 font-display: swap 异步加载的：先用系统字回退渲染，
      字体到位后字形宽度变化，之前按回退字算出的分行结果会偏。
      这里在字体就绪后清一次缓存，让分行按真实字形重算。 */
@@ -1382,7 +1392,7 @@ const BubbleGame = (function () {
     ctx.fillStyle = isSoftMode() ? 'rgba(232,238,247,0.70)' : 'rgba(250,252,255,0.92)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '400 ' + fontSize + 'px ' + CANVAS_FONT_STACK;
+    ctx.font = '400 ' + fontSize + 'px ' + fontStackFor(text);
     const maxWidth = radius * 1.45;
     const lines = wrapTextCached(text, maxWidth, fontSize);
     const lineHeight = fontSize * 1.25;

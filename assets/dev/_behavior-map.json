@@ -1,0 +1,502 @@
+{
+ "1": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "被父母催促",
+  "oldCategory": "family"
+ },
+ "2": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "家人不理解自己的选择",
+  "oldCategory": "family"
+ },
+ "3": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "家庭期待太高",
+  "oldCategory": "family"
+ },
+ "4": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "与父母频繁争吵",
+  "oldCategory": "family"
+ },
+ "5": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "总被拿来和兄弟姐妹比较",
+  "oldCategory": "family"
+ },
+ "6": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "家庭成员之间越来越少沟通",
+  "oldCategory": "family"
+ },
+ "7": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "家庭经济压力",
+  "oldCategory": "family"
+ },
+ "8": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "家务分配不公平",
+  "oldCategory": "family"
+ },
+ "9": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "隐私被家人干涉",
+  "oldCategory": "family"
+ },
+ "10": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "被催婚、催恋爱",
+  "oldCategory": "family"
+ },
+ "11": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "和伴侣沟通困难",
+  "oldCategory": "family"
+ },
+ "12": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "对亲密关系没有安全感",
+  "oldCategory": "family"
+ },
+ "13": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "异地关系带来的不安",
+  "oldCategory": "family"
+ },
+ "14": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "分手后总会想起过去",
+  "oldCategory": "family"
+ },
+ "15": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "担心家人变老或离开",
+  "oldCategory": "family"
+ },
+ "16": {
+  "behaviorType": "B1_LIGHT",
+  "oldText": "作业太多",
+  "oldCategory": "school"
+ },
+ "17": {
+  "behaviorType": "B2_ESCAPE",
+  "oldText": "总是拖延",
+  "oldCategory": "school"
+ },
+ "18": {
+  "behaviorType": "B8_BURST",
+  "oldText": "考试压力",
+  "oldCategory": "school"
+ },
+ "19": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "成绩不理想",
+  "oldCategory": "school"
+ },
+ "20": {
+  "behaviorType": "B8_BURST",
+  "oldText": "害怕挂科",
+  "oldCategory": "school"
+ },
+ "21": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "不知道应该选什么课",
+  "oldCategory": "school"
+ },
+ "22": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "小组作业配合不好",
+  "oldCategory": "school"
+ },
+ "23": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "老师的反馈让我压力很大",
+  "oldCategory": "school"
+ },
+ "24": {
+  "behaviorType": "B2_ESCAPE",
+  "oldText": "害怕课堂发言",
+  "oldCategory": "school"
+ },
+ "25": {
+  "behaviorType": "B3_SPLIT",
+  "oldText": "论文 / 毕业设计推进困难",
+  "oldCategory": "school"
+ },
+ "26": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "截止日期全部堆在一起",
+  "oldCategory": "school"
+ },
+ "27": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "学习效率很低",
+  "oldCategory": "school"
+ },
+ "28": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "忍不住和同学比较",
+  "oldCategory": "school"
+ },
+ "29": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "不确定自己是否适合这个专业",
+  "oldCategory": "school"
+ },
+ "30": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "考研、留学、就业不知道怎么选",
+  "oldCategory": "school"
+ },
+ "31": {
+  "behaviorType": "B3_SPLIT",
+  "oldText": "工作越做越多",
+  "oldCategory": "work"
+ },
+ "32": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "经常加班",
+  "oldCategory": "work"
+ },
+ "33": {
+  "behaviorType": "B8_BURST",
+  "oldText": "Deadline 快到了",
+  "oldCategory": "work"
+ },
+ "34": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "方案被反复要求修改",
+  "oldCategory": "work"
+ },
+ "35": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "和同事沟通不顺",
+  "oldCategory": "work"
+ },
+ "36": {
+  "behaviorType": "B8_BURST",
+  "oldText": "害怕工作中犯错",
+  "oldCategory": "work"
+ },
+ "37": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "绩效考核压力",
+  "oldCategory": "work"
+ },
+ "38": {
+  "behaviorType": "B3_SPLIT",
+  "oldText": "找工作越来越焦虑",
+  "oldCategory": "work"
+ },
+ "39": {
+  "behaviorType": "B8_BURST",
+  "oldText": "面试紧张",
+  "oldCategory": "work"
+ },
+ "40": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "不知道未来做什么工作",
+  "oldCategory": "work"
+ },
+ "41": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "对薪资不满意",
+  "oldCategory": "work"
+ },
+ "42": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "晋升一直没有进展",
+  "oldCategory": "work"
+ },
+ "43": {
+  "behaviorType": "B8_BURST",
+  "oldText": "下班后仍不断收到工作消息",
+  "oldCategory": "work"
+ },
+ "44": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "工作没有成就感",
+  "oldCategory": "work"
+ },
+ "45": {
+  "behaviorType": "B8_BURST",
+  "oldText": "害怕自己跟不上变化",
+  "oldCategory": "work"
+ },
+ "46": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "害怕被别人忽视",
+  "oldCategory": "relationship"
+ },
+ "47": {
+  "behaviorType": "B2_ESCAPE",
+  "oldText": "社交时很尴尬",
+  "oldCategory": "relationship"
+ },
+ "48": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "不知道怎么拒绝别人",
+  "oldCategory": "relationship"
+ },
+ "49": {
+  "behaviorType": "B2_ESCAPE",
+  "oldText": "很在意别人怎么看自己",
+  "oldCategory": "relationship"
+ },
+ "50": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "和朋友关系逐渐变淡",
+  "oldCategory": "relationship"
+ },
+ "51": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "和朋友产生误会",
+  "oldCategory": "relationship"
+ },
+ "52": {
+  "behaviorType": "B2_ESCAPE",
+  "oldText": "群聊里不敢说话",
+  "oldCategory": "relationship"
+ },
+ "53": {
+  "behaviorType": "B3_SPLIT",
+  "oldText": "社交结束后反复回想自己的表现",
+  "oldCategory": "relationship"
+ },
+ "54": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "总是被别人比较",
+  "oldCategory": "relationship"
+ },
+ "55": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "感觉自己被冷落",
+  "oldCategory": "relationship"
+ },
+ "56": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "很难与别人建立亲密关系",
+  "oldCategory": "relationship"
+ },
+ "57": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "朋友之间产生嫉妒",
+  "oldCategory": "relationship"
+ },
+ "58": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "别人总是越过自己的边界",
+  "oldCategory": "relationship"
+ },
+ "59": {
+  "behaviorType": "B7_LINKED",
+  "oldText": "吵架后不知道怎么重新开口",
+  "oldCategory": "relationship"
+ },
+ "60": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "总是在迁就别人",
+  "oldCategory": "relationship"
+ },
+ "61": {
+  "behaviorType": "B1_LIGHT",
+  "oldText": "房间一直很乱",
+  "oldCategory": "life"
+ },
+ "62": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "早起困难",
+  "oldCategory": "life"
+ },
+ "63": {
+  "behaviorType": "B8_BURST",
+  "oldText": "作息不规律",
+  "oldCategory": "life"
+ },
+ "64": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "手机刷太久停不下来",
+  "oldCategory": "life"
+ },
+ "65": {
+  "behaviorType": "B1_LIGHT",
+  "oldText": "总是不运动",
+  "oldCategory": "life"
+ },
+ "66": {
+  "behaviorType": "B1_LIGHT",
+  "oldText": "饮食不规律",
+  "oldCategory": "life"
+ },
+ "67": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "待办事项越来越多",
+  "oldCategory": "life"
+ },
+ "68": {
+  "behaviorType": "B1_LIGHT",
+  "oldText": "总忘记事情",
+  "oldCategory": "life"
+ },
+ "69": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "总觉得时间不够",
+  "oldCategory": "life"
+ },
+ "70": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "无法坚持自己的计划",
+  "oldCategory": "life"
+ },
+ "71": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "生活没有节奏",
+  "oldCategory": "life"
+ },
+ "72": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "搬家或换环境后不适应",
+  "oldCategory": "life"
+ },
+ "73": {
+  "behaviorType": "B1_LIGHT",
+  "oldText": "通勤让我很疲惫",
+  "oldCategory": "life"
+ },
+ "74": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "害怕一个人待着",
+  "oldCategory": "life"
+ },
+ "75": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "明明休息却无法真正放松",
+  "oldCategory": "life"
+ },
+ "76": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "月底钱不够用",
+  "oldCategory": "money"
+ },
+ "77": {
+  "behaviorType": "B8_BURST",
+  "oldText": "经常冲动消费",
+  "oldCategory": "money"
+ },
+ "78": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "总是存不下钱",
+  "oldCategory": "money"
+ },
+ "79": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "房租和生活费压力",
+  "oldCategory": "money"
+ },
+ "80": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "想买东西又害怕花钱",
+  "oldCategory": "money"
+ },
+ "81": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "不确定未来能赚多少钱",
+  "oldCategory": "money"
+ },
+ "82": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "忍不住和别人比较经济状况",
+  "oldCategory": "money"
+ },
+ "83": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "不知道未来要做什么",
+  "oldCategory": "future"
+ },
+ "84": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "害怕选错方向",
+  "oldCategory": "future"
+ },
+ "85": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "总是在几个选择之间摇摆",
+  "oldCategory": "future"
+ },
+ "86": {
+  "behaviorType": "B8_BURST",
+  "oldText": "害怕错过机会",
+  "oldCategory": "future"
+ },
+ "87": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "害怕改变",
+  "oldCategory": "future"
+ },
+ "88": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "不确定毕业后的生活会怎样",
+  "oldCategory": "future"
+ },
+ "89": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "想离开现在的环境却又不敢",
+  "oldCategory": "future"
+ },
+ "90": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "对年龄增长感到压力",
+  "oldCategory": "future"
+ },
+ "91": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "总觉得自己不够好",
+  "oldCategory": "inner"
+ },
+ "92": {
+  "behaviorType": "B6_STUBBORN",
+  "oldText": "什么事情都想做到完美",
+  "oldCategory": "inner"
+ },
+ "93": {
+  "behaviorType": "B3_SPLIT",
+  "oldText": "总是在反复内耗",
+  "oldCategory": "inner"
+ },
+ "94": {
+  "behaviorType": "B8_BURST",
+  "oldText": "害怕失败",
+  "oldCategory": "inner"
+ },
+ "95": {
+  "behaviorType": "B9_PRESSURE",
+  "oldText": "害怕失去控制",
+  "oldCategory": "inner"
+ },
+ "96": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "害怕被别人留下",
+  "oldCategory": "inner"
+ },
+ "97": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "对未知感到不安",
+  "oldCategory": "inner"
+ },
+ "98": {
+  "behaviorType": "B4_RETURN",
+  "oldText": "总是在想过去发生的事情",
+  "oldCategory": "inner"
+ },
+ "99": {
+  "behaviorType": "B5_CLUSTER",
+  "oldText": "无法停止和别人比较",
+  "oldCategory": "inner"
+ },
+ "100": {
+  "behaviorType": "B10_BLUR",
+  "oldText": "说不清哪里不对，但就是不舒服",
+  "oldCategory": "inner"
+ }
+}
