@@ -616,6 +616,9 @@ body::after {
   right: 0;
   bottom: 0;
   z-index: 2;
+  /* 它横跨整个视口底部。不关掉指针事件就会吃掉压在它下面的按钮点击——
+     u10 的出口按钮正好落在这条带子上，会造成流程永久卡死。 */
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;

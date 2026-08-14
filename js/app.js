@@ -1,17 +1,26 @@
 /**
- * app.js —— 初始化、事件绑定、全局数据与 UX-01~UX-14 流程协调
- * V0.7：强化烦恼行为差异，同时保留灵感库、主动观察与既有剧情结构。
+ * app.js —— 初始化、事件绑定、全局数据与 u01~u12 流程协调
+ * V0.8：流程改为「选一个烦恼 → 匹配一件道具 → 生成泡泡」。
+ *
+ * 场景 id 与 V0.7 的对应关系不是整体平移，u07 起错开一位：
+ *   ux-06+ux-07→u06   ux-08→u07   ux-09→u08   ux-10→u09   ux-11→u10   ux-12→u11
+ * 因此本文件里的 id 全部是手工重定向的，不要用正则批量替换。
  */
 'use strict';
 
 const appData = {
-  worries: [],
+  // ---- 选择结果（u03 / u04 / u05）----
+  pickedCategory: '',
+  selectedWorry: null,      // WorryData.createProfile 的返回值
+  matchedGadget: null,      // GadgetData 记录
+  worries: [],              // 送进 BubbleGame 的泡泡文案：选中的烦恼 + 同类兄弟
+
+  // ---- 沉浸段计数（u06~u10）----
   bubbles: [],
   successfulDeleteCount: 0,
   deleteAttemptCount: 0,
   splitCount: 0,
   returnDeleteAttemptCount: 0,
-  returnAdvanceScheduled: false,
   clickCount: 0,
   buttonUnlocked: false,
   buttonTriggered: false,
@@ -24,13 +33,12 @@ const appData = {
   chaosLevel: 0,
   currentScene: SCENE_FLOW[0].id,
   chaosTimer: 0,
-  returnInteractionStartedAt: 0,
-  returnTimer: 0,
   returnChoiceVisible: false,
   returnChoiceResolved: false,
-  continueDeleteCount: 0,
-  returnExtraUntil: 0,
-  suggestionCategory: 'all',
+  erasureFallbackTimer: 0,
+
+  // ---- 结尾段（u11 / u12）----
+  dialogueIndex: 0,
   selectedWorryText: '',
   finalChoice: '',
   observeSelected: false
@@ -39,6 +47,8 @@ const appData = {
 const App = (function () {
   const el = {};
 
+  // 注意：bind 只做正向缓存、永不失效。所有 data-bind 节点必须首屏就在，
+  // 且此后不能被 innerHTML/克隆重建，否则这里会一直往脱离文档的旧节点写字。
   function bind(name) {
     if (!el[name]) el[name] = document.querySelector('[data-bind="' + name + '"]');
     return el[name];
@@ -68,28 +78,29 @@ const App = (function () {
     appData.normalTimer = 0;
   }
 
-  /** 重现阶段的门控轮询（时长 + 次数双条件）。 */
-  function stopReturnTicker() {
-    if (appData.returnTimer) window.clearInterval(appData.returnTimer);
-    appData.returnTimer = 0;
+  function stopErasureFallback() {
+    if (appData.erasureFallbackTimer) window.clearTimeout(appData.erasureFallbackTimer);
+    appData.erasureFallbackTimer = 0;
   }
 
   function stopAllTickers() {
     stopChaosTicker();
     stopNormalTicker();
-    stopReturnTicker();
+    stopErasureFallback();
   }
 
   function resetData() {
     stopAllTickers();
     hideReturnChoice();
+    appData.pickedCategory = '';
+    appData.selectedWorry = null;
+    appData.matchedGadget = null;
     appData.worries.length = 0;
     appData.bubbles.length = 0;
     appData.successfulDeleteCount = 0;
     appData.deleteAttemptCount = 0;
     appData.splitCount = 0;
     appData.returnDeleteAttemptCount = 0;
-    appData.returnAdvanceScheduled = false;
     appData.clickCount = 0;
     appData.buttonUnlocked = false;
     appData.buttonTriggered = false;
@@ -99,155 +110,258 @@ const App = (function () {
     appData.growthIntervalMs = CONFIG.GROWTH_INTERVAL_START_MS;
     appData.transitionProgress = 0;
     appData.chaosLevel = 0;
-    appData.returnInteractionStartedAt = 0;
     appData.returnChoiceVisible = false;
     appData.returnChoiceResolved = false;
-    appData.continueDeleteCount = 0;
-    appData.returnExtraUntil = 0;
-    appData.suggestionCategory = 'all';
+    appData.dialogueIndex = 0;
     appData.selectedWorryText = '';
     appData.finalChoice = '';
     appData.observeSelected = false;
     BubbleGame.destroy();
   }
 
-  /* ---------------- 烦恼输入（UX-04 / UX-05） ---------------- */
+  /* ---------------- u02 引导对话 ---------------- */
+
+  // 阶段 4 由 dialogue.js 接管逐句推进，这里只维护页码，让骨架可走通。
+  function renderDialogue() {
+    setText('dialoguePage', '02 / 12');
+  }
+
+  /* ---------------- u03 选择烦恼 ---------------- */
 
   function setHint(message) {
-    const node = bind('worryHint');
-    if (node) node.textContent = message || '';
+    setText('worryPickHint', message || '');
   }
 
   function worryTexts() {
     return appData.worries.map(function (item) { return item.text; });
   }
 
-  function addWorryProfile(profile) {
-    if (!profile || !profile.text) return;
-    const text = String(profile.text).trim();
-    if (!text) return;
-    if (appData.worries.length >= CONFIG.MAX_WORRIES_MVP) {
-      setHint('本次体验最多记录 ' + CONFIG.MAX_WORRIES_MVP + ' 条烦恼。');
-      return;
-    }
-    if (appData.worries.some(function (item) { return item.text === text; })) {
-      setHint('这条烦恼已经记录过了。');
-      return;
-    }
-    appData.worries.push(profile);
-    setHint('已记录 ' + appData.worries.length + ' 条。');
-    renderWorries();
-  }
-
-  function addWorry() {
-    const field = document.getElementById('worry-text');
-    if (!field) return;
-    const text = field.value.trim();
-
-    if (!text) {
-      setHint('请先写下一条想要删除的烦恼。');
-      field.focus();
-      return;
-    }
-
-    addWorryProfile(WorryData.createProfile(text));
-    if (appData.worries.some(function (item) { return item.text === text; })) field.value = '';
-    field.focus();
-  }
-
-  function addPresetWorry(presetId) {
-    const preset = WorryData.presets.find(function (item) { return item.id === Number(presetId); });
-    if (!preset) return;
-    addWorryProfile(WorryData.createProfile(preset.text, {
-      presetId: preset.id,
-      category: preset.category,
-      behaviorType: preset.behaviorType
-    }));
-  }
-
-  function removeWorry(index) {
-    if (!Number.isInteger(index) || index < 0 || index >= appData.worries.length) return;
-    appData.worries.splice(index, 1);
-    setHint(appData.worries.length ? '已移除，共保留 ' + appData.worries.length + ' 条。' : '尚未记录烦恼。');
-    renderWorries();
-  }
-
   function renderWorryCategories() {
     const container = bind('worryCategories');
     if (!container) return;
     container.innerHTML = '';
-    const all = [{ id: 'all', label: '随便看看' }].concat(WorryData.categories);
-    all.forEach(function (category) {
+    WorryData.categories.forEach(function (category) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'worry-category-chip';
+      button.className = 'worry-particle';
       button.textContent = category.label;
-      button.dataset.action = 'worry-category';
+      button.title = category.fullName || category.label;
+      button.dataset.action = 'pick-category';
       button.dataset.category = category.id;
-      button.classList.toggle('is-active', appData.suggestionCategory === category.id);
+      button.classList.toggle('is-active', appData.pickedCategory === category.id);
       container.appendChild(button);
     });
   }
 
-  function renderWorrySuggestions(category) {
-    if (category) appData.suggestionCategory = category;
-    const container = bind('worrySuggestions');
+  /** 展开某个大类下的细分烦恼（初稿是 3 条）。 */
+  function renderWorrySubs(categoryId) {
+    const container = bind('worrySubs');
     if (!container) return;
     container.innerHTML = '';
-    WorryData.examples(appData.suggestionCategory, 6).forEach(function (preset) {
+    if (!categoryId) return;
+    const previews = WorryData.hoverPreview(categoryId) || [];
+    const presets = previews.length
+      ? previews
+      : WorryData.byCategory(categoryId).slice(0, CONFIG.WORRY_SUB_COUNT);
+    presets.slice(0, CONFIG.WORRY_SUB_COUNT).forEach(function (preset) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'worry-suggestion';
+      button.className = 'worry-sub';
       button.textContent = preset.text;
-      button.dataset.action = 'use-worry-preset';
+      button.dataset.action = 'pick-worry';
       button.dataset.presetId = String(preset.id);
+      const picked = appData.selectedWorry && appData.selectedWorry.presetId === preset.id;
+      button.classList.toggle('is-active', Boolean(picked));
       container.appendChild(button);
     });
+  }
+
+  function renderWorryPicker() {
     renderWorryCategories();
+    renderWorrySubs(appData.pickedCategory);
+    syncConfirmButton();
   }
 
-  function renderWorries() {
-    const editable = bind('worryList');
-    if (editable) {
-      editable.innerHTML = '';
-      if (!appData.worries.length) {
-        const li = document.createElement('li');
-        li.className = 'worry-list__empty';
-        li.textContent = '尚未记录烦恼';
-        editable.appendChild(li);
-      } else {
-        appData.worries.forEach(function (profile, index) {
-          const li = document.createElement('li');
-          const span = document.createElement('span');
-          span.textContent = profile.text;
-          const remove = document.createElement('button');
-          remove.type = 'button';
-          remove.className = 'worry-list__remove';
-          remove.textContent = '移除';
-          remove.dataset.action = 'remove-worry';
-          remove.dataset.index = String(index);
-          li.appendChild(span);
-          li.appendChild(remove);
-          editable.appendChild(li);
-        });
-      }
-    }
+  function syncConfirmButton() {
+    const button = bind('confirmWorry');
+    if (button) button.disabled = !appData.selectedWorry;
+  }
 
-    const confirmList = bind('worryListConfirm');
-    if (confirmList) {
-      confirmList.innerHTML = '';
-      appData.worries.forEach(function (profile) {
-        const li = document.createElement('li');
-        li.textContent = profile.text;
-        confirmList.appendChild(li);
+  function pickCategory(categoryId) {
+    if (!categoryId) return;
+    appData.pickedCategory = categoryId;
+    // 换大类等于放弃上一次选择，避免「选了A类的条目却显示B类」。
+    appData.selectedWorry = null;
+    hideClassifyPanel();
+    renderWorryPicker();
+    const category = WorryData.category(categoryId);
+    setHint(category ? '「' + (category.fullName || category.label) + '」——选一条最贴近你的。' : '');
+  }
+
+  function pickWorry(presetId) {
+    const preset = WorryData.preset(Number(presetId));
+    if (!preset) return;
+    appData.pickedCategory = preset.category;
+    appData.selectedWorry = WorryData.createProfile(preset.text, {
+      presetId: preset.id,
+      category: preset.category,
+      behaviorType: preset.behaviorType
+    });
+    hideClassifyPanel();
+    renderWorryPicker();
+    setHint('已选择：「' + preset.text + '」。');
+  }
+
+  /** 自由输入：本地词表打分，认不出就请用户手选，绝不随机发道具。 */
+  function classifyFreeWorry() {
+    const field = document.getElementById('worry-text');
+    if (!field) return;
+    const text = field.value.trim();
+    if (!text) {
+      setHint('先写下一条烦恼，再看看它属于哪一类。');
+      field.focus();
+      return;
+    }
+    const guess = WorryData.classifyFreeText(text);
+    if (!guess) {
+      hideClassifyPanel();
+      setHint('这条烦恼我还认不出来。请从上面的九大类里挑一个最接近的。');
+      return;
+    }
+    const category = WorryData.category(guess.category || guess);
+    appData.pickedCategory = category ? category.id : '';
+    appData.selectedWorry = WorryData.createProfile(text, {
+      category: appData.pickedCategory
+    });
+    renderWorryPicker();
+    showClassifyPanel(category ? category.fullName || category.label : '');
+    setHint('');
+  }
+
+  function showClassifyPanel(categoryName) {
+    const panel = bind('classifyPanel');
+    setText('classifyGuess', categoryName
+      ? '看起来，这更像是「' + categoryName + '」方面的烦恼。'
+      : '');
+    if (!panel) return;
+    panel.classList.add('is-visible');
+    panel.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideClassifyPanel() {
+    const panel = bind('classifyPanel');
+    if (!panel) return;
+    panel.classList.remove('is-visible');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+
+  /**
+   * 沉浸段的泡泡不只放选中的那一条：
+   * 同一大类的兄弟烦恼一起进场，才撑得起「已处理 0 / 12」的场面。
+   * 选中的那条永远排第一，保证它一定出现在首批泡泡里。
+   */
+  function buildWorryField() {
+    appData.worries.length = 0;
+    if (!appData.selectedWorry) return;
+    appData.worries.push(appData.selectedWorry);
+    const siblings = WorryData.byCategory(appData.selectedWorry.category) || [];
+    siblings.forEach(function (preset) {
+      if (appData.worries.length >= CONFIG.WORRY_SIBLING_COUNT) return;
+      if (preset.text === appData.selectedWorry.text) return;
+      appData.worries.push(WorryData.createProfile(preset.text, {
+        presetId: preset.id,
+        category: preset.category,
+        behaviorType: preset.behaviorType
+      }));
+    });
+  }
+
+  /** 自由输入可能没有预设道具，此时按大类退化，而不是永远发 1 号道具。 */
+  function matchGadget(profile) {
+    if (!profile) return null;
+    const direct = GadgetData.forWorry(profile);
+    if (direct) return direct;
+    const sibling = (WorryData.byCategory(profile.category) || []).find(function (item) {
+      return Boolean(item.gadget);
+    });
+    return (sibling && GadgetData.byName(sibling.gadget)) || GadgetData.all[0] || null;
+  }
+
+  function confirmWorry() {
+    if (!appData.selectedWorry) {
+      setHint('请先选一条烦恼，或者自己写一条。');
+      return;
+    }
+    buildWorryField();
+    appData.matchedGadget = matchGadget(appData.selectedWorry);
+    SceneManager.goToId('u04');
+  }
+
+  function resetWorryPick() {
+    appData.pickedCategory = '';
+    appData.selectedWorry = null;
+    appData.matchedGadget = null;
+    appData.worries.length = 0;
+    hideClassifyPanel();
+    const field = document.getElementById('worry-text');
+    if (field) field.value = '';
+    renderWorryPicker();
+    setHint('');
+  }
+
+  /* ---------------- u04 老虎机匹配 ---------------- */
+
+  // 阶段 4 由 gadget-match.js 接管真实滚动与拨杆动画；
+  // 骨架期只把三列填满、等一段时间就翻页，保证流程能走通。
+  function startSlotMatch() {
+    setText('slotWorryLabel', appData.selectedWorry ? appData.selectedWorry.text : '');
+    ['reelA', 'reelB', 'reelC'].forEach(function (name, index) {
+      const reel = bind(name);
+      if (!reel) return;
+      reel.innerHTML = '';
+      GadgetData.reelPool(index + 1).forEach(function (gadget) {
+        const cell = document.createElement('span');
+        cell.className = 'slot__cell' + (gadget ? '' : ' slot__cell--empty');
+        if (gadget) {
+          const img = document.createElement('img');
+          img.src = gadget.image;
+          img.alt = gadget.name;
+          img.width = 64;
+          img.height = 64;
+          img.loading = 'lazy';
+          cell.appendChild(img);
+        }
+        reel.appendChild(cell);
       });
+    });
+    SceneManager.addTimer(function () {
+      if (appData.currentScene === 'u04') SceneManager.goToId('u05');
+    }, CONFIG.SLOT_SPIN_MS);
+  }
+
+  /* ---------------- u05 匹配结果 ---------------- */
+
+  function renderGadgetResult() {
+    const gadget = appData.matchedGadget;
+    if (!gadget) {
+      // 正常走不到这里；真到了说明 u03 被跳过，退回去重选比空着页面好。
+      SceneManager.goToId('u03');
+      return;
+    }
+    setText('gadgetName', gadget.name);
+    setText('gadgetGroup', '道具类别｜' + gadget.group);
+    setText('gadgetDesc', gadget.description || '');
+    const image = bind('gadgetImage');
+    if (image) {
+      image.src = gadget.image;
+      image.alt = gadget.name;
     }
   }
 
-  /* ---------------- 连续泡泡体验（UX-06~UX-11） ---------------- */
+  /* ---------------- 连续泡泡体验（u06~u10） ---------------- */
 
   function immersiveScene() {
-    return document.querySelector('[data-scene="ux-07"]');
+    return document.querySelector('[data-scene="u06"]');
   }
 
   function setImmersivePhase(phase) {
@@ -271,7 +385,7 @@ const App = (function () {
   }
 
   function syncGameStats() {
-    if (appData.currentScene === 'ux-11') {
+    if (appData.currentScene === 'u10') {
       // 重现阶段：只展示尝试次数与当前数量，不出现“删除成功”。
       setText('primaryMetricLabel', '删除尝试');
       setText('primaryMetricValue', appData.returnDeleteAttemptCount);
@@ -279,8 +393,8 @@ const App = (function () {
       setText('systemMetricValue', '再次出现');
       return;
     }
-    const growthLike = ['ux-08', 'ux-09', 'ux-10'].includes(appData.currentScene);
-    setText('primaryMetricLabel', growthLike ? '删除尝试' : '已删除');
+    const growthLike = ['u07', 'u08', 'u09'].includes(appData.currentScene);
+    setText('primaryMetricLabel', growthLike ? '删除尝试' : '已处理');
     setText('primaryMetricValue', growthLike ? appData.deleteAttemptCount : appData.successfulDeleteCount);
     setText('bubbleMetricValue', BubbleGame.getBubbleCount());
   }
@@ -357,26 +471,43 @@ const App = (function () {
     );
   }
 
+  /** 道具在失控阶段逐渐失效——HUD 左上角同步变灰。 */
+  function updateGadgetHud(weakened) {
+    const name = bind('gadgetHudName');
+    const icon = bind('gadgetHudIcon');
+    const gadget = appData.matchedGadget;
+    if (name) name.textContent = gadget ? gadget.name : '';
+    if (icon && gadget && icon.getAttribute('src') !== gadget.image) {
+      icon.src = gadget.image;
+      icon.alt = gadget.name;
+    }
+    const host = name && name.closest ? name.closest('.gadget-hud') : null;
+    if (host) host.classList.toggle('is-weakened', Boolean(weakened));
+  }
+
   /**
    * 失控阶段的标题只由 transitionProgress 推进，且必须按
    * 「删除似乎开始失效」→「为什么越来越多？」的顺序出现。
    * 全程不出现任何「第二阶段」之类的提示。
    */
   function updateGrowthCopy() {
-    if (appData.buttonUnlocked || appData.currentScene === 'ux-09') {
+    if (appData.buttonUnlocked || appData.currentScene === 'u08') {
       setContinuousCopy('DANGER · FINAL AUTHORIZATION', '紧急清除协议已开放', '如果你仍想让它们全部消失，可以启动最终授权。');
       setText('systemMetricValue', '最终授权');
+      updateGadgetHud(true);
       return;
     }
     if (appData.transitionProgress < 0.28) {
       setContinuousCopy('DELETE TEST', '点击泡泡，尝试删除烦恼', '删除测试仍在继续。');
       setText('systemMetricValue', '响应偏差');
     } else if (appData.transitionProgress < CONFIG.TRANSITION_TITLE_SWITCH) {
-      setContinuousCopy('DELETE TEST', '删除响应出现偏差', '系统正在重新校准……');
+      setContinuousCopy('DELETE TEST', '删除响应出现偏差', '道具的效果正在减弱。');
       setText('systemMetricValue', '出现异常');
+      updateGadgetHud(true);
     } else {
       setContinuousCopy('DELETE TEST', '为什么越来越多？', '对象数量与删除记录开始不一致。');
       setText('systemMetricValue', '逐渐失控');
+      updateGadgetHud(true);
     }
   }
 
@@ -408,11 +539,11 @@ const App = (function () {
     setImmersiveStatus('');
     setImmersivePhase('ready');
     applyChaosVisuals(Math.max(0.88, appData.chaosLevel));
-    if (appData.currentScene === 'ux-08') SceneManager.goToId('ux-09');
+    if (appData.currentScene === 'u07') SceneManager.goToId('u08');
   }
 
   function evaluateChaosAndUnlock() {
-    if (!['ux-08', 'ux-09'].includes(appData.currentScene)) return;
+    if (!['u07', 'u08'].includes(appData.currentScene)) return;
     // transitionProgress：从进入失控起 0→1，约 9 秒完成渐变。
     const elapsed = Math.max(0, performance.now() - appData.growthStartedAt);
     appData.transitionProgress = clamp(elapsed / Math.max(1, CONFIG.TRANSITION_RAMP_MS), 0, 1);
@@ -442,7 +573,7 @@ const App = (function () {
   function startNormalTicker() {
     stopNormalTicker();
     appData.normalTimer = window.setInterval(function () {
-      if (appData.currentScene !== 'ux-07' || appData.growthStarted) {
+      if (appData.currentScene !== 'u06' || appData.growthStarted) {
         stopNormalTicker();
         return;
       }
@@ -464,7 +595,7 @@ const App = (function () {
     // 第一次异常先发生，再由极短的系统提示接住，不直接解释原因。
     setImmersiveStatus('响应异常');
     SceneManager.addTimer(function () {
-      if (appData.currentScene === 'ux-07') SceneManager.goToId('ux-08');
+      if (appData.currentScene === 'u06') SceneManager.goToId('u07');
     }, 420);
   }
 
@@ -474,7 +605,7 @@ const App = (function () {
         appData.clickCount += 1;
       },
       onDelete: function () {
-        if (appData.currentScene === 'ux-07') {
+        if (appData.currentScene === 'u06') {
           appData.successfulDeleteCount += 1;
           setImmersiveStatus('删除成功');
         } else {
@@ -513,31 +644,20 @@ const App = (function () {
         evaluateChaosAndUnlock();
       },
       onObserveSelect: function (effect) {
-        if (appData.currentScene !== 'ux-11' || appData.observeSelected) return;
+        // V0.8 的 u10 不再让用户点泡泡挑一个，这个回调只作为兼容保留。
+        if (appData.currentScene !== 'u10' || appData.observeSelected) return;
         appData.observeSelected = true;
-        const scene = immersiveScene();
-        if (scene) scene.classList.add('is-focus');
         appData.selectedWorryText = effect.text || '';
-        appData.finalChoice = '停下来看看';
-        setContinuousCopy('OBSERVATION', '先看看它', effect.text ? '“' + effect.text + '”' : '');
-        setText('systemMetricValue', '正在观察');
-        setImmersiveStatus('');
-        setText('themeFocus', effect.text ? '你停下来看到的是：“' + effect.text + '”。' : '');
-        SceneManager.addTimer(function () {
-          if (appData.currentScene === 'ux-11') SceneManager.goToId('ux-12');
-        }, CONFIG.OBSERVE_FOCUS_MS);
       },
       onReturnDelete: function () {
         appData.returnDeleteAttemptCount += 1;
-        // 只给随机反馈文案，绝不在这里推进场景：
-        // 是否显示选择界面由 startReturnTicker 的双条件判定。
         setImmersiveStatus(RETURN_FEEDBACK_LINES[
           Math.floor(Math.random() * RETURN_FEEDBACK_LINES.length)
         ]);
         syncGameStats();
       },
       onMiss: function () {
-        if (appData.currentScene === 'ux-07') setImmersiveStatus('未命中，再试一次');
+        if (appData.currentScene === 'u06') setImmersiveStatus('未命中，再试一次');
       },
       onBubbleCount: function () {
         syncGameStats();
@@ -563,7 +683,7 @@ const App = (function () {
     stopNormalTicker();
     BubbleGame.stopGrowth();
     BubbleGame.stopNormalPhase();
-    SceneManager.goToId('ux-10');
+    SceneManager.goToId('u09');
   }
 
   /**
@@ -577,106 +697,85 @@ const App = (function () {
     setImmersiveStatus('');
     setText('systemMetricValue', '不可中断');
 
+    let done = false;
+    function enterBlank() {
+      if (done) return;
+      done = true;
+      stopErasureFallback();
+      setImmersivePhase('blank');
+      setContinuousCopy('', '它们消失了。', '');
+      SceneManager.addTimer(function () {
+        if (appData.currentScene === 'u09') setContinuousCopy('', '', '');
+      }, CONFIG.BLANK_TITLE_VISIBLE_MS);
+      SceneManager.addTimer(function () {
+        if (appData.currentScene === 'u09') SceneManager.goToId('u10');
+      }, CONFIG.BLANK_HOLD_MS);
+    }
+
+    // onComplete 是推进的唯一信号：一旦中途 destroy/clearAll 就再也不会触发，
+    // 流程会永久卡在清空页。这里补一道超时兜底。
+    stopErasureFallback();
+    appData.erasureFallbackTimer = window.setTimeout(function () {
+      if (appData.currentScene === 'u09') enterBlank();
+    }, CONFIG.ERASURE_FALLBACK_MS);
+
     BubbleGame.startErasure({
       durationMs: CONFIG.ERASURE_EXPLOSION_DURATION_MS,
-      onComplete: function () {
-        setImmersivePhase('blank');
-        setContinuousCopy('', '什么都没有了', '');
-        SceneManager.addTimer(function () {
-          if (appData.currentScene === 'ux-10') setContinuousCopy('', '', '');
-        }, CONFIG.BLANK_TITLE_VISIBLE_MS);
-        SceneManager.addTimer(function () {
-          if (appData.currentScene === 'ux-10') SceneManager.goToId('ux-11');
-        }, CONFIG.EMPTY_PAUSE_MS);
-      }
+      onComplete: enterBlank
     });
   }
 
+  /**
+   * u10 重现：只回来 3~5 个，且**不可点击**。
+   * 它们浮现完毕后直接给出唯一出口，不再有「再试一次 / 停下来看看」的二选一。
+   */
   function beginReturnSequence() {
     const scene = immersiveScene();
     if (scene) scene.classList.remove('is-observing', 'is-focus');
     setImmersivePhase('return');
     applyChaosVisuals(0);
-    setContinuousCopy('SYSTEM ECHO', '它们正在回来', '请先看着这些烦恼重新出现。');
+    setContinuousCopy('SYSTEM ECHO', '它们正在回来', '这一次，你只能看着。');
     setImmersiveStatus('');
     appData.returnDeleteAttemptCount = 0;
-    appData.returnAdvanceScheduled = false;
-    appData.returnInteractionStartedAt = 0;
     appData.returnChoiceResolved = false;
-    appData.continueDeleteCount = 0;
-    appData.returnExtraUntil = 0;
     hideReturnChoice();
     BubbleGame.setInteractive(false);
+
+    const span = CONFIG.RETURN_BUBBLE_MAX - CONFIG.RETURN_BUBBLE_MIN + 1;
+    const count = CONFIG.RETURN_BUBBLE_MIN + Math.floor(Math.random() * Math.max(1, span));
 
     BubbleGame.respawnSequentially(appData.worries, {
       initialDelayMs: CONFIG.RETURN_INITIAL_DELAY_MS,
       intervalMs: CONFIG.RETURN_INTERVAL_MS,
       mode: 'soft',
       interactive: false,
-      count: Math.max(CONFIG.RETURN_MIN_BUBBLES, appData.worries.length * 2),
+      count: count,
       onFirst: function () {
         setImmersiveStatus('');
       },
       onComplete: function () {
         SceneManager.addTimer(function () {
-          if (appData.currentScene !== 'ux-11') return;
-          setContinuousCopy('UNEXPECTED RETURN', '真的消失了吗？', '试着再次点击这些泡泡。');
-          BubbleGame.setMode('return');
-          BubbleGame.setInteractive(true);
-          setImmersiveStatus('再次点击泡泡，看看会发生什么');
+          if (appData.currentScene !== 'u10') return;
+          setContinuousCopy('UNEXPECTED RETURN', '真的消失了吗？', '');
           syncGameStats();
-          // 交互计时从“可以点”这一刻开始，而不是从进入 UX-11 开始。
-          appData.returnInteractionStartedAt = performance.now();
-          startReturnTicker();
+          showReturnChoice();
           window.requestAnimationFrame(refreshAvoidRects);
         }, CONFIG.RETURN_COPY_DELAY_MS);
       }
     });
-  }
 
-  /**
-   * 重现阶段门控：必须同时满足
-   *   1) 可交互时长 ≥ RETURN_INTERACTION_MIN_MS（14 秒）
-   *   2) 删除尝试 ≥ RETURN_ATTEMPT_THRESHOLD（6 次）
-   * 满足后只是「显示选择界面」，不自动进入 UX-12。
-   */
-  function startReturnTicker() {
-    stopReturnTicker();
-    appData.returnTimer = window.setInterval(function () {
-      if (appData.currentScene !== 'ux-11') {
-        stopReturnTicker();
-        return;
-      }
-      syncGameStats();
-      if (appData.returnChoiceResolved || appData.returnChoiceVisible) return;
-
-      // 「继续删除」带来的延长期内不打扰用户。
-      if (appData.returnExtraUntil) {
-        if (performance.now() < appData.returnExtraUntil) return;
-        appData.returnExtraUntil = 0;
-        showReturnChoice();
-        return;
-      }
-
-      const elapsed = performance.now() - appData.returnInteractionStartedAt;
-      if (elapsed >= CONFIG.RETURN_INTERACTION_MIN_MS &&
-          appData.returnDeleteAttemptCount >= CONFIG.RETURN_ATTEMPT_THRESHOLD) {
-        showReturnChoice();
-      }
-    }, 200);
+    // 兜底：respawnSequentially 若因故没走完，也要保证出口出现。
+    SceneManager.addTimer(function () {
+      if (appData.currentScene === 'u10' && !appData.returnChoiceVisible) showReturnChoice();
+    }, CONFIG.RETURN_INITIAL_DELAY_MS + CONFIG.RETURN_INTERVAL_MS * (CONFIG.RETURN_BUBBLE_MAX + 2) +
+       CONFIG.RETURN_COPY_DELAY_MS);
   }
 
   function showReturnChoice() {
     const panel = bind('returnChoice');
     if (!panel) return;
     appData.returnChoiceVisible = true;
-    const exhausted = appData.continueDeleteCount >= CONFIG.MAX_CONTINUE_DELETE_COUNT;
-    setText('returnChoiceQuestion', exhausted ? '它又回来了。现在，你准备怎么做？' : '它们总会回来。你还想继续删除吗？');
-    const continueButton = bind('returnContinue');
-    if (continueButton) {
-      continueButton.hidden = exhausted;
-      continueButton.disabled = exhausted;
-    }
+    setText('returnChoiceQuestion', '它又回来了。');
     panel.classList.add('is-visible');
     panel.setAttribute('aria-hidden', 'false');
     window.requestAnimationFrame(refreshAvoidRects);
@@ -691,73 +790,91 @@ const App = (function () {
     window.requestAnimationFrame(refreshAvoidRects);
   }
 
-  /** 「继续删除」：只允许一次，延长约 9 秒后重新给出选择。 */
-  function continueDeleting() {
-    if (appData.currentScene !== 'ux-11') return;
-    if (appData.continueDeleteCount >= CONFIG.MAX_CONTINUE_DELETE_COUNT) return;
-    appData.continueDeleteCount += 1;
-    hideReturnChoice();
-    appData.returnExtraUntil = performance.now() + CONFIG.RETURN_EXTRA_INTERACTION_MS;
-    setContinuousCopy('UNEXPECTED RETURN', '再试一次', '你仍然可以继续点击。');
-    setImmersiveStatus('');
-    BubbleGame.setMode('return');
-    BubbleGame.setInteractive(true);
-  }
-
-  /** 「停下来看看」：停止点击交互，泡泡缓慢静止，再进入既有的 UX-12。 */
+  /** 「看看发生了什么」：u10 通往 u11 的唯一出口。 */
   function stopAndObserve() {
-    if (appData.currentScene !== 'ux-11') return;
+    if (appData.currentScene !== 'u10') return;
     if (appData.returnChoiceResolved) return;
     appData.returnChoiceResolved = true;
     appData.finalChoice = '停下来看看';
-    appData.returnExtraUntil = 0;
-    stopReturnTicker();
+    appData.selectedWorryText = appData.selectedWorry ? appData.selectedWorry.text : '';
     hideReturnChoice();
-    const scene = immersiveScene();
-    if (scene) scene.classList.add('is-observing');
-    setContinuousCopy('OBSERVATION', '那就先别删了。', '选一个泡泡看看。');
-    setText('systemMetricValue', '观察');
-    setImmersiveStatus('选择一个现在最想看清的烦恼');
-    BubbleGame.startObserveSelection();
-    window.requestAnimationFrame(refreshAvoidRects);
+    SceneManager.goToId('u11');
   }
 
-  /* ---------------- 主题与总结（UX-12~UX-14） ---------------- */
+  /* ---------------- 结尾段（u11 / u12） ---------------- */
 
-  function startThemeReadTimer() {
-    const nextButton = bind('themeNext');
+  function renderSummary() {
+    const worry = appData.selectedWorry;
+    setText('summaryWorry', worry ? '关于「' + worry.text + '」' : '');
+    setText('summaryText', worry ? WorryData.summaryFor(worry) : '');
+    const gadget = appData.matchedGadget;
+    const image = bind('pocketGadget');
+    if (image && gadget) {
+      image.src = gadget.image;
+      image.alt = gadget.name;
+    }
+    setText('pocketTag', gadget ? gadget.name : '');
+
+    const nextButton = bind('summaryNext');
     if (!nextButton) return;
-    setText('themeFocus', appData.selectedWorryText ? '你停下来看到的是：“' + appData.selectedWorryText + '”。' : '');
-    const countdown = bind('themeCountdown');
-    if (countdown) countdown.textContent = '有些东西无法通过“删除”解决。看见它，也许就是另一种开始。';
     nextButton.disabled = true;
     nextButton.textContent = '继续观察';
     SceneManager.addTimer(function () {
-      if (appData.currentScene !== 'ux-12') return;
+      if (appData.currentScene !== 'u11') return;
       nextButton.disabled = false;
       nextButton.textContent = '查看体验记录';
     }, CONFIG.THEME_MIN_READ_MS);
   }
 
-  function renderSummary() {
-    const list = bind('summaryList');
-    if (!list) return;
-    const texts = worryTexts();
-    const worryText = texts.length ? '“' + texts.join('”“') + '”' : '那些尚未说出口的烦恼';
-    const rows = [
-      '本次实验对象：' + worryText,
-      '正常阶段，你真正删除了 ' + appData.successfulDeleteCount + ' 次。',
-      '失控后，你又进行了 ' + appData.deleteAttemptCount + ' 次删除尝试，并触发 ' + appData.splitCount + ' 次明显分裂。',
-      '烦恼重现后，你再次尝试了 ' + appData.returnDeleteAttemptCount + ' 次。',
-      appData.selectedWorryText ? '最后，你停下来观察了：“' + appData.selectedWorryText + '”。' : '最后，你选择停下来看看。',
-      '有些东西无法通过“删除”解决。看见它，也许就是另一种开始。'
+  /** u12 体验记录：五节点时间线。不做排行榜、不做评分、不做心理诊断。 */
+  function renderLog() {
+    stopAllTickers();
+    BubbleGame.stop();
+
+    const worry = appData.selectedWorry;
+    const gadget = appData.matchedGadget;
+    setText('logSubtitle', worry
+      ? '你带着「' + worry.text + '」走完了一次删除实验。'
+      : '你走完了一次删除实验。');
+    setText('logHint', '');
+
+    const nodes = [
+      { label: '你选择的烦恼', value: worry ? worry.text : '—' },
+      { label: '系统匹配的道具', value: gadget ? gadget.name : '—' },
+      { label: '删除有效期', value: '成功删除 ' + appData.successfulDeleteCount + ' 次' },
+      {
+        label: '失控之后',
+        value: '尝试 ' + appData.deleteAttemptCount + ' 次，分裂 ' + appData.splitCount + ' 次'
+      },
+      { label: '最终', value: '它又回来了，而你停下来看了看' }
     ];
+
+    const list = bind('logNodes');
+    if (!list) return;
     list.innerHTML = '';
-    rows.forEach(function (text) {
+    nodes.forEach(function (node, index) {
       const li = document.createElement('li');
-      li.textContent = text;
+      li.className = 'log-node';
+      li.style.setProperty('--log-delay', (index * CONFIG.LOG_NODE_FADE_MS) + 'ms');
+      const num = document.createElement('span');
+      num.className = 'log-node__index';
+      num.textContent = String(index + 1);
+      const label = document.createElement('span');
+      label.className = 'log-node__label';
+      label.textContent = node.label;
+      const value = document.createElement('span');
+      value.className = 'log-node__value';
+      value.textContent = node.value;
+      li.appendChild(num);
+      li.appendChild(label);
+      li.appendChild(value);
       list.appendChild(li);
     });
+  }
+
+  // 保存记录：阶段 6 才做真正的导出图片，这里先给出诚实的反馈而不是假装成功。
+  function saveLog() {
+    setText('logHint', '保存功能将在下一版开放，本次记录不会离开你的浏览器。');
   }
 
   function openExitModal() {
@@ -782,12 +899,13 @@ const App = (function () {
       scene.classList.remove('is-observing', 'is-focus');
     }
     setImmersivePhase('calm');
-    setContinuousCopy('DELETE TEST', '点击泡泡，尝试删除烦恼', '先观察它们如何消失。点击空白不会产生惩罚。');
-    setText('primaryMetricLabel', '已删除');
+    setContinuousCopy('DELETE TEST', '点击气泡，试着把烦恼清除', '先观察它们如何消失。点击空白不会产生惩罚。');
+    setText('primaryMetricLabel', '已处理');
     setText('systemMetricValue', '删除有效');
     setImmersiveStatus('');
+    updateGadgetHud(false);
     hideReturnChoice();
-    setText('returnChoiceQuestion', '它们总会回来。你还想继续删除吗？');
+    setText('returnChoiceQuestion', '它又回来了。');
     const device = bind('dictatorInline');
     if (device) {
       device.classList.remove('is-visible', 'is-interactive');
@@ -812,10 +930,11 @@ const App = (function () {
     SceneManager.clearTimers();
     stopAllTickers();
     resetData();
-    renderWorries();
-    setHint('');
+    hideClassifyPanel();
     const field = document.getElementById('worry-text');
     if (field) field.value = '';
+    renderWorryPicker();
+    setHint('');
     resetImmersiveUi();
     syncGameStats();
     SceneManager.reset();
@@ -823,30 +942,35 @@ const App = (function () {
 
   /* ---------------- 场景钩子 ---------------- */
 
+  // 注意：registerHooks 是覆盖写入，同一个 id 注册两次时后者会顶掉前者。
+  // 合并后的节点（u02 / u03 / u06 / u12）必须把逻辑写在同一个 onEnter 里。
   function registerSceneHooks() {
-    SceneManager.registerHooks('ux-04', {
+    SceneManager.registerHooks('u02', { onEnter: renderDialogue });
+
+    SceneManager.registerHooks('u03', {
       onEnter: function () {
-        renderWorries();
-        renderWorrySuggestions(appData.suggestionCategory || 'all');
-        const field = document.getElementById('worry-text');
-        if (field) field.focus();
+        renderWorryPicker();
+        setHint(appData.selectedWorry
+          ? '已选择：「' + appData.selectedWorry.text + '」。'
+          : '先选一个大类，再挑一条具体的烦恼。');
       }
     });
 
-    SceneManager.registerHooks('ux-05', { onEnter: renderWorries });
+    SceneManager.registerHooks('u04', { onEnter: startSlotMatch });
+    SceneManager.registerHooks('u05', { onEnter: renderGadgetResult });
 
-    SceneManager.registerHooks('ux-06', {
+    // u06 是容器所有者，也是唯一调用 BubbleGame.init 的地方。
+    // u07~u10 只能用 setMode/setInteractive/startGrowth 等，绝不能再 init。
+    SceneManager.registerHooks('u06', {
       onEnter: function () {
         if (!appData.worries.length) {
-          setHint('请至少输入一条烦恼。');
-          SceneManager.goToId('ux-04');
+          SceneManager.goToId('u03');
           return;
         }
         appData.successfulDeleteCount = 0;
         appData.deleteAttemptCount = 0;
         appData.splitCount = 0;
         appData.returnDeleteAttemptCount = 0;
-        appData.returnAdvanceScheduled = false;
         appData.clickCount = 0;
         appData.buttonUnlocked = false;
         appData.buttonTriggered = false;
@@ -856,37 +980,20 @@ const App = (function () {
         appData.growthIntervalMs = CONFIG.GROWTH_INTERVAL_START_MS;
         appData.transitionProgress = 0;
         appData.chaosLevel = 0;
-        appData.returnInteractionStartedAt = 0;
         appData.returnChoiceVisible = false;
         appData.returnChoiceResolved = false;
-        appData.continueDeleteCount = 0;
-        appData.returnExtraUntil = 0;
-        appData.selectedWorryText = '';
-        appData.finalChoice = '';
         appData.observeSelected = false;
         stopAllTickers();
         hideReturnChoice();
         resetImmersiveUi();
 
-        // UX-06 仅作为后台初始化节点：直接在全屏交互 Canvas 上创建泡泡，
-        // 不再展示旧的矩形“具象化”加载页面，也不让用户等待两秒。
+        // init 内部是 mount(..., { interactive: false })，
+        // 所以必须紧跟一次 setInteractive(true)，否则平静段点不动。
         BubbleGame.init(appData.worries, canvas('experience'), buildBubbleCallbacks());
-        syncGameStats();
-        SceneManager.addTimer(function () {
-          if (appData.currentScene === 'ux-06') SceneManager.goToId('ux-07');
-        }, 0);
-      }
-    });
-
-    SceneManager.registerHooks('ux-07', {
-      onEnter: function () {
-        resetImmersiveUi();
-        BubbleGame.mount(canvas('experience'), { interactive: true, mode: 'calm' });
-        BubbleGame.stopGrowth();
+        BubbleGame.setInteractive(true);
         BubbleGame.setMode('calm');
         BubbleGame.setChaosLevel(0);
         BubbleGame.setTransitionProgress(0);
-        // 正常删除阶段：持续补充泡泡，保证 14 秒内都有东西可点。
         BubbleGame.startNormalPhase();
         appData.normalPhaseStartedAt = performance.now();
         startNormalTicker();
@@ -896,7 +1003,7 @@ const App = (function () {
       onExit: stopNormalTicker
     });
 
-    SceneManager.registerHooks('ux-08', {
+    SceneManager.registerHooks('u07', {
       onEnter: function () {
         appData.growthStarted = true;
         appData.growthStartedAt = performance.now();
@@ -906,6 +1013,7 @@ const App = (function () {
         BubbleGame.setTransitionProgress(0);
         setImmersivePhase('growth');
         setText('systemMetricValue', '出现异常');
+        updateGadgetHud(true);
         BubbleGame.setMode('growth');
         BubbleGame.startGrowth();
         startChaosTicker();
@@ -913,7 +1021,7 @@ const App = (function () {
       }
     });
 
-    SceneManager.registerHooks('ux-09', {
+    SceneManager.registerHooks('u08', {
       onEnter: function () {
         setImmersivePhase('ready');
         updateGrowthCopy();
@@ -921,25 +1029,20 @@ const App = (function () {
       }
     });
 
-    SceneManager.registerHooks('ux-10', { onEnter: beginErasureSequence });
-    SceneManager.registerHooks('ux-11', {
+    SceneManager.registerHooks('u09', { onEnter: beginErasureSequence });
+
+    SceneManager.registerHooks('u10', {
       onEnter: beginReturnSequence,
       onExit: function () {
-        stopReturnTicker();
         hideReturnChoice();
         BubbleGame.setInteractive(false);
         BubbleGame.clearAll();
         BubbleGame.stop();
       }
     });
-    SceneManager.registerHooks('ux-12', { onEnter: startThemeReadTimer });
-    SceneManager.registerHooks('ux-13', { onEnter: renderSummary });
-    SceneManager.registerHooks('ux-14', {
-      onEnter: function () {
-        stopAllTickers();
-        BubbleGame.stop();
-      }
-    });
+
+    SceneManager.registerHooks('u11', { onEnter: renderSummary });
+    SceneManager.registerHooks('u12', { onEnter: renderLog });
   }
 
   /* ---------------- 事件 ---------------- */
@@ -947,10 +1050,8 @@ const App = (function () {
   function handleNext() {
     const current = SceneManager.current();
     if (!current) return;
-    if (current.id === 'ux-04' && !appData.worries.length) {
-      setHint('请至少输入一条烦恼后再继续。');
-      const field = document.getElementById('worry-text');
-      if (field) field.focus();
+    if (current.id === 'u03') {
+      confirmWorry();
       return;
     }
     SceneManager.next();
@@ -958,7 +1059,15 @@ const App = (function () {
 
   function handleBack() {
     const current = SceneManager.current();
-    if (current && ['ux-08', 'ux-09', 'ux-10', 'ux-11'].includes(current.id)) return;
+    if (!current) return;
+    // 沉浸段不可回退：中途退出只能走「退出体验」。
+    if (['u07', 'u08', 'u09', 'u10'].includes(current.id)) return;
+    // u05 往回是 u04，而 u04 一进就自动前进——会原地打转。直接回选择页。
+    if (current.id === 'u05') {
+      resetWorryPick();
+      SceneManager.goToId('u03');
+      return;
+    }
     SceneManager.back();
   }
 
@@ -970,15 +1079,20 @@ const App = (function () {
       case 'exit-cancel': closeExitModal(); break;
       case 'exit-confirm':
       case 'restart': restart(); break;
-      case 'add-worry': addWorry(); break;
-      case 'remove-worry': removeWorry(Number(target.dataset.index)); break;
-      case 'worry-category': renderWorrySuggestions(target.dataset.category || 'all'); break;
-      case 'refresh-worry-suggestions': renderWorrySuggestions(appData.suggestionCategory || 'all'); break;
-      case 'use-worry-preset': addPresetWorry(Number(target.dataset.presetId)); break;
+      case 'pick-category': pickCategory(target.dataset.category); break;
+      case 'pick-worry': pickWorry(target.dataset.presetId); break;
+      case 'classify-worry': classifyFreeWorry(); break;
+      case 'confirm-worry': confirmWorry(); break;
+      case 'reset-worry-pick': resetWorryPick(); break;
+      case 'skip-slot': SceneManager.goToId('u05'); break;
       case 'trigger-inline-button': triggerInlineButton(); break;
-      case 'return-continue': continueDeleting(); break;
       case 'return-stop': stopAndObserve(); break;
-      default: break;
+      case 'save-log': saveLog(); break;
+      default:
+        // handleAction 的 default 会静默吞掉未知 action，
+        // 打一条 warn 好过页面「点了没反应」还查不到原因。
+        console.warn('[app] 未处理的 data-action：', action);
+        break;
     }
   }
 
@@ -992,7 +1106,7 @@ const App = (function () {
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Enter' && event.target.id === 'worry-text') {
         event.preventDefault();
-        addWorry();
+        classifyFreeWorry();
       }
       if (event.key === 'Escape' && bind('exitModal') && bind('exitModal').classList.contains('modal--open')) {
         closeExitModal();
@@ -1004,10 +1118,6 @@ const App = (function () {
     }, { passive: true });
   }
 
-  function renderStaticText() {
-    setText('maxWorries', CONFIG.MAX_WORRIES_MVP);
-  }
-
   function updateProgress(scene, index) {
     appData.currentScene = scene.id;
     document.body.dataset.currentScene = scene.id;
@@ -1017,12 +1127,10 @@ const App = (function () {
   }
 
   function init() {
-    renderStaticText();
     registerSceneHooks();
     SceneManager.onChange(updateProgress);
     bindEvents();
-    renderWorries();
-    renderWorrySuggestions('all');
+    renderWorryPicker();
     resetImmersiveUi();
     syncGameStats();
     SceneManager.reset();

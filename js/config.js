@@ -1,6 +1,8 @@
 /**
  * config.js —— 可配置常量
- * V0.7：强化 10 类烦恼对象的视觉、运动与点击差异，同时保留既有叙事节奏。
+ * V0.8：流程收敛为 u01~u12 十二节点，改为「选一个烦恼 → 匹配道具 → 生成泡泡」。
+ *       V0.7 的常量一律保留（bubble-game.js 里全是裸取、无 fallback，删一个就崩），
+ *       新增项集中在文件末尾的 V0.8 区块。
  */
 'use strict';
 
@@ -20,7 +22,7 @@ const CONFIG = {
   DELETE_ANIMATION_MAX_MS: 300,
   THEME_MIN_READ_MS: 5000,
 
-  // ---- 正常删除阶段（UX-07）：必须同时满足时长与次数才进入失控 ----
+  // ---- 正常删除阶段（u06）：必须同时满足时长与次数才进入失控 ----
   NORMAL_PHASE_MIN_MS: 14000,
   NORMAL_PHASE_MAX_MS: 22000,
   NORMAL_DELETE_THRESHOLD: 8,
@@ -123,7 +125,49 @@ const CONFIG = {
   CLASSIFY_MIN_MARGIN: 2,
   CLASSIFY_HIGH_SCORE: 5,
   // 自由输入没有预设关键词时，从原文截多少字塞进气泡。
-  BUBBLE_KEYWORD_MAX_CHARS: 6
+  BUBBLE_KEYWORD_MAX_CHARS: 6,
+
+  // ================= V0.8 新增 =================
+  // 全部为新增键，不覆盖上面任何一项。上面的键仍被 bubble-game.js 裸取，不可删。
+
+  // u02 对话：逐句推进的最小停留，防止连点跳过全部台词。
+  DIALOGUE_LINE_MS: 600,
+
+  // u03 选择烦恼：悬停多久展开细分条目；一个大类展开几条。
+  WORRY_HOVER_MS: 260,
+  WORRY_SUB_COUNT: 3,
+  // 沉浸段的泡泡取自同一大类的兄弟烦恼，凑够这么多条。
+  WORRY_SIBLING_COUNT: 12,
+
+  // u04 老虎机：三列，每列 20 个道具 + 1 个空位。
+  SLOT_REEL_COUNT: 3,
+  SLOT_ITEMS_PER_REEL: 21,
+  SLOT_SPIN_MS: 2400,
+  SLOT_REEL_STAGGER_MS: 320,
+
+  // u06 平静段：泡泡稳定在 12 个；删到第 6 个后开始补生。
+  CALM_TARGET_COUNT: 12,
+  CALM_SPAWN_AFTER: 6,
+
+  // u07 失控段：边缘警示线宽度。
+  CHAOS_EDGE_WIDTH_PX: 2,
+
+  // u08 独裁者按钮：改为「按住」触发，不再是点一下。
+  DICTATOR_HOLD_MS: 2000,
+  DICTATOR_HOLD_REDUCED_MS: 600,
+
+  // u09 空白：全黑停留多久后进入重现。
+  BLANK_HOLD_MS: 3000,
+
+  // u10 重现：只回来 3~5 个，且不可点击。
+  RETURN_BUBBLE_MIN: 3,
+  RETURN_BUBBLE_MAX: 5,
+  // startErasure 的 onComplete 是推进的唯一信号，必须配超时兜底。
+  ERASURE_FALLBACK_MS: 6000,
+
+  // u11 / u12 结尾段的文字淡入节奏。
+  SUMMARY_LINE_FADE_MS: 520,
+  LOG_NODE_FADE_MS: 260
 };
 
 /** 重现阶段的随机点击反馈文案：只描述“又出现了”，不出现“删除成功”。 */
@@ -136,36 +180,41 @@ const RETURN_FEEDBACK_LINES = [
 
 const APP_STATE = {
   INTRO: 'INTRO',
-  GADGET_INFO: 'GADGET_INFO',
-  START_CONFIRM: 'START_CONFIRM',
-  INPUT_WORRIES: 'INPUT_WORRIES',
-  BUBBLE_CREATE: 'BUBBLE_CREATE',
-  BUBBLE_GAME: 'BUBBLE_GAME',
-  BUTTON_READY: 'BUTTON_READY',
-  WORLD_CLEAR: 'WORLD_CLEAR',
+  DIALOGUE: 'DIALOGUE',
+  WORRY_PICK: 'WORRY_PICK',
+  GADGET_MATCH: 'GADGET_MATCH',
+  GADGET_RESULT: 'GADGET_RESULT',
+  ERASE_CALM: 'ERASE_CALM',
+  ERASE_CHAOS: 'ERASE_CHAOS',
+  DICTATOR_CHOICE: 'DICTATOR_CHOICE',
+  BLANK: 'BLANK',
   WORRIES_RETURN: 'WORRIES_RETURN',
-  THEME: 'THEME',
   SUMMARY: 'SUMMARY',
-  RESET: 'RESET'
+  LOG: 'LOG'
 };
 
 /**
- * UX-07~UX-11 仍是独立后台节点，但共用 ux-07 的视觉容器。
- * 因此状态可以测试和统计，用户却不会感到“翻页”。
+ * u06~u10 是五个独立的后台节点，但 viewId 全部指向 u06——
+ * scene-manager 的 renderVisibility 用的正是 viewId，
+ * 所以画面自始至终是同一个 section、同一个 canvas，用户不会感到"翻页"。
+ * 逻辑 id 仍写进 body[data-current-scene]，CSS 和测试可以照常区分五个阶段。
+ *
+ * 与 V0.7 的对照（改名不是整体平移，u07 起错开一位，不能用正则批量替换）：
+ *   ux-01→u01  ux-02+ux-03→u02  ux-04+ux-05→u03  （u04/u05 全新）
+ *   ux-06+ux-07→u06  ux-08→u07  ux-09→u08  ux-10→u09  ux-11→u10
+ *   ux-12→u11  ux-13+ux-14→u12
  */
 const SCENE_FLOW = [
-  { id: 'ux-01', state: APP_STATE.INTRO },
-  { id: 'ux-02', state: APP_STATE.GADGET_INFO },
-  { id: 'ux-03', state: APP_STATE.START_CONFIRM },
-  { id: 'ux-04', state: APP_STATE.INPUT_WORRIES },
-  { id: 'ux-05', state: APP_STATE.INPUT_WORRIES },
-  { id: 'ux-06', state: APP_STATE.BUBBLE_CREATE, viewId: 'ux-07' },
-  { id: 'ux-07', state: APP_STATE.BUBBLE_GAME, viewId: 'ux-07' },
-  { id: 'ux-08', state: APP_STATE.BUBBLE_GAME, viewId: 'ux-07' },
-  { id: 'ux-09', state: APP_STATE.BUTTON_READY, viewId: 'ux-07' },
-  { id: 'ux-10', state: APP_STATE.WORLD_CLEAR, viewId: 'ux-07' },
-  { id: 'ux-11', state: APP_STATE.WORRIES_RETURN, viewId: 'ux-07' },
-  { id: 'ux-12', state: APP_STATE.THEME },
-  { id: 'ux-13', state: APP_STATE.SUMMARY },
-  { id: 'ux-14', state: APP_STATE.RESET }
+  { id: 'u01', state: APP_STATE.INTRO },
+  { id: 'u02', state: APP_STATE.DIALOGUE },
+  { id: 'u03', state: APP_STATE.WORRY_PICK },
+  { id: 'u04', state: APP_STATE.GADGET_MATCH },
+  { id: 'u05', state: APP_STATE.GADGET_RESULT },
+  { id: 'u06', state: APP_STATE.ERASE_CALM, viewId: 'u06' },
+  { id: 'u07', state: APP_STATE.ERASE_CHAOS, viewId: 'u06' },
+  { id: 'u08', state: APP_STATE.DICTATOR_CHOICE, viewId: 'u06' },
+  { id: 'u09', state: APP_STATE.BLANK, viewId: 'u06' },
+  { id: 'u10', state: APP_STATE.WORRIES_RETURN, viewId: 'u06' },
+  { id: 'u11', state: APP_STATE.SUMMARY },
+  { id: 'u12', state: APP_STATE.LOG }
 ];

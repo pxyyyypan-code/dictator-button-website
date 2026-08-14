@@ -78,10 +78,14 @@ const SceneManager = (function () {
     return true;
   }
 
-  /** 按场景 id 切换，例如 'ux-01'。 */
+  /** 按场景 id 切换，例如 'u01'。找不到时静默返回 false，注意排查拼写。 */
   function goToId(sceneId) {
     const index = SCENE_FLOW.findIndex(function (s) { return s.id === sceneId; });
-    return index === -1 ? false : goToIndex(index);
+    if (index === -1) {
+      console.warn('[scene] 未知场景 id：', sceneId);
+      return false;
+    }
+    return goToIndex(index);
   }
 
   function next() {
@@ -102,7 +106,7 @@ const SceneManager = (function () {
     });
   }
 
-  /** 回到流程起点并清理定时器（文档 FR-06-03 / UX-14）。 */
+  /** 回到流程起点并清理定时器（文档 FR-06-03 / u12 重新开始）。 */
   function reset() {
     clearTimers();
     currentIndex = 0;

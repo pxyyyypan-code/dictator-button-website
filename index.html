@@ -9,196 +9,217 @@
 <body>
 <main id="stage" class="stage">
 
-  <!-- UX-01 -->
-  <section class="scene" data-scene="ux-01" aria-hidden="true">
-    <p class="scene__tag">NO.001 · FUTURE GADGET ARCHIVE</p>
-    <h1 class="scene__title">22世纪未来道具体验馆</h1>
-    <p class="scene__desc">本次开放体验：独裁者按钮。请谨慎对待你希望从世界中删除的事物。</p>
-    <div class="hint-relic" aria-hidden="true"></div>
-    <div class="scene__actions">
-      <button type="button" class="btn btn--primary" data-action="next">进入体验馆</button>
-    </div>
+  <!-- ============================================================
+       U01～U12 十二个节点。其中 u06 是**共用的全屏交互容器**：
+       u06/u07/u08/u09/u10 五个逻辑状态在 SCENE_FLOW 里都带 viewId:'u06'，
+       所以画面始终是同一个 section，只靠 phase-* 类换装。
+       Canvas 只有这一处，绝不能被 display:none 或重建（详见 u06 注释）。
+       ============================================================ -->
+
+  <!-- U01 首页：同心波纹 + 道具向外扩散。规格：只有点大标题才进入。 -->
+  <section class="scene scene--intro" data-scene="u01" aria-hidden="true">
+    <div class="intro-ripple" aria-hidden="true"></div>
+    <div class="intro-gadgets" aria-hidden="true"></div>
+    <button type="button" class="intro-card" data-action="next">
+      <span class="intro-card__title">22世纪未来道具</span>
+      <span class="intro-card__title">体验馆</span>
+      <span class="intro-card__enter">点击进入</span>
+    </button>
   </section>
 
-  <!-- UX-02 -->
-  <section class="scene" data-scene="ux-02" aria-hidden="true">
-    <p class="scene__tag">GADGET FILE · 001</p>
-    <h1 class="scene__title">独裁者按钮</h1>
-    <p class="scene__desc">按下按钮，使用者最想排除的对象将从眼前消失。本次体验将“删除对象”重新设定为你正在面对的烦恼。</p>
-    <div class="archive-card" aria-label="独裁者按钮档案">
-      <div><span>功能</span><strong>删除指定烦恼</strong></div>
-      <div><span>风险等级</span><strong>高</strong></div>
-      <div><span>体验原则</span><strong>不上传、不长期保存输入内容</strong></div>
-    </div>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回</button>
-      <button type="button" class="btn btn--primary" data-action="next">阅读体验规则</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
-  </section>
-
-  <!-- UX-03 -->
-  <section class="scene" data-scene="ux-03" aria-hidden="true">
-    <p class="scene__tag">EXPERIENCE PROTOCOL</p>
-    <h1 class="scene__title">确认开始体验</h1>
-    <p class="scene__desc">你将输入近期最想删除的烦恼，并亲手尝试让它们消失。体验过程约需 5 分钟。</p>
-    <div class="protocol-card">
-      <p>输入仅保留在当前页面中。</p>
-      <p>体验不是心理诊断，也不会替你解决现实问题。</p>
-      <p>你可以在任意阶段退出并清除数据。</p>
-    </div>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">取消</button>
-      <button type="button" class="btn btn--primary" data-action="next">开始体验</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
-  </section>
-
-  <!-- UX-04 -->
-  <section class="scene" data-scene="ux-04" aria-hidden="true">
-    <p class="scene__tag">EMOTION INPUT</p>
-    <h1 class="scene__title">今天，你最想删除什么？</h1>
-    <p class="scene__desc">输入至少 1 条、最多 <span data-bind="maxWorries"></span> 条烦恼。每条内容都会成为一个可交互对象。</p>
-    <div class="worry-input">
-      <input type="text" id="worry-text" class="worry-input__field" maxlength="40"
-             placeholder="例如：迟迟没有完成的作业" autocomplete="off">
-      <button type="button" class="btn btn--primary" data-action="add-worry">添加</button>
-    </div>
-    <p class="worry-hint" data-bind="worryHint" role="status" aria-live="polite"></p>
-
-    <div class="worry-helper" aria-label="烦恼灵感库">
-      <div class="worry-helper__head">
-        <span>不知道怎么说？从一个方向开始</span>
-        <button type="button" class="worry-helper__refresh" data-action="refresh-worry-suggestions">换一批</button>
-      </div>
-      <div class="worry-category-chips" data-bind="worryCategories"></div>
-      <div class="worry-suggestions" data-bind="worrySuggestions"></div>
-      <p class="worry-helper__note">预设只是灵感，你仍然可以自由输入任何烦恼。不同内容会在后续获得不同的互动反应。</p>
-    </div>
-
-    <ul class="worry-list" data-bind="worryList"></ul>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回</button>
-      <button type="button" class="btn btn--primary" data-action="next">确认内容</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
-  </section>
-
-  <!-- UX-05 -->
-  <section class="scene" data-scene="ux-05" aria-hidden="true">
-    <p class="scene__tag">OBJECT CONFIRMATION</p>
-    <h1 class="scene__title">确认删除对象</h1>
-    <p class="scene__desc">系统将把下列文字转化为烦恼泡泡。确认后，你将进入删除区域。</p>
-    <ul class="worry-list worry-list--readonly" data-bind="worryListConfirm"></ul>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回修改</button>
-      <button type="button" class="btn btn--primary" data-action="next">生成烦恼泡泡</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
-    </div>
-  </section>
-
-  <!-- UX-06 -->
-  <section class="scene scene--wide" data-scene="ux-06" aria-hidden="true">
-    <p class="scene__tag">MATERIALIZATION</p>
-    <h1 class="scene__title">烦恼正在具象化</h1>
-    <p class="scene__desc">系统正在将你的文字转化为漂浮对象。</p>
-    <div class="game-shell game-shell--generation">
-      <canvas class="bubble-canvas" data-canvas="create" aria-label="烦恼泡泡生成区域"></canvas>
-      <div class="generation-overlay">
-        <span class="generation-ring" aria-hidden="true"></span>
-        <p data-bind="generationStatus" role="status">正在建立对象坐标……</p>
+  <!-- U02 对话：左文右哆啦A梦（原 ux-02 + ux-03 合一）。
+       阶段 4 由 dialogue.js 接管逐句推进，届时「继续」改为翻句、
+       末句后才出现「去选择烦恼」。骨架期「继续」直接前进一页。 -->
+  <section class="scene scene--split" data-scene="u02" aria-hidden="true">
+    <p class="site-mark">22世纪未来道具体验馆</p>
+    <div class="split__text">
+      <p class="scene__tag">STEP 02 · 使用说明</p>
+      <h1 class="scene__title" data-bind="dialogueText">这个按钮，可以让烦恼消失。</h1>
+      <p class="scene__desc">请谨慎使用，它会影响你接下来的每一步。</p>
+      <div class="scene__actions">
+        <button type="button" class="btn btn--primary" data-action="next">继续</button>
+        <span class="page-counter" data-bind="dialoguePage">01 / 05</span>
+        <button type="button" class="btn btn--link" data-action="back">返回道具馆</button>
       </div>
     </div>
-    <div class="scene__actions scene__actions--quiet">
-      <button type="button" class="btn" data-action="back">返回修改</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+    <div class="split__visual" aria-hidden="true">
+      <div class="doraemon doraemon--sit"></div>
     </div>
   </section>
 
-  <!-- UX-07～UX-11：共用同一个连续全屏交互空间 -->
-  <section class="scene scene--immersive phase-calm" data-scene="ux-07" data-phase="calm" aria-hidden="true">
+  <!-- U03 烦恼选择（原 ux-04 + ux-05 合一）：9 大类粒子 → 3 条细分 → 确认。
+       自由输入走本地词表分类；置信度不足时必须让玩家手选，不得随机发道具。 -->
+  <section class="scene scene--pick" data-scene="u03" aria-hidden="true">
+    <p class="site-mark">22世纪未来道具体验馆</p>
+
+    <!-- 两个容器都由 app.js 用 innerHTML 重建，里面不要写静态内容。 -->
+    <div class="worry-subs" data-bind="worrySubs" role="tablist" aria-label="细分烦恼"></div>
+    <div class="worry-particles" data-bind="worryCategories" aria-label="烦恼大类"></div>
+
+    <div class="scene__actions scene__actions--center">
+      <button type="button" class="btn btn--primary" data-action="confirm-worry"
+              data-bind="confirmWorry" disabled>确认这个烦恼</button>
+    </div>
+
+    <p class="scene__tag">STEP 03 · 选择烦恼</p>
+    <h1 class="scene__title">你现在最想摆脱的烦恼是什么？</h1>
+    <p class="worry-hint" data-bind="worryPickHint" role="status" aria-live="polite"></p>
+
+    <div class="worry-free">
+      <label class="u-visually-hidden" for="worry-text">自己写下烦恼</label>
+      <input type="text" id="worry-text" class="worry-free__field" maxlength="40"
+             placeholder="自己写下烦恼 →" autocomplete="off">
+      <button type="button" class="btn btn--link" data-action="classify-worry">看看它属于哪一类</button>
+    </div>
+
+    <!-- 分类推测面板：常驻 DOM，由 is-visible 控制显隐。 -->
+    <div class="classify-panel" data-bind="classifyPanel" aria-live="polite" aria-hidden="true">
+      <p class="classify-panel__guess" data-bind="classifyGuess"></p>
+      <div class="classify-panel__actions">
+        <button type="button" class="btn btn--primary btn--compact" data-action="confirm-worry">确认分类</button>
+        <button type="button" class="btn btn--link" data-action="reset-worry-pick">重新选择</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- U04 老虎机（全新）：三列滚轮，每列 20 道具 + 1 空位，自动播 2～3 秒可跳过。
+       阶段 4 由 gadget-match.js 接管真正的滚动与拨杆动画。 -->
+  <section class="scene scene--slot" data-scene="u04" aria-hidden="true">
+    <p class="site-mark site-mark--light">22世纪未来道具体验馆</p>
+    <p class="scene__desc slot__lead">正在匹配适合你的未来道具</p>
+    <div class="slot" role="img" aria-label="道具匹配中">
+      <div class="slot__reel" data-bind="reelA"></div>
+      <div class="slot__reel" data-bind="reelB"></div>
+      <div class="slot__reel" data-bind="reelC"></div>
+    </div>
+    <p class="slot__worry">当前烦恼｜<span data-bind="slotWorryLabel"></span></p>
+    <button type="button" class="btn btn--link btn--on-primary slot__skip" data-action="skip-slot">跳过</button>
+  </section>
+
+  <!-- U05 道具结果（全新）：道具停在第 4 页的位置上，此页不出现警示红。 -->
+  <section class="scene scene--split" data-scene="u05" aria-hidden="true">
+    <p class="site-mark">22世纪未来道具体验馆</p>
+    <div class="split__text">
+      <p class="scene__tag">MATCH RESULT · 匹配结果</p>
+      <h1 class="scene__title">
+        <span class="match__lead">为你匹配到</span>
+        <span class="match__name" data-bind="gadgetName"></span>
+      </h1>
+      <p class="match__formula" data-bind="gadgetGroup"></p>
+      <p class="scene__desc" data-bind="gadgetDesc"></p>
+      <div class="scene__actions">
+        <button type="button" class="btn btn--primary" data-action="next">开始体验</button>
+        <button type="button" class="btn btn--link" data-action="back">重新选择 →</button>
+      </div>
+    </div>
+    <div class="split__visual">
+      <img class="match__image" data-bind="gadgetImage" src="" alt="" width="360" height="360">
+      <p class="match__tip">点击道具以查看功能</p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       U06 共用全屏交互容器（原 ux-06 + ux-07 合一，并承载 u07~u10）
+       —— 全站唯一的 <canvas>，也是唯一的挂载点。三条硬约束：
+       1. 它必须在首屏就静态存在，且此后不被重建；
+       2. 它和它的祖先在 u06~u10 期间不得 display:none
+          （空白阶段请用 opacity/filter 隐藏，否则动画循环会永久停摆）；
+       3. canvas 上不加 border/padding，也不给祖先加 transform，
+          否则点击坐标会整体偏移。视觉边框交给 .immersive-frame 画。
+       ============================================================ -->
+  <section class="scene scene--immersive phase-calm" data-scene="u06" data-phase="calm" aria-hidden="true">
     <canvas class="bubble-canvas bubble-canvas--immersive bubble-canvas--interactive"
             data-canvas="experience" aria-label="全屏烦恼泡泡交互区域"></canvas>
     <div class="immersive-frame" aria-hidden="true"></div>
 
+    <!-- 左上：匹配到的道具。失控阶段图标变暗、文案换成「道具的效果正在减弱。」 -->
     <header class="immersive-header">
+      <span class="gadget-hud">
+        <img class="gadget-hud__icon" data-bind="gadgetHudIcon" src="" alt="" width="40" height="40">
+        <span class="gadget-hud__name" data-bind="gadgetHudName"></span>
+      </span>
       <p class="scene__tag" data-bind="continuousTag">DELETE TEST</p>
-      <h1 class="scene__title" data-bind="continuousTitle">点击泡泡，尝试删除烦恼</h1>
+      <h1 class="scene__title" data-bind="continuousTitle">点击气泡，试着把烦恼清除</h1>
       <p class="scene__desc" data-bind="continuousDesc">先观察它们如何消失。点击空白不会产生惩罚。</p>
     </header>
 
-    <div class="game-hud game-hud--immersive" data-bind="continuousHud" aria-live="polite">
-      <span class="hud-pill"><span data-bind="primaryMetricLabel">已删除</span> <strong data-bind="primaryMetricValue">0</strong></span>
-      <span class="hud-pill">当前泡泡 <strong data-bind="bubbleMetricValue">0</strong></span>
+    <!-- 右上计数。三格的更新责任分散在 app.js 多处，不要拆到不同容器里。 -->
+    <div class="game-hud game-hud--immersive" aria-live="polite">
+      <span class="hud-pill"><span data-bind="primaryMetricLabel">已处理</span> <strong data-bind="primaryMetricValue">0</strong></span>
+      <span class="hud-pill">当前气泡 <strong data-bind="bubbleMetricValue">0</strong></span>
       <span class="hud-pill hud-pill--status">系统状态：<strong data-bind="systemMetricValue">删除有效</strong></span>
     </div>
 
     <button type="button" class="btn btn--ghost immersive-exit" data-action="exit">退出体验</button>
 
+    <!-- U08 按钮抉择：右半屏。阶段 5 把点击改成「按住 2 秒」＋圆环进度。 -->
     <div class="dictator-inline" data-bind="dictatorInline" aria-live="polite">
       <span class="dictator-inline__label" data-bind="dictatorLabel">紧急清除协议</span>
       <button type="button" class="btn btn--danger dictator-inline__button"
               data-action="trigger-inline-button" data-bind="inlineButton" disabled>等待授权</button>
+      <span class="dictator-inline__ring" aria-hidden="true"></span>
       <small class="dictator-inline__hint" data-bind="inlineButtonHint"></small>
+      <small class="dictator-inline__warn">注意：效果为暂时性，烦恼可能在未来重新出现。</small>
     </div>
 
-    <!-- 烦恼重现后的主动选择：双条件满足后缓慢出现，按钮位置固定不动 -->
+    <!-- U10 重现：气泡不可点击，只有一个出口按钮。
+         这个面板必须存在——它是通往 u11 的唯一路径，缺了会静默卡死在 u10。 -->
     <div class="return-choice" data-bind="returnChoice" aria-hidden="true">
-      <p class="return-choice__question" data-bind="returnChoiceQuestion">它们总会回来。你还想继续删除吗？</p>
-      <div class="return-choice__actions">
-        <button type="button" class="btn return-choice__btn"
-                data-action="return-continue" data-bind="returnContinue">再试一次</button>
-        <button type="button" class="btn return-choice__btn"
-                data-action="return-stop" data-bind="returnStop">停下来看看</button>
-      </div>
+      <p class="scene__tag">STEP 10 · 再次出现</p>
+      <p class="return-choice__question" data-bind="returnChoiceQuestion">它又回来了。</p>
+      <p class="return-choice__note">有些东西无法通过删除解决。</p>
+      <button type="button" class="btn btn--primary" data-action="return-stop">看看发生了什么</button>
     </div>
 
     <p class="immersive-whisper" data-bind="immersiveStatus" role="status" aria-live="polite"></p>
   </section>
 
-  <!-- UX-08～UX-11 保留为后台节点，视觉继续使用 UX-07 -->
-  <section class="scene scene--alias" data-scene="ux-08" aria-hidden="true"></section>
-  <section class="scene scene--alias" data-scene="ux-09" aria-hidden="true"></section>
-  <section class="scene scene--alias" data-scene="ux-10" aria-hidden="true"></section>
-  <section class="scene scene--alias" data-scene="ux-11" aria-hidden="true"></section>
+  <!-- u07 失控 / u08 按钮抉择 / u09 空白 / u10 重现 没有独立 section：
+       它们在 SCENE_FLOW 里 viewId 都指向 u06，renderVisibility 用的正是 viewId。
+       V0.7 里那 4 个空的 .scene--alias 节点从来拿不到 .scene--active，已删除。 -->
 
-  <!-- UX-12 -->
-  <section class="scene" data-scene="ux-12" aria-hidden="true">
-    <p class="scene__tag">OBSERVATION</p>
-    <h1 class="scene__title">
-      <span class="theme-line">它没有消失。</span>
-      <span class="theme-line">但你不必继续追着它跑。</span>
-    </h1>
-    <p class="scene__desc theme-focus" data-bind="themeFocus"></p>
-    <p class="scene__desc" data-bind="themeCountdown">有些东西无法通过“删除”解决。看见它，也许就是另一种开始。</p>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回</button>
-      <button type="button" class="btn btn--primary" data-action="next" data-bind="themeNext" disabled>阅读中</button>
-      <button type="button" class="btn btn--ghost" data-action="exit">退出体验</button>
+  <!-- U11 总结（原 ux-12 重做）：读玩家真实选择的烦恼与对应的个性化总结。 -->
+  <section class="scene scene--split scene--on-primary" data-scene="u11" aria-hidden="true">
+    <div class="split__text">
+      <p class="scene__tag scene__tag--wide">OBSERVATION</p>
+      <h1 class="scene__title">
+        <span class="theme-line">它没有消失，</span>
+        <span class="theme-line">但你不必继续追着它跑。</span>
+      </h1>
+      <p class="summary-focus" data-bind="summaryWorry"></p>
+      <p class="summary-body" data-bind="summaryText"></p>
+      <div class="scene__actions">
+        <button type="button" class="btn btn--on-primary" data-action="next" data-bind="summaryNext">查看体验记录</button>
+        <button type="button" class="btn btn--link btn--on-primary" data-action="restart">重新体验</button>
+      </div>
+    </div>
+    <div class="split__visual">
+      <div class="pocket">
+        <img class="pocket__gadget" data-bind="pocketGadget" src="" alt="" width="200" height="200">
+        <span class="pocket__tag" data-bind="pocketTag"></span>
+      </div>
     </div>
   </section>
 
-  <!-- UX-13 -->
-  <section class="scene" data-scene="ux-13" aria-hidden="true">
-    <p class="scene__tag">EXPERIENCE REPORT</p>
-    <h1 class="scene__title">本次体验记录</h1>
-    <p class="scene__desc">你尝试删除的对象已经被记录在本次会话中。</p>
-    <ul class="summary-list" data-bind="summaryList"></ul>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回</button>
-      <button type="button" class="btn btn--primary" data-action="next">结束体验</button>
+  <!-- U12 体验记录（原 ux-13 + ux-14 合一）：五节点时间线。
+       规格明令：不要排行榜、不要评分、不要心理诊断结果。 -->
+  <section class="scene scene--split" data-scene="u12" aria-hidden="true">
+    <p class="site-mark">22世纪未来道具体验馆</p>
+    <div class="split__text">
+      <p class="scene__tag scene__tag--wide">EXPERIENCE LOG</p>
+      <h1 class="scene__title">
+        <span class="theme-line">这一次，</span>
+        <span class="theme-line">你经历了什么？</span>
+      </h1>
+      <p class="scene__desc" data-bind="logSubtitle"></p>
+      <div class="scene__actions">
+        <button type="button" class="btn btn--primary" data-action="save-log">保存记录</button>
+        <button type="button" class="btn btn--link" data-action="restart">返回体验馆</button>
+      </div>
+      <p class="worry-hint" data-bind="logHint" role="status" aria-live="polite"></p>
     </div>
-  </section>
-
-  <!-- UX-14 -->
-  <section class="scene" data-scene="ux-14" aria-hidden="true">
-    <p class="scene__tag">SESSION COMPLETE</p>
-    <h1 class="scene__title">体验结束</h1>
-    <p class="scene__desc">数据将在返回首页时清除。你可以重新体验，也可以带着这些问题离开。</p>
-    <div class="scene__actions">
-      <button type="button" class="btn" data-action="back">返回总结</button>
-      <button type="button" class="btn btn--primary" data-action="restart">返回体验馆首页</button>
-    </div>
+    <!-- 由 app.js 用 innerHTML 重建，不要写静态内容。 -->
+    <ol class="log-timeline" data-bind="logNodes"></ol>
   </section>
 </main>
 
