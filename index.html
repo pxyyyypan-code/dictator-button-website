@@ -28,22 +28,32 @@
   </section>
 
   <!-- U02 对话：左文右哆啦A梦（原 ux-02 + ux-03 合一）。
-       阶段 4 由 dialogue.js 接管逐句推进，届时「继续」改为翻句、
-       末句后才出现「去选择烦恼」。骨架期「继续」直接前进一页。 -->
+       dialogue.js 逐句推进：点「继续」或按空格翻句，末句后主按钮变「去选择烦恼」。
+       三个文本槽固定不动，只换内容——prev 是上一句（降透明度），
+       title 是当前句，note 是当前句的补充。规格明令不许出现大型对话框。 -->
   <section class="scene scene--split" data-scene="u02" aria-hidden="true">
     <p class="site-mark">22世纪未来道具体验馆</p>
     <div class="split__text">
-      <p class="scene__tag">STEP 02 · 使用说明</p>
+      <p class="scene__tag" data-bind="dialogueTag">STEP 02 · 使用说明</p>
+      <p class="dialogue-prev" data-bind="dialoguePrev" aria-hidden="true"></p>
       <h1 class="scene__title" data-bind="dialogueText">这个按钮，可以让烦恼消失。</h1>
-      <p class="scene__desc">请谨慎使用，它会影响你接下来的每一步。</p>
+      <p class="scene__desc" data-bind="dialogueNote">请谨慎使用，它会影响你接下来的每一步。</p>
       <div class="scene__actions">
-        <button type="button" class="btn btn--primary" data-action="next">继续</button>
+        <button type="button" class="btn btn--primary" data-action="next"
+                data-bind="dialogueNext">继续</button>
         <span class="page-counter" data-bind="dialoguePage">01 / 05</span>
         <button type="button" class="btn btn--link" data-action="back">返回道具馆</button>
       </div>
     </div>
     <div class="split__visual" aria-hidden="true">
-      <div class="doraemon doraemon--sit"></div>
+      <!-- 提示写在 .doraemon 里面而不是外面：它要指的是**图上那颗红按钮**，
+           而 .doraemon 才是那张图的实际边界（split__visual 比图宽得多）。
+           挂在外层就只能相对整格定位，换个分辨率就指到空气里去了。 -->
+      <div class="doraemon doraemon--sit">
+        <!-- 独裁者按钮在这一页只是剧情提示：纯标注、pointer-events:none，
+             没有 data-action，玩家提前按不下去（规格硬要求）。 -->
+        <p class="dialogue-cue" data-bind="dialogueCue">独裁者按钮</p>
+      </div>
     </div>
   </section>
 
@@ -52,9 +62,10 @@
   <section class="scene scene--pick" data-scene="u03" aria-hidden="true">
     <p class="site-mark">22世纪未来道具体验馆</p>
 
-    <!-- 两个容器都由 app.js 用 innerHTML 重建，里面不要写静态内容。 -->
-    <div class="worry-subs" data-bind="worrySubs" role="tablist" aria-label="细分烦恼"></div>
-    <div class="worry-particles" data-bind="worryCategories" aria-label="烦恼大类"></div>
+    <!-- 两个容器都由 worry-picker.js 用 innerHTML 重建，里面不要写静态内容，
+         也不要放 data-bind 子节点（会被重建掉，App.bind 从此写空气）。 -->
+    <div class="worry-subs" data-bind="worrySubs" role="group" aria-label="细分烦恼"></div>
+    <div class="worry-particles" data-bind="worryCategories" role="group" aria-label="烦恼大类"></div>
 
     <div class="scene__actions scene__actions--center">
       <button type="button" class="btn btn--primary" data-action="confirm-worry"
@@ -72,28 +83,49 @@
       <button type="button" class="btn btn--link" data-action="classify-worry">看看它属于哪一类</button>
     </div>
 
-    <!-- 分类推测面板：常驻 DOM，由 is-visible 控制显隐。 -->
+    <!-- 分类推测面板：常驻 DOM，由 is-visible 控制显隐。
+         它落在左下角那一叠（大标题 + 提示 + 自由输入）原来的位置上，
+         出场时 .is-classified 把那三样一起收走——规格要求「输入框收起后在原位置显示推测」。
+         认不出来的时候 classifyConfirm 会整个隐藏，只留「重新选择」，
+         逼回手选大类，绝不替玩家猜一个然后发道具。 -->
     <div class="classify-panel" data-bind="classifyPanel" aria-live="polite" aria-hidden="true">
       <p class="classify-panel__guess" data-bind="classifyGuess"></p>
+      <p class="classify-panel__note" data-bind="classifyNote"></p>
       <div class="classify-panel__actions">
-        <button type="button" class="btn btn--primary btn--compact" data-action="confirm-worry">确认分类</button>
+        <button type="button" class="btn btn--primary btn--compact" data-action="confirm-worry"
+                data-bind="classifyConfirm">确认分类</button>
         <button type="button" class="btn btn--link" data-action="reset-worry-pick">重新选择</button>
       </div>
     </div>
   </section>
 
   <!-- U04 老虎机（全新）：三列滚轮，每列 20 道具 + 1 空位，自动播 2～3 秒可跳过。
-       阶段 4 由 gadget-match.js 接管真正的滚动与拨杆动画。 -->
+       gadget-match.js 负责滚动、停位与拨杆；停止后正中那一格就是匹配到的道具，
+       U5 不重排、直接从这个位置飞过去。 -->
   <section class="scene scene--slot" data-scene="u04" aria-hidden="true">
-    <p class="site-mark site-mark--light">22世纪未来道具体验馆</p>
-    <p class="scene__desc slot__lead">正在匹配适合你的未来道具</p>
-    <div class="slot" role="img" aria-label="道具匹配中">
-      <div class="slot__reel" data-bind="reelA"></div>
-      <div class="slot__reel" data-bind="reelB"></div>
-      <div class="slot__reel" data-bind="reelC"></div>
+    <!-- .slot-stage 是整块内容的搬运层：拨杆按下后它和满屏青底一起上移，
+         露出下面的 u05。所有 u04 的内容都要待在里面，落在外面的会被留在原地。 -->
+    <div class="slot-stage">
+      <p class="site-mark site-mark--light">22世纪未来道具体验馆</p>
+      <p class="scene__desc slot__lead" data-bind="slotLead">正在匹配适合你的未来道具</p>
+      <div class="slot" role="img" aria-label="道具匹配中" data-bind="slotBox">
+        <!-- 三列都由 gadget-match.js 用 innerHTML 重建，里面不要写静态内容，
+             也不要放任何 data-bind 子节点（会被重建掉，App.bind 从此写空气）。 -->
+        <div class="slot__reel" data-bind="reelA"></div>
+        <div class="slot__reel" data-bind="reelB"></div>
+        <div class="slot__reel" data-bind="reelC"></div>
+        <span class="slot__payline" aria-hidden="true"></span>
+      </div>
+      <p class="slot__worry">当前烦恼｜<span data-bind="slotWorryLabel"></span></p>
+      <!-- 拨杆：三列停稳后才出现，拨下去蓝色区上移接第 5 页。 -->
+      <button type="button" class="slot__lever" data-action="pull-lever"
+              data-bind="slotLever" aria-hidden="true" tabindex="-1">
+        <span class="slot__lever-stick" aria-hidden="true"></span>
+        <span class="slot__lever-text">拨动拨杆</span>
+      </button>
+      <button type="button" class="btn btn--link btn--on-primary slot__skip"
+              data-action="skip-slot" data-bind="slotSkip">跳过</button>
     </div>
-    <p class="slot__worry">当前烦恼｜<span data-bind="slotWorryLabel"></span></p>
-    <button type="button" class="btn btn--link btn--on-primary slot__skip" data-action="skip-slot">跳过</button>
   </section>
 
   <!-- U05 道具结果（全新）：道具停在第 4 页的位置上，此页不出现警示红。 -->
@@ -113,7 +145,10 @@
       </div>
     </div>
     <div class="split__visual">
-      <img class="match__image" data-bind="gadgetImage" src="" alt="" width="360" height="360">
+      <button type="button" class="match__figure" data-action="show-gadget-tip"
+              data-bind="gadgetFigure" aria-haspopup="dialog">
+        <img class="match__image" data-bind="gadgetImage" src="" alt="" width="360" height="360">
+      </button>
       <p class="match__tip">点击道具以查看功能</p>
     </div>
   </section>
@@ -236,12 +271,32 @@
   </div>
 </div>
 
+<!-- U05 道具说明：外形整个交给 tip-frame.webp，
+     里面只叠真实的可点区域（关闭 × 与「知道了」），位置对齐素材上画好的框。 -->
+<div class="modal modal--tip" data-bind="gadgetTip" aria-hidden="true" role="dialog" aria-modal="true"
+     aria-labelledby="gadget-tip-title">
+  <div class="tip-frame">
+    <button type="button" class="tip-frame__close" data-action="hide-gadget-tip" aria-label="关闭">×</button>
+    <img class="tip-frame__image" data-bind="tipImage" src="" alt="" width="200" height="200">
+    <div class="tip-frame__body">
+      <h2 class="tip-frame__title" id="gadget-tip-title" data-bind="tipName"></h2>
+      <p class="tip-frame__group" data-bind="tipGroup"></p>
+      <p class="tip-frame__desc" data-bind="tipDesc"></p>
+    </div>
+    <button type="button" class="tip-frame__ok" data-action="hide-gadget-tip">知道了</button>
+  </div>
+</div>
+
 <script src="js/config.js"></script>
 <script src="js/font-support.js"></script>
 <script src="js/worry-data.js"></script>
 <script src="js/gadget-data.js"></script>
 <script src="js/bubble-game.js"></script>
 <script src="js/scene-manager.js"></script>
+<!-- 三个前半段模块必须排在 app.js 之前：app.js 的 init() 会直接调它们。 -->
+<script src="js/dialogue.js"></script>
+<script src="js/worry-picker.js"></script>
+<script src="js/gadget-match.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

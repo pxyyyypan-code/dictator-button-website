@@ -269,11 +269,14 @@ body {
   animation: scene-in var(--t-scene) var(--ease-out) both;
 }
 
-/* 站点标识：每页左上角的小字，青底页换成纸色。 */
+/* 站点标识：每页左上角的小字，青底页换成纸色。
+   坐标是 0/0 而不是 --scene-pad-*：留白由 #stage 的 padding 统一给，
+   场景自己的内边距是 0，再补一次 pad 就是缩进两回——标识会掉到正文列右边、
+   在 u05 上正好压住 STEP 那行（三档分辨率都能看到）。 */
 .site-mark {
   position: absolute;
-  left: var(--scene-pad-x);
-  top: var(--scene-pad-y);
+  left: 0;
+  top: 0;
   margin: 0;
   font-size: var(--fs-note);
   font-weight: 400;
@@ -569,6 +572,99 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 
 .modal .scene__actions { justify-content: center; margin-top: 0; }
 
+/* ---------- u05 道具说明弹窗 ---------- */
+/* 外形整个交给 tip-frame.webp（1000×552）：青色标题条 + 纸色正文 +
+   左侧薄荷方块 + 右下角青色按钮。下面这些百分比是照素材量出来的，
+   换图就得重量一遍，别凭感觉挪。 */
+.tip-frame {
+  position: relative;
+  width: min(78vw, 1000px);
+  aspect-ratio: 1000 / 552;
+  color: var(--c-ink);
+  background: url("../assets/images/ui/tip-frame.webp") center / 100% 100% no-repeat;
+  animation: modal-in var(--t-mid) var(--ease-out) both;
+}
+
+/* 素材右上角已经画好了 ×，这里只叠一块透明的可点区域（文字留给读屏器）。 */
+.tip-frame__close {
+  position: absolute;
+  right: 2.2%;
+  top: 2.4%;
+  width: 6%;
+  aspect-ratio: 1 / 1;
+  font-size: 0;
+  color: transparent;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.tip-frame__close:focus-visible { outline: 2px solid var(--c-paper); outline-offset: 2px; }
+
+/* 左侧那枚薄荷色方块正好放道具图。 */
+.tip-frame__image {
+  position: absolute;
+  left: 5%;
+  top: 22%;
+  width: 25.3%;
+  height: 47.3%;
+  padding: 3%;
+  object-fit: contain;
+}
+
+.tip-frame__body {
+  position: absolute;
+  left: 34%;
+  right: 6%;
+  top: 21%;
+  text-align: left;
+}
+
+.tip-frame__title {
+  margin: 0 0 var(--sp-1);
+  font-size: clamp(22px, 2.1vw, 34px);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--c-teal);
+}
+
+.tip-frame__group {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--c-teal-bright);
+}
+
+.tip-frame__desc {
+  margin: 0;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  line-height: var(--lh-body);
+  color: var(--c-ink-2);
+}
+
+/* 素材右下角画好的是一块**空的**青色按钮，字得由这里补上。 */
+.tip-frame__ok {
+  position: absolute;
+  left: 70.5%;
+  top: 77.5%;
+  width: 23%;
+  height: 13.6%;
+  font-family: inherit;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.10em;
+  color: var(--c-paper);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-s);
+  cursor: pointer;
+}
+
+.tip-frame__ok:focus-visible { outline: 2px solid var(--c-paper); outline-offset: 3px; }
+
 /* =====================================================================
    4. u01 首页
    波纹铺满视口、道具漂浮在四角、正中一张纸色卡片。
@@ -711,6 +807,7 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 
 /* ---------- u02：低多边形哆啦A梦坐在青色圆盘上 ---------- */
 .doraemon {
+  position: relative;               /* 剧情提示挂在里面，靠百分比锚到图上 */
   width: min(30vw, 420px);
   aspect-ratio: 1 / 1;
   background: center / contain no-repeat;
@@ -718,6 +815,75 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 
 .doraemon--sit {
   background-image: url("../assets/images/ui/doraemon-sit.webp");
+}
+
+/* ---------- u02：逐句推进的台词槽 ---------- */
+/* 规格明写「不使用大型聊天框」「不要大型对话框」，所以这里没有对话框外壳：
+   上一句降透明度留在原位，当前句占大标题，同屏的第二句落在 .scene__desc。 */
+
+/* 首屏没有「上一句」，但这个节点必须一直在（App.bind 是永不失效的正向缓存，
+   一旦被删/重建就再也写不进字）。所以用 height:0 收起而不是 display:none——
+   只有高度归零，空的第一屏才不会白占一行把标题往下推。 */
+.dialogue-prev {
+  overflow: hidden;
+  height: 0;
+  margin: 0;
+  max-width: var(--w-text);
+  font-size: var(--fs-body);
+  font-weight: 300;
+  line-height: var(--lh-body);
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity var(--t-mid) var(--ease);
+}
+
+.dialogue-prev.is-visible {
+  height: auto;
+  margin-bottom: var(--sp-2);
+  opacity: 0.5;
+}
+
+/* 换句时给当前这句一次淡入。类名由 dialogue.js 每次重放，reduced-motion 下不加。 */
+.scene--split .scene__title.is-fresh {
+  animation: fade-up var(--t-mid) var(--ease-out) both;
+}
+
+/* 独裁者按钮的剧情提示。纯标注：pointer-events:none + 没有 data-action，
+   玩家在这一页按不下去（规格硬要求，别顺手给它加交互）。 */
+.dialogue-cue {
+  position: absolute;
+  /* 锚在 .doraemon 上（不是 split__visual）：素材 640×653、按 contain 摊进方框，
+     图里那颗红按钮占方框的 x0~25% / y0~18%。
+     圆点落在它右缘（25%），文字往右排到 x≈50% 为止——那一带是哆啦A梦头顶
+     上方的空白。落在按钮身上会变成红字压红漆，一个字都看不清。 */
+  left: 25%;
+  top: 1%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.10em;
+  color: var(--c-alert);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--t-mid) var(--ease), transform var(--t-mid) var(--ease);
+}
+
+.dialogue-cue::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--c-alert);
+  box-shadow: 0 0 0 5px rgba(217, 70, 54, 0.16);
+}
+
+.dialogue-cue.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ---------- u05：匹配结果 ---------- */
@@ -759,14 +925,54 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   opacity: 0.6;
 }
 
-.match__image {
+/* 道具是可点的（点开 xlsx 里的功能说明），所以外层是个按钮。
+   薄荷色圆盘画在**按钮**上、图单独一层：第 4 页飞过来的替身落地前只让图隐身，
+   圆盘要一直在，否则落点是一个空洞。 */
+.match__figure {
+  display: grid;
+  place-items: center;
   width: min(24vw, 320px);
+  aspect-ratio: 1 / 1;
+  padding: clamp(20px, 2.4vw, 40px);
+  font: inherit;
+  color: inherit;
+  background: var(--c-mint-soft);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease);
+}
+
+.match__figure:hover {
+  transform: scale(1.03);
+  box-shadow: var(--sh-lift);
+}
+
+.match__figure:focus-visible {
+  outline: 2px solid var(--c-teal);
+  outline-offset: 8px;
+}
+
+.match__image {
+  width: 100%;
   height: auto;
   aspect-ratio: 1 / 1;
   object-fit: contain;
-  padding: clamp(20px, 2.4vw, 40px);
-  background: var(--c-mint-soft);
-  border-radius: 50%;
+  /* 刻意不给 opacity 过渡：显形是和替身**同一帧**的交接，
+     淡入反而会在中间露出一截空位（gadget-match.js 的 landGhost 里有说明）。 */
+}
+
+/* 替身还在路上：目标位先空着，免得同一件道具同时出现两份。 */
+.match__figure.is-arriving .match__image { opacity: 0; }
+
+/* 跨场景飞行的道具替身。它挂在 <body> 上（要活过 u04 → u05 这次切换），
+   所以定位必须是 fixed——挂在场景里会被 display:none 一起带走。 */
+.gadget-ghost {
+  position: fixed;
+  z-index: 90;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .match__tip {
@@ -944,7 +1150,18 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   border: 0;
   cursor: pointer;
   pointer-events: auto;
-  transition: transform var(--t-mid) var(--ease),
+  /* 漂移写在**独立的 translate 属性**上（worry-picker.js 每帧改 --dx/--dy），
+     居中放大写在 transform / scale 上。三者必须分开：
+     漂移要是每帧改 transform，下面那条 transition: transform 会被无限重启。 */
+  translate: var(--dx, 0px) var(--dy, 0px);
+  scale: 1;
+  /* left/top 必须在这条清单里。规格要的是「位移到中央」，靠的正是 .is-active 改写
+     left/top——没列进来的属性不参与过渡，那就成了瞬移，而且瞬移会让指针命中的
+     还是旧坐标（自动化点击直接落空）。 */
+  transition: left var(--t-mid) var(--ease),
+              top var(--t-mid) var(--ease),
+              transform var(--t-mid) var(--ease),
+              scale var(--t-mid) var(--ease),
               opacity var(--t-mid) var(--ease),
               color var(--t-fast) var(--ease);
 }
@@ -974,10 +1191,11 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 /* 槽位：九个大类只能落在**五块禁区之外**。坐标是相对 .scene--pick 的百分比，
    下面这五块是量三档截图（1366 / 1440 / 1920）取的并集，改坐标前先重量一遍：
      · 左上  x5~24%   y3~8%    站点标识「22世纪未来道具体验馆」
-     · 中上  x33~68%  y8~15%   细分条目那排（只在选中态出现，idle 是空的，
+     · 中上  x33~68%  y4~11%   细分条目那排（只在选中态出现，idle 是空的，
                                 所以上一版只有选中态穿帮——两种态都得让）
-     · 中部  x40~60%  y8~60%   放大件（translate -50% + scale 1.75）连同下方确认按钮
-     · 左下  x0~48%   y62~100% STEP + 大标题 + 提示 + 自由输入
+     · 中部  x40~60%  y18~62%  放大件（translate -50% + scale 1.75）连同下方确认按钮
+     · 左下  x0~48%   y62~95%  STEP + 大标题 + 提示 + 自由输入（整叠抬了 4%，
+                                底边不再贴到视口底部，见下面 .worry-free 的注释）
      · 右下  x82~100% y66~100% 探头的哆啦A梦
    一个槽位连底下那行标签实占约 10%×21%（三档下都在 ±2% 内），
    留白按这个尺寸算，别只盯左上角坐标。
@@ -993,7 +1211,9 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 .worry-particle:nth-child(8) { left: 68%; top: 30%; }
 .worry-particle:nth-child(9) { left: 87%; top: 38%; }
 
-.worry-particle:hover { transform: translateY(-6px); }
+/* 悬停**不做位移**：位移归漂移循环管（独立的 translate 属性），
+   这里再动 transform 会和「飞到中央」的过渡打架，看起来像抽搐。只改颜色。 */
+.worry-particle:hover { color: var(--c-teal-deep); }
 
 .worry-particle:focus-visible {
   outline: 2px solid var(--c-teal);
@@ -1002,17 +1222,40 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 }
 
 /* 选中的那个飞到画面正中并放大——初稿的核心动作。
-   left/top 覆盖上面的散布坐标，所以九个位置都能收敛到同一点。 */
+   left/top 覆盖上面的散布坐标，所以九个位置都能收敛到同一点。
+   放大用独立的 scale 属性：展开态（.is-expanded）只需改倍数，
+   不必把整条 transform 再抄一遍。 */
 .worry-particle.is-active {
   left: 50%;
-  top: 30%;
+  top: 40%;
   z-index: 2;
-  transform: translate(-50%, -50%) scale(1.75);
+  transform: translate(-50%, -50%);
+  translate: 0 0;
+  scale: 1.75;
   color: var(--c-teal-deep);
   font-weight: 500;
 }
 
-.worry-particle.is-active:hover { transform: translate(-50%, -50%) scale(1.78); }
+.worry-particle.is-active:hover { scale: 1.8; }
+
+/* 悬停预览态的白雾：素材蒙一层纸色雾并轻微失焦，
+   把注意力交给上方浮出的那三条烦恼。点开完整列表后不加这层——
+   那时它是玩家正在挑的类别，必须看得清（sync() 里 is-preview 的判据就是这个）。 */
+.worry-particle.is-preview::before { filter: blur(3px) saturate(0.92); }
+
+.worry-particle.is-preview::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: radial-gradient(circle at 50% 46%,
+              rgba(253, 251, 246, 0.88) 0%,
+              rgba(253, 251, 246, 0.56) 54%,
+              rgba(253, 251, 246, 0) 78%);
+  pointer-events: none;
+}
 
 /* 有人被选中时，其余的退到背景里。 */
 .worry-particles:has(.is-active) .worry-particle:not(.is-active) { opacity: 0.34; }
@@ -1021,12 +1264,38 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 .worry-subs {
   position: absolute;
   left: 50%;
-  top: 8%;
+  top: 4%;
   z-index: 3;
   display: flex;
   gap: clamp(20px, 2.4vw, 42px);
   transform: translateX(-50%);
   min-height: 44px;
+}
+
+/* 点开大类后换成完整列表（最多 WORRY_LIST_MAX = 15 条）。
+   这一块的宽高必然压到左上角的站点标识和两侧的粒子，躲不开——
+   所以干脆做成一张不透明的纸盖上去：挡住比字叠字可读。
+   4 行纵向排布 → 15 条自动折成 4 列，整块约 22% 高、止于 26% 上下；
+   下面 .is-expanded 再把放大件和确认按钮挪到 30% 以下让位。 */
+.worry-subs--full {
+  top: 4%;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(4, auto);
+  gap: 4px clamp(16px, 1.8vw, 30px);
+  justify-items: start;
+  width: max-content;
+  max-width: min(86vw, 940px);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--c-paper-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--sh-lift);
+}
+
+.worry-subs--full .worry-sub {
+  padding: 3px 2px 5px;
+  font-size: clamp(13px, 1.02vw, 16px);
 }
 
 .worry-sub {
@@ -1054,28 +1323,61 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 
 .worry-sub:focus-visible { outline: 2px solid var(--c-teal); outline-offset: 3px; }
 
-/* 确认按钮：正中偏下，正好在放大后的插画下方。 */
+/* 确认按钮：正中偏下，正好在放大后的插画下方。
+   规格上它是**选中之后才出现**的，所以默认不在场（worry-picker.js 的 sync()
+   按有没有选中在场景根上切 .is-picked）。这里只淡出、不 display:none——
+   位置要靠过渡从选中态平移，节点被拿掉就没有起始值了。 */
 .scene--pick .scene__actions--center {
   position: absolute;
   left: 50%;
   top: 52%;
   z-index: 3;
   margin: 0;
+  opacity: 0;
+  visibility: hidden;
   transform: translateX(-50%);
+  transition: left var(--t-mid) var(--ease), top var(--t-mid) var(--ease),
+              opacity var(--t-mid) var(--ease), visibility 0s linear var(--t-mid);
 }
 
-/* 左下角的文案块：STEP + 大标题 + 自由输入。 */
+.scene--pick.is-picked .scene__actions--center {
+  opacity: 1;
+  visibility: visible;
+  transition: left var(--t-mid) var(--ease), top var(--t-mid) var(--ease),
+              opacity var(--t-mid) var(--ease), visibility 0s linear 0s;
+}
+
+/* 展开态：完整列表吃掉画面上方，放大件与确认按钮一起下移并偏右——
+   左下角 x0~50% / y66~100% 那块要整个留给 STEP + 大标题 + 提示 + 自由输入。
+   坐标按最紧的一档（1366×768）算：
+     列表 4%~26% · 放大件 30%~58% · 按钮 62%~70% · 标题 68%~84%（x 只到 50%）
+   放大件和按钮横向挪到 58%，才和标题错开而不是压上去。 */
+.scene--pick.is-expanded .worry-particle.is-active {
+  left: 58%;
+  top: 44%;
+  scale: 1.3;
+}
+
+.scene--pick.is-expanded .scene__actions--center {
+  left: 58%;
+  top: 62%;
+}
+
+/* 左下角的文案块：STEP + 大标题 + 自由输入。
+   整叠的底是 6% 而不是 2%：进度条横在视口底部、z-index 100，
+   压到它下面的东西一律被盖住。自由输入那行的链接下划线原本正好和进度条那根线
+   同一个 y、同一段 x，两根并成一根，看着像画歪了。整叠抬 4% 让开。 */
 .scene--pick .scene__tag {
   position: absolute;
   left: 0;
-  bottom: 30%;
+  bottom: 34%;
   margin: 0;
 }
 
 .scene--pick .scene__title {
   position: absolute;
   left: 0;
-  bottom: 16%;
+  bottom: 20%;
   max-width: min(48vw, 620px);
   margin: 0;
   font-size: clamp(30px, 3.2vw, 50px);
@@ -1084,17 +1386,35 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 .scene--pick .worry-hint {
   position: absolute;
   left: 0;
-  bottom: 11%;
+  bottom: 15%;
   margin: 0;
 }
 
 .worry-free {
   position: absolute;
   left: 0;
-  bottom: 2%;
+  bottom: 6%;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear 0s;
+}
+
+/* 推测面板出场时，左下角这一叠让位——面板落的正是它们原来的位置。
+   连 STEP 那行一起收：面板高到 bottom 2%~32%，正压在 STEP（bottom 30%）上，
+   留着就是字压字。提示行也一起收：分类的说明已经写在面板里（面板自己带
+   aria-live），两处同时播报会互相打断。
+   居中那颗「确认这个烦恼」也一起收：自由输入这条支线的确认动作规格指定在面板里
+   （确认分类 / 重新选择），两颗按钮同一个 data-action、同时摆在画面上，
+   玩家得先分辨它们是不是一回事。 */
+.scene--pick.is-classified .scene__tag,
+.scene--pick.is-classified .scene__title,
+.scene--pick.is-classified .worry-hint,
+.scene--pick.is-classified .worry-free,
+.scene--pick.is-classified .scene__actions--center {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear var(--t-mid);
 }
 
 /* 初稿里这是一条下划线，不是输入框——所以只留底边。 */
@@ -1120,19 +1440,19 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 }
 
 /* 分类推测面板：常驻 DOM，由 is-visible 控制显隐。
-   用 opacity + visibility，不用 display——避免 aria-live 播报被打断。 */
+   用 opacity + visibility，不用 display——避免 aria-live 播报被打断。
+   位置就是自由输入那条下划线原本占的左下角（上面的 .is-classified 负责收走它们）。 */
 .classify-panel {
   position: absolute;
-  left: 50%;
-  top: 62%;
+  left: 0;
+  bottom: 6%;
   z-index: 4;
   display: grid;
-  justify-items: center;
+  justify-items: start;
   gap: var(--sp-2);
-  width: min(520px, 60vw);
+  width: min(520px, 46vw);
   padding: var(--sp-3);
-  transform: translateX(-50%);
-  text-align: center;
+  text-align: left;
   background: var(--c-paper-3);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -1156,10 +1476,61 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   color: var(--c-ink);
 }
 
+/* 只有「不太确定」和「认不出来」两种情况才有这行字，其余时候是空的。 */
+.classify-panel__note {
+  margin: 0;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--c-ink-3);
+}
+
+.classify-panel__note:empty { display: none; }
+
 .classify-panel__actions {
   display: flex;
   gap: var(--sp-2);
   align-items: center;
+}
+
+/* ---------- 确认后：烦恼飞进四次元口袋 ---------- */
+/* 米白标签沿一条二次贝塞尔弧线飞向右下角哆啦A梦的口袋，
+   同一条 path 再描一遍当拖尾。描边色 #049DBF 是规格里点名的那一支，
+   写死在这里而不是走 --c-teal-bright，是为了改主题时不会悄悄漂色。 */
+.worry-fly {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  padding: 8px 18px;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--c-teal-deep);
+  background: var(--c-paper-3);
+  border: 1px solid rgba(4, 157, 191, 0.45);
+  border-radius: var(--r-pill);
+  box-shadow: var(--sh-lift);
+  pointer-events: none;
+  /* 让标签的**中心**贴着轨迹走，否则飞的是它的左上角。 */
+  offset-anchor: 50% 50%;
+}
+
+.worry-fly-trail {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.worry-fly-trail path {
+  fill: none;
+  stroke: #049DBF;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 5 10;
 }
 
 /* =====================================================================
@@ -1170,15 +1541,47 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 .scene--slot {
   position: relative;
   display: none;
+  text-align: center;
+}
+
+/* 进场用纯淡入，不用 .scene--active 默认的 scene-in——
+   scene-in 带 transform，而下面那块满屏青底是 position:fixed 的：
+   祖先一旦有 transform，fixed 就退化成 absolute，青底会缩成场景大小。 */
+.scene--slot.scene--active {
+  display: block;
+  animation: fade-in var(--t-scene) var(--ease) both;
+}
+
+/* 满屏青底单独成一层，这样它才能和内容一起整体上移。 */
+.scene--slot::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--c-teal);
+  transition: transform var(--t-slow) var(--ease-out);
+}
+
+/* 内容层。规格：拨杆按下后「蓝色部分界面上移」，直接衔接第 5 页——
+   底色和内容同时走，时长对齐 --t-slow（config 里的 SLOT_LIFT_MS 就是照它填的，
+   两边要改一起改）。 */
+.slot-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
   place-items: center;
   align-content: center;
   gap: var(--sp-4);
   min-height: min(78vh, 740px);
-  text-align: center;
+  transition: transform var(--t-slow) var(--ease-out);
 }
 
-.scene--slot.scene--active { display: grid; }
+.scene--slot.is-lifting::before,
+.scene--slot.is-lifting .slot-stage { transform: translateY(-100vh); }
 
+/* 这一页的标识**不**脱离文档流：它要跟着 .slot-stage 一起上移。
+   absolute 是相对 .scene--slot 定位的，上移的是 .slot-stage，标识会被落在原地，
+   等青底走完就孤零零地留在下一页的纸底上。 */
 .scene--slot .site-mark { position: static; }
 
 .slot__lead {
@@ -1189,33 +1592,42 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   color: var(--c-paper);
 }
 
+/* --slot-cell 是全站唯一一处格高定义：
+   JS 不复制这个数值，而是量窗口高度 ÷ SLOT_ROW_VISIBLE 反推（见 cellHeight()）。
+   改这里就够了，不用同步改 config。 */
 .slot {
+  --slot-cell: clamp(84px, 9vw, 124px);
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   width: min(72vw, 900px);
-  /* 外角是胶囊、中间分隔线是直角——overflow:hidden 让内部格子被外形裁掉。 */
-  border-radius: var(--r-pill);
+  /* 三行高的窗口不再是胶囊（胶囊圆角会把上下两格啃掉一大块），改成大圆角矩形。
+     overflow:hidden 仍然负责把内部长条裁在外形里。 */
+  border-radius: var(--r-l);
   overflow: hidden;
   background: var(--c-paper);
 }
 
-/* 一格的高度就是滚轮窗口的高度：21 个格子叠在里面，只露出当前这一格。 */
+/* 窗口露出 SLOT_ROW_VISIBLE(3) 格，**正中那格**是停止位。 */
 .slot__reel {
-  height: clamp(140px, 15vw, 200px);
+  height: calc(var(--slot-cell) * 3);
   overflow: hidden;
   border-left: 1px solid rgba(2, 137, 180, 0.28);
 }
 
 .slot__reel:first-child { border-left: 0; }
 
+/* 长条：池子重复几遍串成一列，滚动就是把它整条 translateY 上去。 */
+.slot__strip { will-change: transform; }
+
 .slot__cell {
   display: grid;
   place-items: center;
-  height: clamp(140px, 15vw, 200px);
+  height: var(--slot-cell);
 }
 
 .slot__cell img {
-  width: clamp(72px, 8vw, 108px);
+  width: clamp(56px, 6vw, 88px);
   height: auto;
   object-fit: contain;
 }
@@ -1226,6 +1638,92 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   width: clamp(48px, 5vw, 68px);
   height: 2px;
   background: rgba(2, 137, 180, 0.22);
+}
+
+/* 中奖线：正中那一格加边，其余部分用一圈超大 box-shadow 蒙一层纸色雾压下去。
+   雾被 .slot 的 overflow:hidden 裁在机身里，所以不会漏到青底上。 */
+.slot__payline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--slot-cell);
+  transform: translateY(-50%);
+  border-top: 1px solid rgba(2, 137, 180, 0.35);
+  border-bottom: 1px solid rgba(2, 137, 180, 0.35);
+  box-shadow: 0 0 0 100vmax rgba(247, 238, 225, 0.62);
+  pointer-events: none;
+}
+
+/* 停稳后中列正中那格：就是接下来飞去第 5 页的那件道具。 */
+.slot__cell.is-winner img {
+  filter: drop-shadow(0 6px 14px rgba(2, 137, 180, 0.30));
+}
+
+/* ---------- 拨杆 ---------- */
+/* 三列停稳后才浮出（gadget-match.js 加 .is-ready）。
+   它落在机身右侧的空白里：机身 min(72vw,900px) 居中，两侧各留 160px 以上。 */
+.slot__lever {
+  position: absolute;
+  right: clamp(8px, 2vw, 60px);
+  top: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: 0.10em;
+  color: var(--c-paper);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transform: translateY(-50%);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear var(--t-mid);
+}
+
+.slot__lever.is-ready {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear 0s;
+}
+
+.slot__lever:focus-visible { outline: 2px solid var(--c-paper); outline-offset: 8px; }
+
+.slot__lever-stick {
+  position: relative;
+  display: block;
+  width: 8px;
+  height: clamp(72px, 8vh, 112px);
+  background: var(--c-paper);
+  border-radius: var(--r-pill);
+  transform-origin: 50% 100%;
+  transition: transform var(--t-mid) var(--ease);
+}
+
+/* 杆头的红球。整站的警示红只在这里和 u08 出现，别往别处铺。 */
+.slot__lever-stick::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -13px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--c-alert);
+  transform: translateX(-50%);
+}
+
+.slot__lever.is-ready .slot__lever-stick {
+  animation: lever-hint 1.9s var(--ease) infinite;
+}
+
+.slot__lever.is-pulled .slot__lever-stick {
+  animation: none;
+  transform: rotate(34deg);
 }
 
 .slot__worry {
@@ -1866,6 +2364,12 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   to   { transform: translateY(10px); }
 }
 
+/* 拨杆待拨时的微幅呼吸，提示「这里可以动」。 */
+@keyframes lever-hint {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(-5deg); }
+}
+
 /* =====================================================================
    10. 分辨率适配
    主档 1366 / 1440 / 1920 都靠 clamp 覆盖，这里只处理更矮或更窄的意外情况。
@@ -1890,7 +2394,7 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
     gap: var(--sp-4);
   }
   .split__visual { order: -1; }
-  .doraemon, .pocket, .match__image { width: min(46vw, 300px); }
+  .doraemon, .pocket, .match__figure { width: min(46vw, 300px); }
   .worry-particle { width: clamp(72px, 11vw, 100px); }
   .intro-card { width: min(90vw, 620px); }
   .slot { width: 88vw; }
@@ -1907,13 +2411,24 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  /* 出口面板的 visibility 延迟必须一并清零，否则它会「已可见但点不到」。 */
+  /* visibility 的延迟必须一并清零，否则这些块会「已可见但点不到」。 */
   .return-choice,
   .return-choice.is-visible,
   .classify-panel,
-  .classify-panel.is-visible {
+  .classify-panel.is-visible,
+  .slot__lever,
+  .slot__lever.is-ready,
+  .scene--pick .worry-free,
+  .scene--pick .scene__tag,
+  .scene--pick .scene__title,
+  .scene--pick .worry-hint,
+  .scene--pick .scene__actions--center,
+  .scene--pick.is-picked .scene__actions--center {
     transition-delay: 0s !important;
   }
   .intro-ripple,
   .intro-gadgets { animation: none !important; }
+  /* 拨杆的呼吸是纯装饰，直接停掉（全局那条只把时长压到 0.01ms，
+     无限循环的动画仍然会以极高频率重放）。 */
+  .slot__lever.is-ready .slot__lever-stick { animation: none !important; }
 }

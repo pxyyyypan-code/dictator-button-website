@@ -1,16 +1,19 @@
 /**
- * _v08-shots.js —— 阶段 3 视觉层验收：三档分辨率逐页截图，对照 U1~U12 初稿。
+ * _v08-shots.js —— 阶段 3 / 4 视觉层验收：三档分辨率逐页截图，对照 U1~U12 初稿。
  *
  * 用法：
  *   NODE_PATH="$(npm root -g)" node assets/dev/_v08-shots.js
  *
  * 产出：assets/dev/_shots-v08/<宽x高>/u01.png … u12.png
  *
- * 两处刻意的处理：
+ * 三处刻意的处理：
  *   · 沉浸段（u06~u10）共用一个容器，只靠 phase-* 换装，所以必须**沿真实路径走**、
  *     在每一相拍一张，不能直接 goToId 跳过去——跳过去拍到的是上一相的装扮。
  *   · 空白相（u09 phase-blank）默认只停 CONFIG.BLANK_HOLD_MS，太短拍不到，
  *     这里把它拉长到 6 秒。拉长的是等待，不是分支。
+ *   · 阶段 4 起，u02 要逐句点完、u03 有四种版式（散布 / 悬停预览 / 展开列表 / 推测面板）、
+ *     u04 停稳后必须拨拨杆才会走到 u05——这些都得**照玩家的路径**走一遍，
+ *     不能 goToId 跳过去，否则拍不到真实状态，也验证不了衔接动画。
  */
 'use strict';
 
@@ -76,6 +79,8 @@ async function run() {
     });
 
     // 压缩等待、拉长空白相，分支逻辑不改。
+    // SLOT_SPIN_MS 刻意**不压**：老虎机的滚动本身是要验收的画面，
+    // 压到 900ms 后 shot() 那 700ms 的等待就落在停稳前后，拍到的是哪一帧全看运气。
     await page.evaluate(function () {
       CONFIG.NORMAL_PHASE_MIN_MS = 600;
       CONFIG.NORMAL_PHASE_MAX_MS = 1200;
@@ -88,8 +93,9 @@ async function run() {
       CONFIG.RETURN_INITIAL_DELAY_MS = 200;
       CONFIG.RETURN_INTERVAL_MS = 160;
       CONFIG.RETURN_COPY_DELAY_MS = 200;
-      CONFIG.SLOT_SPIN_MS = 900;
       CONFIG.THEME_MIN_READ_MS = 200;
+      // 逐句推进的最小停留是防连点用的，脚本里连点正是我们要做的事。
+      CONFIG.DIALOGUE_LINE_MS = 0;
     });
 
     await waitScene(page, 'u01');
@@ -99,20 +105,65 @@ async function run() {
     await waitScene(page, 'u02');
     await shot('u02');
 
-    await page.click('[data-scene="u02"] [data-action="next"]');
+    // 逐句点到底。中途在「独裁者按钮」那一轮停一下——剧情提示是这一页新加的东西，
+    // 而且它必须是**按不下去**的，得单独拍一张看清楚。
+    // CONFIG 是页内的全局，Node 这边读不到，取回来再用。
+    const cueRound = await page.evaluate(function () { return CONFIG.DIALOGUE_CUE_ROUND; });
+    for (let i = 1; i < cueRound; i += 1) {
+      await page.click('[data-bind="dialogueNext"]');
+    }
+    await shot('u02-cue');
+    for (let i = 0; i < 40; i += 1) {
+      if (await page.evaluate(function () { return Dialogue.isLast(); })) break;
+      await page.click('[data-bind="dialogueNext"]');
+    }
+    await shot('u02-last');           // 末句：主按钮应该已经变成「去选择烦恼」
+
+    await page.click('[data-bind="dialogueNext"]');
     await waitScene(page, 'u03');
-    // 先拍未选中的散布态，再选一个拍放大态——两种版式都要看。
+    // u03 有四种版式，一张都不能少：
+    //   idle 散布 → hover 居中放大+白雾 → 展开完整列表 → 选中态
     await shot('u03-idle');
-    await page.locator('[data-bind="worryCategories"] [data-action="pick-category"]').first().click();
+
+    const particles = page.locator('[data-bind="worryCategories"] [data-action="pick-category"]');
+    // force:true：粒子悬停后会飞到画面中央，Playwright 默认的"元素静止"检查会一直重试。
+    await particles.first().hover({ force: true });
+    await shot('u03-hover');
+
+    // 自由输入 → 本地词表推测 → 推测面板。先演这条支线，再退回去走预设。
+    await page.fill('#worry-text', '最近总担心考试考不好');
+    await page.click('[data-action="classify-worry"]');
+    await shot('u03-classify');
+    await page.click('[data-action="reset-worry-pick"]');
+
+    // 点击要分两步，跟真人一样：先悬停把粒子送到中央，等它停稳，再点。
+    // 一步点不中——粒子在 pointerover 的瞬间就开始往中央移，
+    // Playwright 算好的落点已经是空地了。
+    await particles.first().hover({ force: true });
+    await sleep(500);
+    await particles.first().click();
+    await shot('u03-expanded');       // 完整列表（最多 15 条，紧凑分栏）
     await page.locator('[data-bind="worrySubs"] [data-action="pick-worry"]').first().click();
     await shot('u03');
 
+    // 确认 → 米白标签沿弧线飞进四次元口袋 → u04
     await page.click('[data-bind="confirmWorry"]');
     await waitScene(page, 'u04');
-    await shot('u04');
+    await shot('u04-spin');           // 三列滚动中（SLOT_SPIN_MS 默认 2400，700ms 时必在途中）
+
+    // 阶段 4 起，u05 不再自动到达：必须等拨杆浮出来再拨下去。
+    await page.waitForSelector('.slot__lever.is-ready', { timeout: 15000 });
+    await shot('u04');                // 停稳 + 拨杆
+    await page.click('[data-bind="slotLever"]');
 
     await waitScene(page, 'u05');
+    // 等替身落地撤走再拍，否则 700ms 正好卡在交接那一帧上。
+    await page.waitForSelector('.gadget-ghost', { state: 'detached', timeout: 6000 })
+      .catch(function () {});
     await shot('u05');
+    await page.click('[data-bind="gadgetFigure"]');
+    await shot('u05-tip');            // tip-frame.webp 弹窗：叠上去的字要对齐素材画好的框
+    await page.click('.tip-frame__ok');
 
     await page.click('[data-scene="u05"] [data-action="next"]');
     await waitScene(page, 'u06');

@@ -167,7 +167,40 @@ const CONFIG = {
 
   // u11 / u12 结尾段的文字淡入节奏。
   SUMMARY_LINE_FADE_MS: 520,
-  LOG_NODE_FADE_MS: 260
+  LOG_NODE_FADE_MS: 260,
+
+  // ================= 阶段 4：前半段交互 =================
+  // dialogue.js / worry-picker.js / gadget-match.js 三个模块共用，
+  // 三者都不许自己写魔数（CLAUDE.md：阈值与时长统一放这里）。
+
+  // u02 对话：上一句降透明度那条过渡归 CSS（.dialogue-prev 走 --t-mid），
+  // 这里不再存第二份时长——两个来源迟早会对不上。
+  // 独裁者按钮的剧情提示从第几轮浮出（1 起数，对应"拿出独裁者按钮"那句）。
+  DIALOGUE_CUE_ROUND: 3,
+
+  // u03 粒子悬浮场：rAF 微幅漂移的振幅与周期。reduced-motion 下整个循环不启动。
+  WORRY_DRIFT_PX: 9,
+  WORRY_DRIFT_MS: 5200,
+  // 指针离开粒子后多久收起预览。给一点缓冲，
+  // 否则粒子飞到中央的瞬间指针就"离开"了，会立刻弹回去来回抖。
+  WORRY_LEAVE_MS: 180,
+  // 点击大类后展开的完整列表最多几条（规格上限 15，最大的三个类正好 15 条）。
+  WORRY_LIST_MAX: 15,
+  // 超过这个条数就从一行改成紧凑分栏。
+  WORRY_LIST_COLUMN_AFTER: 4,
+  // 确认后烦恼标签沿弧线飞进四次元口袋的时长。
+  WORRY_FLY_MS: 900,
+
+  // u04 老虎机：窗口露出几格。初稿是 3 格，正中那格才是停止位。
+  // gadget-match.js 靠它把实测的窗口高度换算成一格多高（格高本身只在 CSS 里定义）。
+  SLOT_ROW_VISIBLE: 3,
+  // 三列全部停稳后，拨杆多久浮出。
+  SLOT_LEVER_DELAY_MS: 420,
+  // 拨杆拨下后蓝色区上移的时长。上移本身是 CSS 过渡（.slot-stage 用 --t-slow），
+  // 这个数只是"什么时候切到 u05"的信号，必须和 --t-slow 一样是 900，改一处要改两处。
+  SLOT_LIFT_MS: 900,
+  // 道具替身从停止位飞到结果位的时长。
+  GADGET_FLY_MS: 720
 };
 
 /** 重现阶段的随机点击反馈文案：只描述“又出现了”，不出现“删除成功”。 */

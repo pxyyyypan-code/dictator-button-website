@@ -119,141 +119,11 @@ const App = (function () {
     BubbleGame.destroy();
   }
 
-  /* ---------------- u02 引导对话 ---------------- */
+  /* ---------------- u03 选择烦恼：留在 app.js 的那一半 ---------------- */
 
-  // 阶段 4 由 dialogue.js 接管逐句推进，这里只维护页码，让骨架可走通。
-  function renderDialogue() {
-    setText('dialoguePage', '02 / 12');
-  }
-
-  /* ---------------- u03 选择烦恼 ---------------- */
-
-  function setHint(message) {
-    setText('worryPickHint', message || '');
-  }
-
-  function worryTexts() {
-    return appData.worries.map(function (item) { return item.text; });
-  }
-
-  function renderWorryCategories() {
-    const container = bind('worryCategories');
-    if (!container) return;
-    container.innerHTML = '';
-    WorryData.categories.forEach(function (category) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'worry-particle';
-      button.textContent = category.label;
-      button.title = category.fullName || category.label;
-      button.dataset.action = 'pick-category';
-      button.dataset.category = category.id;
-      button.classList.toggle('is-active', appData.pickedCategory === category.id);
-      container.appendChild(button);
-    });
-  }
-
-  /** 展开某个大类下的细分烦恼（初稿是 3 条）。 */
-  function renderWorrySubs(categoryId) {
-    const container = bind('worrySubs');
-    if (!container) return;
-    container.innerHTML = '';
-    if (!categoryId) return;
-    const previews = WorryData.hoverPreview(categoryId) || [];
-    const presets = previews.length
-      ? previews
-      : WorryData.byCategory(categoryId).slice(0, CONFIG.WORRY_SUB_COUNT);
-    presets.slice(0, CONFIG.WORRY_SUB_COUNT).forEach(function (preset) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'worry-sub';
-      button.textContent = preset.text;
-      button.dataset.action = 'pick-worry';
-      button.dataset.presetId = String(preset.id);
-      const picked = appData.selectedWorry && appData.selectedWorry.presetId === preset.id;
-      button.classList.toggle('is-active', Boolean(picked));
-      container.appendChild(button);
-    });
-  }
-
-  function renderWorryPicker() {
-    renderWorryCategories();
-    renderWorrySubs(appData.pickedCategory);
-    syncConfirmButton();
-  }
-
-  function syncConfirmButton() {
-    const button = bind('confirmWorry');
-    if (button) button.disabled = !appData.selectedWorry;
-  }
-
-  function pickCategory(categoryId) {
-    if (!categoryId) return;
-    appData.pickedCategory = categoryId;
-    // 换大类等于放弃上一次选择，避免「选了A类的条目却显示B类」。
-    appData.selectedWorry = null;
-    hideClassifyPanel();
-    renderWorryPicker();
-    const category = WorryData.category(categoryId);
-    setHint(category ? '「' + (category.fullName || category.label) + '」——选一条最贴近你的。' : '');
-  }
-
-  function pickWorry(presetId) {
-    const preset = WorryData.preset(Number(presetId));
-    if (!preset) return;
-    appData.pickedCategory = preset.category;
-    appData.selectedWorry = WorryData.createProfile(preset.text, {
-      presetId: preset.id,
-      category: preset.category,
-      behaviorType: preset.behaviorType
-    });
-    hideClassifyPanel();
-    renderWorryPicker();
-    setHint('已选择：「' + preset.text + '」。');
-  }
-
-  /** 自由输入：本地词表打分，认不出就请用户手选，绝不随机发道具。 */
-  function classifyFreeWorry() {
-    const field = document.getElementById('worry-text');
-    if (!field) return;
-    const text = field.value.trim();
-    if (!text) {
-      setHint('先写下一条烦恼，再看看它属于哪一类。');
-      field.focus();
-      return;
-    }
-    const guess = WorryData.classifyFreeText(text);
-    if (!guess) {
-      hideClassifyPanel();
-      setHint('这条烦恼我还认不出来。请从上面的九大类里挑一个最接近的。');
-      return;
-    }
-    const category = WorryData.category(guess.category || guess);
-    appData.pickedCategory = category ? category.id : '';
-    appData.selectedWorry = WorryData.createProfile(text, {
-      category: appData.pickedCategory
-    });
-    renderWorryPicker();
-    showClassifyPanel(category ? category.fullName || category.label : '');
-    setHint('');
-  }
-
-  function showClassifyPanel(categoryName) {
-    const panel = bind('classifyPanel');
-    setText('classifyGuess', categoryName
-      ? '看起来，这更像是「' + categoryName + '」方面的烦恼。'
-      : '');
-    if (!panel) return;
-    panel.classList.add('is-visible');
-    panel.setAttribute('aria-hidden', 'false');
-  }
-
-  function hideClassifyPanel() {
-    const panel = bind('classifyPanel');
-    if (!panel) return;
-    panel.classList.remove('is-visible');
-    panel.setAttribute('aria-hidden', 'true');
-  }
+  // 粒子场、悬停预览、展开列表、自由输入分类、飞进四次元口袋——全在 worry-picker.js。
+  // 这里只剩两件"选完之后"的事：把烦恼摊成泡泡场、按烦恼配道具。
+  // 它们的消费者是 u06 和 u11，不属于选择页，所以没有跟着搬走。
 
   /**
    * 沉浸段的泡泡不只放选中的那一条：
@@ -287,75 +157,45 @@ const App = (function () {
     return (sibling && GadgetData.byName(sibling.gadget)) || GadgetData.all[0] || null;
   }
 
-  function confirmWorry() {
-    if (!appData.selectedWorry) {
-      setHint('请先选一条烦恼，或者自己写一条。');
-      return;
-    }
+  /* ---------------- worry-picker.js 的四个回调 ---------------- */
+
+  /** 选中一条烦恼（预设条目或自由输入都走这里）。 */
+  function onWorrySelect(profile) {
+    appData.selectedWorry = profile || null;
+    appData.pickedCategory = profile ? profile.category : '';
+  }
+
+  /** 放弃当前选择：换大类、认不出、点「重新选择」都会到这里。 */
+  function onWorryClear() {
+    appData.selectedWorry = null;
+    appData.pickedCategory = '';
+    appData.matchedGadget = null;
+    appData.worries.length = 0;
+  }
+
+  /**
+   * 烦恼已经沿弧线飞进四次元口袋——这时才配道具、翻到老虎机页。
+   * 配道具放在动画之后而不是之前：老虎机中列要停在这枚道具上，
+   * 早一步晚一步无所谓，但顺序反了就得在两处各写一遍匹配逻辑。
+   */
+  function onWorryConfirmed() {
     buildWorryField();
     appData.matchedGadget = matchGadget(appData.selectedWorry);
     SceneManager.goToId('u04');
   }
 
+  /** 清空选择并把选择页复位。restart 与 u05 的「重新选择」共用。 */
   function resetWorryPick() {
-    appData.pickedCategory = '';
-    appData.selectedWorry = null;
-    appData.matchedGadget = null;
-    appData.worries.length = 0;
-    hideClassifyPanel();
-    const field = document.getElementById('worry-text');
-    if (field) field.value = '';
-    renderWorryPicker();
-    setHint('');
+    onWorryClear();
+    WorryPicker.reset();
   }
 
-  /* ---------------- u04 老虎机匹配 ---------------- */
+  /* ---------------- u04 老虎机 / u05 匹配结果 ---------------- */
 
-  // 阶段 4 由 gadget-match.js 接管真实滚动与拨杆动画；
-  // 骨架期只把三列填满、等一段时间就翻页，保证流程能走通。
-  function startSlotMatch() {
-    setText('slotWorryLabel', appData.selectedWorry ? appData.selectedWorry.text : '');
-    ['reelA', 'reelB', 'reelC'].forEach(function (name, index) {
-      const reel = bind(name);
-      if (!reel) return;
-      reel.innerHTML = '';
-      GadgetData.reelPool(index + 1).forEach(function (gadget) {
-        const cell = document.createElement('span');
-        cell.className = 'slot__cell' + (gadget ? '' : ' slot__cell--empty');
-        if (gadget) {
-          const img = document.createElement('img');
-          img.src = gadget.image;
-          img.alt = gadget.name;
-          img.width = 64;
-          img.height = 64;
-          img.loading = 'lazy';
-          cell.appendChild(img);
-        }
-        reel.appendChild(cell);
-      });
-    });
-    SceneManager.addTimer(function () {
-      if (appData.currentScene === 'u04') SceneManager.goToId('u05');
-    }, CONFIG.SLOT_SPIN_MS);
-  }
-
-  /* ---------------- u05 匹配结果 ---------------- */
-
-  function renderGadgetResult() {
-    const gadget = appData.matchedGadget;
-    if (!gadget) {
-      // 正常走不到这里；真到了说明 u03 被跳过，退回去重选比空着页面好。
-      SceneManager.goToId('u03');
-      return;
-    }
-    setText('gadgetName', gadget.name);
-    setText('gadgetGroup', '道具类别｜' + gadget.group);
-    setText('gadgetDesc', gadget.description || '');
-    const image = bind('gadgetImage');
-    if (image) {
-      image.src = gadget.image;
-      image.alt = gadget.name;
-    }
+  // 滚动、停位、拨杆、跨场景飞行、道具说明弹窗全在 gadget-match.js。
+  // app.js 只在结果页兜一个底：拿不到道具说明 u03 被跳过了，退回去重选比空着页面好。
+  function enterGadgetResult() {
+    if (!GadgetMatch.renderResult()) SceneManager.goToId('u03');
   }
 
   /* ---------------- 连续泡泡体验（u06~u10） ---------------- */
@@ -930,11 +770,8 @@ const App = (function () {
     SceneManager.clearTimers();
     stopAllTickers();
     resetData();
-    hideClassifyPanel();
-    const field = document.getElementById('worry-text');
-    if (field) field.value = '';
-    renderWorryPicker();
-    setHint('');
+    resetWorryPick();
+    GadgetMatch.reset();
     resetImmersiveUi();
     syncGameStats();
     SceneManager.reset();
@@ -945,19 +782,22 @@ const App = (function () {
   // 注意：registerHooks 是覆盖写入，同一个 id 注册两次时后者会顶掉前者。
   // 合并后的节点（u02 / u03 / u06 / u12）必须把逻辑写在同一个 onEnter 里。
   function registerSceneHooks() {
-    SceneManager.registerHooks('u02', { onEnter: renderDialogue });
+    SceneManager.registerHooks('u02', { onEnter: Dialogue.enter });
 
     SceneManager.registerHooks('u03', {
-      onEnter: function () {
-        renderWorryPicker();
-        setHint(appData.selectedWorry
-          ? '已选择：「' + appData.selectedWorry.text + '」。'
-          : '先选一个大类，再挑一条具体的烦恼。');
-      }
+      onEnter: WorryPicker.enter,
+      onExit: WorryPicker.exit
     });
 
-    SceneManager.registerHooks('u04', { onEnter: startSlotMatch });
-    SceneManager.registerHooks('u05', { onEnter: renderGadgetResult });
+    SceneManager.registerHooks('u04', {
+      onEnter: GadgetMatch.startSpin,
+      onExit: GadgetMatch.exitSlot
+    });
+
+    SceneManager.registerHooks('u05', {
+      onEnter: enterGadgetResult,
+      onExit: GadgetMatch.exitResult
+    });
 
     // u06 是容器所有者，也是唯一调用 BubbleGame.init 的地方。
     // u07~u10 只能用 setMode/setInteractive/startGrowth 等，绝不能再 init。
@@ -1050,8 +890,11 @@ const App = (function () {
   function handleNext() {
     const current = SceneManager.current();
     if (!current) return;
+    // u02 的主按钮先当「继续」用：还有下一句就只翻句，讲完最后一句才翻页。
+    if (current.id === 'u02' && Dialogue.next()) return;
+    // u03 的出口是「确认这个烦恼」，要先播飞进口袋的动画再翻页。
     if (current.id === 'u03') {
-      confirmWorry();
+      WorryPicker.confirm();
       return;
     }
     SceneManager.next();
@@ -1079,12 +922,16 @@ const App = (function () {
       case 'exit-cancel': closeExitModal(); break;
       case 'exit-confirm':
       case 'restart': restart(); break;
-      case 'pick-category': pickCategory(target.dataset.category); break;
-      case 'pick-worry': pickWorry(target.dataset.presetId); break;
-      case 'classify-worry': classifyFreeWorry(); break;
-      case 'confirm-worry': confirmWorry(); break;
+      case 'pick-category': WorryPicker.pickCategory(target.dataset.category); break;
+      case 'pick-worry': WorryPicker.pickWorry(target.dataset.presetId); break;
+      case 'classify-worry': WorryPicker.classifyFree(); break;
+      case 'confirm-worry': WorryPicker.confirm(); break;
       case 'reset-worry-pick': resetWorryPick(); break;
-      case 'skip-slot': SceneManager.goToId('u05'); break;
+      // 「跳过」只跳过滚动本身；拨杆是规格里明写的衔接动作，不能一起跳掉。
+      case 'skip-slot': GadgetMatch.skipSpin(); break;
+      case 'pull-lever': GadgetMatch.pullLever(); break;
+      case 'show-gadget-tip': GadgetMatch.showTip(); break;
+      case 'hide-gadget-tip': GadgetMatch.hideTip(); break;
       case 'trigger-inline-button': triggerInlineButton(); break;
       case 'return-stop': stopAndObserve(); break;
       case 'save-log': saveLog(); break;
@@ -1106,9 +953,14 @@ const App = (function () {
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Enter' && event.target.id === 'worry-text') {
         event.preventDefault();
-        classifyFreeWorry();
+        WorryPicker.classifyFree();
       }
-      if (event.key === 'Escape' && bind('exitModal') && bind('exitModal').classList.contains('modal--open')) {
+      if (event.key !== 'Escape') return;
+      if (GadgetMatch.tipOpen()) {
+        GadgetMatch.hideTip();
+        return;
+      }
+      if (bind('exitModal') && bind('exitModal').classList.contains('modal--open')) {
         closeExitModal();
       }
     });
@@ -1130,7 +982,25 @@ const App = (function () {
     registerSceneHooks();
     SceneManager.onChange(updateProgress);
     bindEvents();
-    renderWorryPicker();
+
+    // 三个前半段模块只在这里挂一次，之后由场景钩子驱动。
+    // 它们都不碰 appData，所有状态读写都经这几个回调，
+    // 免得同一份"当前烦恼"在两个文件里各存一份、然后对不上。
+    Dialogue.mount({
+      onFinish: function () { SceneManager.goToId('u03'); }
+    });
+    WorryPicker.mount({
+      getSelected: function () { return appData.selectedWorry; },
+      onSelect: onWorrySelect,
+      onClear: onWorryClear,
+      onConfirmed: onWorryConfirmed
+    });
+    GadgetMatch.mount({
+      getGadget: function () { return appData.matchedGadget; },
+      getWorry: function () { return appData.selectedWorry; },
+      onLifted: function () { SceneManager.goToId('u05'); }
+    });
+
     resetImmersiveUi();
     syncGameStats();
     SceneManager.reset();
