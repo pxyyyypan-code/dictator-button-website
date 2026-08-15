@@ -16,6 +16,13 @@
  * 长条把 21 格的池子重复 4 遍，用 translateY 一路拉上去。
  * 窗口高 SLOT_ROW_VISIBLE 格，**正中那格**是停止位：
  * 位移 -k 格时露出 strip[k]、strip[k+1]、strip[k+2]，所以中奖格的下标是 k+1。
+ *
+ * 三列的分配规律由玩家在 u03 选了几条烦恼决定（planAssignment），不是随机：
+ *   1 条 → 三列都停在同一个道具；
+ *   2 条 → 前两列 A、第三列 B；
+ *   3 条 → 三列各一个。
+ * 换句话说，**三列停下来能看到几个不同的道具，就等于玩家选了几条烦恼**。
+ * 以前中列是唯一的中奖列、左右两列按固定偏移陪跑，那套逻辑在这里被整个换掉了。
  */
 'use strict';
 
@@ -27,18 +34,20 @@ const GadgetMatch = (function () {
 
   /** @type {{getGadget:Function,getWorry:Function,onLifted:Function}|null} */
   let callbacks = null;
-  /** @type {HTMLElement|null} 中奖格（reelB 正中那格），飞行动画的起点 */
-  let winnerCell = null;
+  /** @type {HTMLElement[]} 三列各自的中奖格，飞行动画的起点从这里挑 */
+  let winnerCells = [];
   /** @type {Animation[]} 三列的滚动动画，跳过时要 finish 掉 */
   let spins = [];
   /** @type {boolean} 三列是否已全部停稳 */
   let settled = false;
   /** @type {boolean} 拨杆是否已经拨下（防连点：上移只能发生一次） */
   let pulled = false;
-  /** @type {HTMLElement|null} 跨场景飞行的道具替身 */
-  let ghost = null;
-  /** @type {number} 替身的兜底清理定时器 */
-  let ghostTimer = 0;
+  /** @type {HTMLElement[]} 跨场景飞行的道具替身（每件道具一个） */
+  let ghosts = [];
+  /** @type {number[]} 替身的兜底清理定时器 */
+  let ghostTimers = [];
+  /** @type {number} 最近一次点开说明的是第几件道具（关闭弹窗时焦点要还回去） */
+  let lastTipSlot = 0;
 
   function node(name) {
     return document.querySelector('[data-bind="' + name + '"]');
@@ -57,13 +66,51 @@ const GadgetMatch = (function () {
     if (el) el.textContent = value || '';
   }
 
-  function gadget() {
-    return (callbacks && typeof callbacks.getGadget === 'function') ? callbacks.getGadget() : null;
+  /** 匹配到的道具，永远是数组（1~3 件），顺序和玩家选烦恼的顺序一一对应。 */
+  function gadgets() {
+    const list = (callbacks && typeof callbacks.getGadget === 'function')
+      ? callbacks.getGadget()
+      : null;
+    return Array.isArray(list) ? list.filter(Boolean) : [];
   }
 
-  function worryText() {
-    const worry = (callbacks && typeof callbacks.getWorry === 'function') ? callbacks.getWorry() : null;
-    return worry ? worry.text : '';
+  /** 对应的烦恼，和 gadgets() 同序同长（app.js 那边是 map 出来的）。 */
+  function worries() {
+    const list = (callbacks && typeof callbacks.getWorry === 'function')
+      ? callbacks.getWorry()
+      : null;
+    return Array.isArray(list) ? list.filter(Boolean) : [];
+  }
+
+  function joinNames(list) {
+    return list.map(function (item) { return item.name; }).join('、');
+  }
+
+  function joinWorries() {
+    return worries().map(function (item) { return item.text; }).join('、');
+  }
+
+  /**
+   * 三列各停在哪件道具上。规格原话：
+   *   1 条烦恼 → 三列都是同一个；2 条 → 前两列一个、第三列另一个；3 条 → 各一个。
+   * 这里按 list.length 写死三种排法，所以 CONFIG.WORRY_MAX_PICK 一旦不是 3，这个函数要跟着改。
+   */
+  function planAssignment(list) {
+    if (list.length >= 3) return [list[0], list[1], list[2]];
+    if (list.length === 2) return [list[0], list[0], list[1]];
+    if (list.length === 1) return [list[0], list[0], list[0]];
+    return [];
+  }
+
+  /**
+   * 每件道具由哪一列送出去（下标是 planAssignment 的列号）。
+   * 取的是它占据的**最靠中间**那一列：一件时走中列，两件时中列 + 右列，三件时各归各列。
+   * 这样每个替身都是从一格**真的正显示着它**的位置起飞的，不会出现"从别的道具身上飞出来"。
+   */
+  function ghostReels(count) {
+    if (count >= 3) return [0, 1, 2];
+    if (count === 2) return [1, 2];
+    return [1];
   }
 
   /* ---------------- U4 三列滚轮 ---------------- */
@@ -109,14 +156,14 @@ const GadgetMatch = (function () {
   }
 
   function startSpin() {
-    const matched = gadget();
-    setText('slotWorryLabel', worryText());
+    const matched = gadgets();
+    setText('slotWorryLabel', joinWorries());
     setText('slotLead', '正在从四次元口袋里翻找……');
     settled = false;
     pulled = false;
     spins = [];
-    winnerCell = null;
-    removeGhost();
+    winnerCells = [];
+    removeGhosts();
 
     const scene = slotScene();
     if (scene) scene.classList.remove('is-lifting');
@@ -133,24 +180,25 @@ const GadgetMatch = (function () {
       return { name: name, pool: GadgetData.reelPool(i + 1) };
     });
 
-    // 中列停在真正匹配到的道具上（初稿里高亮的就是中列正中那格）。
-    // 左右两列只是陪跑：按固定偏移取，不用随机——同样的烦恼每次跑出来的画面要一致。
-    const midPool = pools[1].pool;
-    let winnerIndex = midPool.findIndex(function (item) {
-      return item && matched && item.id === matched.id;
-    });
-    if (winnerIndex < 0) winnerIndex = 0;
-
+    // 三列各自停在 planAssignment 指定的那件道具上，没有"陪跑列"了。
+    // 每列的池子都含全部 20 件（只是顺序和空位位置不同），所以任何一件都找得到。
+    const assign = planAssignment(matched);
     const plans = pools.map(function (entry, i) {
-      const index = i === 1
-        ? winnerIndex
-        : (winnerIndex + (i === 0 ? 7 : 13)) % entry.pool.length;
+      const want = assign[i];
+      let index = want ? entry.pool.findIndex(function (item) {
+        return item && item.id === want.id;
+      }) : -1;
+      if (index < 0) index = 0;
       return buildReel(entry.name, entry.pool, index);
     }).filter(Boolean);
 
-    const mid = plans[1];
-    if (mid) winnerCell = mid.strip.children[mid.cellIndex] || null;
-    if (winnerCell) winnerCell.classList.add('is-winner');
+    // 三格全部算中奖格：玩家选了几条，就该看到几个高亮的、真正属于自己的结果。
+    winnerCells = plans.map(function (plan) {
+      return plan.strip.children[plan.cellIndex] || null;
+    });
+    winnerCells.forEach(function (cell) {
+      if (cell) cell.classList.add('is-winner');
+    });
 
     const unit = plans.length ? cellHeight(plans[0].reel) : 0;
     if (!unit || reducedMotion()) {
@@ -185,8 +233,8 @@ const GadgetMatch = (function () {
   function onAllSettled() {
     if (settled) return;
     settled = true;
-    const matched = gadget();
-    setText('slotLead', matched ? '找到了：' + matched.name : '找到了');
+    const matched = gadgets();
+    setText('slotLead', matched.length ? '找到了：' + joinNames(matched) : '找到了');
     const skip = node('slotSkip');
     if (skip) skip.hidden = true;
     SceneManager.addTimer(function () {
@@ -221,109 +269,155 @@ const GadgetMatch = (function () {
     }
     if (scene) scene.classList.add('is-lifting');
     SceneManager.addTimer(function () {
-      launchGhost();
+      launchGhosts();
       if (callbacks && typeof callbacks.onLifted === 'function') callbacks.onLifted();
-      landGhost();
+      landGhosts();
     }, reducedMotion() ? 0 : CONFIG.SLOT_LIFT_MS);
   }
 
+  /** u05 上三个道具位的绑定名，下标就是 data-gadget-index。 */
+  const FIGURE_BINDS = ['gadgetFigure', 'gadgetFigure2', 'gadgetFigure3'];
+  const IMAGE_BINDS = ['gadgetImage', 'gadgetImage2', 'gadgetImage3'];
+
   /**
-   * 把中奖格里那张图复制成一个 fixed 替身，挂在 body 上。
+   * 把中奖格里那张图复制成 fixed 替身，挂在 body 上。
    * 挂 body 而不是场景里，是因为它必须活过 u04 → u05 这次切换：
    * 场景切换会把 u04 整个 display:none，挂在里面的替身当场消失。
+   *
+   * 几件道具就放几个替身，各自从"正显示着它"的那一列起飞（ghostReels）。
    */
-  function launchGhost() {
-    removeGhost();
-    const matched = gadget();
-    if (!matched || !winnerCell || reducedMotion()) return;
-    const rect = winnerCell.getBoundingClientRect();
-    if (!rect.width) return;
-    const img = document.createElement('img');
-    img.className = 'gadget-ghost';
-    img.src = matched.image;
-    img.alt = '';
-    img.setAttribute('aria-hidden', 'true');
-    img.style.left = rect.left + 'px';
-    img.style.top = rect.top + 'px';
-    img.style.width = rect.width + 'px';
-    img.style.height = rect.height + 'px';
-    document.body.appendChild(img);
-    ghost = img;
+  function launchGhosts() {
+    removeGhosts();
+    const matched = gadgets();
+    if (!matched.length || reducedMotion()) return;
+    const from = ghostReels(matched.length);
+    matched.forEach(function (item, i) {
+      const cell = winnerCells[from[i]];
+      if (!cell) return;
+      const rect = cell.getBoundingClientRect();
+      if (!rect.width) return;
+      const img = document.createElement('img');
+      img.className = 'gadget-ghost';
+      img.src = item.image;
+      img.alt = '';
+      img.setAttribute('aria-hidden', 'true');
+      img.style.left = rect.left + 'px';
+      img.style.top = rect.top + 'px';
+      img.style.width = rect.width + 'px';
+      img.style.height = rect.height + 'px';
+      img.dataset.slot = String(i);
+      document.body.appendChild(img);
+      ghosts.push(img);
+    });
   }
 
   /** u05 已经可见了，这时才量得到目标位置，把替身送过去再撤掉。 */
-  function landGhost() {
-    if (!ghost) return;
-    const target = node('gadgetImage');
-    const figure = node('gadgetFigure');
-    if (!target) { removeGhost(); return; }
-    const to = target.getBoundingClientRect();
-    if (!to.width) { removeGhost(); return; }
-    const from = ghost.getBoundingClientRect();
-    const dx = (to.left + to.width / 2) - (from.left + from.width / 2);
-    const dy = (to.top + to.height / 2) - (from.top + from.height / 2);
-    // 两端都是 object-fit:contain 的方图，真正画出来的边长是**盒子的短边**：
-    // 替身那格是宽扁的（约 299×123），落点是正方形（254×254）。
-    // 按宽度算比例，替身会停在落点四成大的地方，接手那一下"啪"地涨一截；
-    // 按短边算，画出来的道具在交接前后一样大。
-    const scale = Math.min(to.width, to.height) / Math.min(from.width, from.height);
+  function landGhosts() {
+    if (!ghosts.length) return;
+    ghosts.forEach(function (ghost) {
+      const slot = Number(ghost.dataset.slot) || 0;
+      const target = node(IMAGE_BINDS[slot]);
+      const figure = node(FIGURE_BINDS[slot]);
+      if (!target) { ghost.remove(); return; }
+      const to = target.getBoundingClientRect();
+      if (!to.width) { ghost.remove(); return; }
+      const box = ghost.getBoundingClientRect();
+      const dx = (to.left + to.width / 2) - (box.left + box.width / 2);
+      const dy = (to.top + to.height / 2) - (box.top + box.height / 2);
+      // 两端都是 object-fit:contain 的方图，真正画出来的边长是**盒子的短边**：
+      // 替身那格是宽扁的（约 299×123），落点是正方形。
+      // 按宽度算比例，替身会停在落点四成大的地方，接手那一下"啪"地涨一截；
+      // 按短边算，画出来的道具在交接前后一样大。
+      const scale = Math.min(to.width, to.height) / Math.min(box.width, box.height);
 
-    // 目标位先留空，等替身落地再显形，否则同一件道具会同时出现两份。
-    if (figure) figure.classList.add('is-arriving');
+      // 目标位先留空，等替身落地再显形，否则同一件道具会同时出现两份。
+      if (figure) figure.classList.add('is-arriving');
 
-    const ms = CONFIG.GADGET_FLY_MS;
-    ghost.animate([
-      { transform: 'translate(0px, 0px) scale(1)' },
-      { transform: 'translate(' + dx + 'px, ' + dy + 'px) scale(' + scale + ')' }
-    ], { duration: ms, easing: 'cubic-bezier(.28,.02,.2,1)', fill: 'forwards' });
+      const ms = CONFIG.GADGET_FLY_MS;
+      ghost.animate([
+        { transform: 'translate(0px, 0px) scale(1)' },
+        { transform: 'translate(' + dx + 'px, ' + dy + 'px) scale(' + scale + ')' }
+      ], { duration: ms, easing: 'cubic-bezier(.28,.02,.2,1)', fill: 'forwards' });
 
-    ghostTimer = window.setTimeout(function () {
-      // 交接顺序不能反：先让真图显形（.match__image 没有淡入过渡，是瞬间的），
-      // 下一帧再撤替身。反过来就是"替身没了、真图还在淡入"，中间空掉一瞬，
-      // 看上去像道具闪了一下才出现。
-      if (figure) figure.classList.remove('is-arriving');
-      window.requestAnimationFrame(function () { removeGhost(); });
-    }, ms);
+      ghostTimers.push(window.setTimeout(function () {
+        // 交接顺序不能反：先让真图显形（.match__image 没有淡入过渡，是瞬间的），
+        // 下一帧再撤替身。反过来就是"替身没了、真图还在淡入"，中间空掉一瞬，
+        // 看上去像道具闪了一下才出现。
+        if (figure) figure.classList.remove('is-arriving');
+        window.requestAnimationFrame(function () {
+          ghost.remove();
+          ghosts = ghosts.filter(function (g) { return g !== ghost; });
+        });
+      }, ms));
+    });
   }
 
-  function removeGhost() {
-    window.clearTimeout(ghostTimer);
-    ghostTimer = 0;
-    if (ghost) { ghost.remove(); ghost = null; }
-    const figure = node('gadgetFigure');
-    if (figure) figure.classList.remove('is-arriving');
+  function removeGhosts() {
+    ghostTimers.forEach(function (id) { window.clearTimeout(id); });
+    ghostTimers = [];
+    ghosts.forEach(function (g) { g.remove(); });
+    ghosts = [];
+    FIGURE_BINDS.forEach(function (name) {
+      const figure = node(name);
+      if (figure) figure.classList.remove('is-arriving');
+    });
   }
 
   /* ---------------- U5 结果页 ---------------- */
 
   function renderResult() {
-    const matched = gadget();
-    if (!matched) return false;
-    setText('gadgetName', matched.name);
+    const matched = gadgets();
+    if (!matched.length) return false;
+    const list = worries();
+    setText('gadgetName', joinNames(matched));
+
     // 初稿上是一条「烦恼 × 道具」的算式，不是道具类别；类别放进说明弹窗里。
-    const worry = worryText();
-    setText('gadgetGroup', worry ? worry + ' × ' + matched.name : matched.group);
-    setText('gadgetDesc', matched.description || '');
-    const image = node('gadgetImage');
-    if (image) {
-      image.src = matched.image;
-      image.alt = matched.name;
-    }
+    // 多件就一行一条，靠 .match__formula 的 white-space:pre-line 断行——
+    // 挤成一行的话，三条算式在 1366 宽下会直接撞穿左半栏。
+    setText('gadgetGroup', matched.map(function (item, i) {
+      const worry = list[i];
+      return worry ? worry.text + ' × ' + item.name : item.group;
+    }).join('\n'));
+
+    // 一件时把说明直接摆出来；多件时不能只显示其中一件的说明，
+    // 也不该把三段堆成一大块（左半栏放不下）。
+    // 这里写的是**对应关系**，不是「点它」——「点它」已经由道具下面那行
+    // .match__tip「点击道具以查看功能」说过了，同一句写两遍等于白占一行。
+    setText('gadgetDesc', matched.length === 1
+      ? (matched[0].description || '')
+      : '一条烦恼配一件道具，上面的算式就是它们的对应关系。');
+
+    // 用不到的位置收起来。data-count 只管排布尺寸，隐藏靠各自的 hidden。
+    const gallery = node('gadgetGallery');
+    if (gallery) gallery.dataset.count = String(Math.min(matched.length, 3));
+    FIGURE_BINDS.forEach(function (name, i) {
+      const figure = node(name);
+      const image = node(IMAGE_BINDS[i]);
+      const item = matched[i];
+      if (figure) figure.hidden = !item;
+      if (image && item) {
+        image.src = item.image;
+        image.alt = item.name;
+      }
+    });
     return true;
   }
 
   /** 点道具弹出说明。外形整个由 tip-frame.webp 承担，这里只填字。 */
-  function showTip() {
-    const matched = gadget();
+  function showTip(index) {
+    const matched = gadgets();
+    const slot = Math.min(Math.max(Number(index) || 0, 0), matched.length - 1);
+    const item = matched[slot];
     const modal = node('gadgetTip');
-    if (!matched || !modal) return;
-    setText('tipName', matched.name);
-    setText('tipGroup', '道具类别｜' + matched.group);
-    setText('tipDesc', matched.description || '');
+    if (!item || !modal) return;
+    lastTipSlot = slot;
+    setText('tipName', item.name);
+    setText('tipGroup', '道具类别｜' + item.group);
+    setText('tipDesc', item.description || '');
     const image = node('tipImage');
     if (image) {
-      image.src = matched.image;
-      image.alt = matched.name;
+      image.src = item.image;
+      image.alt = item.name;
     }
     modal.classList.add('modal--open');
     modal.setAttribute('aria-hidden', 'false');
@@ -336,8 +430,10 @@ const GadgetMatch = (function () {
     if (!modal) return;
     modal.classList.remove('modal--open');
     modal.setAttribute('aria-hidden', 'true');
-    const figure = node('gadgetFigure');
-    if (figure) figure.focus();
+    // 焦点要还给**刚才点开的那一件**，不是永远还给第一件——
+    // 键盘玩家挨个看三件说明时，每关一次就跳回第一件是走不下去的。
+    const figure = node(FIGURE_BINDS[lastTipSlot]);
+    if (figure && !figure.hidden) figure.focus();
   }
 
   function tipOpen() {
@@ -358,7 +454,7 @@ const GadgetMatch = (function () {
 
   function exitResult() {
     hideTip();
-    removeGhost();
+    removeGhosts();
   }
 
   function reset() {
@@ -366,7 +462,16 @@ const GadgetMatch = (function () {
     exitResult();
     settled = false;
     pulled = false;
-    winnerCell = null;
+    winnerCells = [];
+    lastTipSlot = 0;
+    // 重新开始时把多出来的两个道具位收回去，否则上一轮选三条、这一轮选一条，
+    // 第二、三个位置会挂着上一轮的图不放。
+    const gallery = node('gadgetGallery');
+    if (gallery) gallery.dataset.count = '1';
+    FIGURE_BINDS.forEach(function (name, i) {
+      const figure = node(name);
+      if (figure) figure.hidden = i > 0;
+    });
   }
 
   function mount(handlers) {

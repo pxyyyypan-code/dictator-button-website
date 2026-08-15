@@ -136,6 +136,11 @@ const CONFIG = {
   // u03 选择烦恼：悬停多久展开细分条目；一个大类展开几条。
   WORRY_HOVER_MS: 260,
   WORRY_SUB_COUNT: 3,
+  // 一次最多选几条烦恼（规格：1~3 条）。
+  // 老虎机三列的分配规律直接由选中条数派生，不再另存一份：
+  //   1 条 → 三列都是同一个道具；2 条 → 前两列 A、第三列 B；3 条 → 三列各一个。
+  // 改这个数就得同时改 gadget-match.js 的 planAssignment()（那里按 1/2/3 写死了三种排法）。
+  WORRY_MAX_PICK: 3,
   // 沉浸段的泡泡取自同一大类的兄弟烦恼，凑够这么多条。
   WORRY_SIBLING_COUNT: 12,
 
@@ -190,6 +195,9 @@ const CONFIG = {
   WORRY_LIST_COLUMN_AFTER: 4,
   // 确认后烦恼标签沿弧线飞进四次元口袋的时长。
   WORRY_FLY_MS: 900,
+  // 选了多条时，第 2、3 个标签依次晚多少出发。
+  // 别调大：总时长是 FLY_MS + (n-1)*STAGGER，三条时已经 1.22s，再长就卡住流程了。
+  WORRY_FLY_STAGGER_MS: 160,
 
   // u04 老虎机：窗口露出几格。初稿是 3 格，正中那格才是停止位。
   // gadget-match.js 靠它把实测的窗口高度换算成一格多高（格高本身只在 CSS 里定义）。

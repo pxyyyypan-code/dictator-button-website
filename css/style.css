@@ -906,8 +906,15 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 .match__formula {
   position: relative;
   display: flex;
-  align-items: center;
+  /* 不能用 center：多选之后这块是两三行，居中会让下面那截虚线
+     正好横穿第二行的字，看着像被划掉了。baseline 让虚线贴住**第一行**的基线，
+     一行和三行都是同一种样子——虚线从算式的第一行接出去，不压任何一行。 */
+  align-items: baseline;
   gap: var(--sp-2);
+  /* 选了几条烦恼就有几行「烦恼 × 道具」，由 gadget-match.js 用 \n 拼。
+     不并成一行是因为三对拼起来接近 40 个字，半栏宽度装不下，
+     一旦回绕，虚线那截会被挤到第二行的中间。 */
+  white-space: pre-line;
   margin: 0 0 var(--sp-3);
   font-size: var(--fs-note);
   font-weight: 400;
@@ -923,6 +930,30 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   background: repeating-linear-gradient(90deg,
               var(--c-teal) 0 6px, transparent 6px 14px);
   opacity: 0.6;
+}
+
+/* 一到三件道具并排。三个位置都静态在场，用不到的挂 hidden——
+   .match__figure 自带 display:grid，会盖掉 [hidden] 的 UA 样式，
+   所以下面那条 display:none 必须显式写出来，否则「隐藏」的位置照样占着版面。
+   条数多了就整体缩小：三件按 24vw 排会顶穿半栏，缩到 13vw 才留得下间距。 */
+.match__gallery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 1.4vw, 24px);
+}
+
+.match__figure[hidden] { display: none; }
+
+.match__gallery[data-count="2"] .match__figure {
+  width: min(17vw, 226px);
+  padding: clamp(14px, 1.7vw, 28px);
+}
+
+.match__gallery[data-count="3"] .match__figure {
+  width: min(13vw, 172px);
+  padding: clamp(10px, 1.3vw, 20px);
 }
 
 /* 道具是可点的（点开 xlsx 里的功能说明），所以外层是个按钮。
@@ -998,12 +1029,62 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 }
 
 .summary-body {
+  /* 字号与行高都提成变量，因为下面的高度闸门要按它们算。
+     直接写 font-size 的话，闸门就只能拍一个 vh 数——而 vh 和行高没有公约数。 */
+  --sum-fs: var(--fs-body);
+  --sum-lh: var(--lh-body);
+  --sum-lines: 4;
+
   margin: 0;
   max-width: var(--w-text);
-  font-size: var(--fs-body);
+  font-size: var(--sum-fs);
   font-weight: 300;
-  line-height: var(--lh-body);
+  line-height: var(--sum-lh);
+  /* 选了几条烦恼就有几段总结，app.js 用 \n 分段。 */
+  white-space: pre-line;
   color: rgba(247, 238, 225, 0.88);
+  /* 兜底闸门：段落再长也只吃掉这么多高度，多出来的自己滚。
+     没有它的话，正文一长就把下面那两个按钮推出视口——
+     而它们是 u11 唯一的出口，推出去等于卡死。
+
+     高度按**整行数**算，不按 vh。原来写的 26vh 在 1366 上是 199.7px，
+     而三段档的一行是 31.6px——6.3 行，截断点正好落在第七行腰上，
+     那一行被横着切成两半，看着像渲染坏了。乘出来的值一定是行高的整数倍，
+     所以截断永远发生在行与行之间。
+     行数各档不同，但每一档乘出来都 ≤ 26vh@1366，闸门的作用没有放松。 */
+  max-height: calc(var(--sum-fs) * var(--sum-lh) * var(--sum-lines));
+  overflow-y: auto;
+}
+
+/* 段数越多字号越小。1366×768 是最紧的一档：原字号三段排下来，
+   按钮落在 y=793，而视口只有 768。缩档之后收回大约 90px。
+   字号压下去同时也是在给行数腾地方：一行装得下更多字，同样的话就少占一行。
+
+   下面这两组数不是拍的，是按数据里**最长的那几段**倒推的：
+   worry-data.js 里 109 段总结，最长 65 字，第二三长各 63 字。
+   正文栏在 1366 上宽 599px、1920 上宽 640px，中日文一个字的宽度就是字号，
+   所以一行能装 floor(栏宽 / 字号) 个字，段数固定 1~3 段，
+   最坏行数 = Σ ceil(段长 / 每行字数)。挑字号的标准是让最坏行数**严格小于**
+   上面那道闸门的行数——闸门因此永远不会真的咬下去，它只是兜底。 */
+.summary-body[data-count="2"] {
+  /* 0.70：1366→17.4px/行 34 字，最坏 2+2=4 行；1920→19.6px/行 32 字，最坏 3+2=5 行。 */
+  --sum-fs: calc(var(--fs-body) * 0.7);
+  --sum-lh: 1.65;
+  --sum-lines: 6;
+}
+
+.summary-body[data-count="3"] {
+  /* 0.66：1366→16.4px/行 36 字，1920→18.5px/行 34 字，两档最坏都是 2+2+2=6 行。 */
+  --sum-fs: calc(var(--fs-body) * 0.66);
+  --sum-lh: 1.5;
+  --sum-lines: 7;
+}
+
+/* 「关于「A」「B」「C」」这行也会跟着变两行，一起降一档。 */
+.summary-focus[data-count="2"],
+.summary-focus[data-count="3"] {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-note);
 }
 
 /* 四次元口袋：袋口虚线缝边 + 铃铛，同样是生成的 SVG。 */
@@ -1011,17 +1092,42 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   position: relative;
   display: grid;
   place-items: center;
-  width: min(30vw, 420px);
+  /* 宽度提成自定义属性，好让袋口里那叠道具按它算。
+     叠层原本写的是 width:78%，量出来却是 511px——百分比在这里的参照系
+     并不是口袋（口袋只有 410px），于是第三件直接飞到袋子外面去了。
+     换成 calc(var(--pocket-w) * k) 就没有参照系可赌了。 */
+  --pocket-w: min(30vw, 420px);
+  width: var(--pocket-w);
   aspect-ratio: 420 / 380;
   background: url("../assets/images/ui/pocket.svg") center / contain no-repeat;
 }
 
-.pocket__gadget {
-  width: 42%;
-  height: auto;
+/* 袋口里一到三件。整叠的宽度随条数放大，单件仍是口袋的 42%，
+   所以只选一条烦恼的画面和阶段 4 验收过的那版没有差别。
+   两件、三件的系数是照袋口内沿定的：口袋素材的袋口大约占整幅的八成，
+   三件按 62% 排完还留得下两侧的缝边。 */
+.pocket__stack {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4%;
+  width: calc(var(--pocket-w) * 0.42);
   margin-top: 4%;
+}
+
+.pocket__stack[data-count="2"] { width: calc(var(--pocket-w) * 0.54); }
+.pocket__stack[data-count="3"] { width: calc(var(--pocket-w) * 0.62); }
+
+/* flex: 1 1 0 让几件平分宽度；高度各随各的比例，短的那件居中对齐。 */
+.pocket__gadget {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
+
+.pocket__gadget[hidden] { display: none; }
 
 .pocket__tag {
   position: absolute;
@@ -1029,7 +1135,9 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   bottom: -14%;
   transform: translateX(-50%);
   padding: 6px 18px;
-  white-space: nowrap;
+  /* 三件道具的名字拼起来会超出口袋宽度，所以放开回绕并给个上限。 */
+  max-width: 108%;
+  text-align: center;
   font-size: var(--fs-note);
   letter-spacing: 0.08em;
   color: var(--c-teal);
@@ -1323,6 +1431,27 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 
 .worry-sub:focus-visible { outline: 2px solid var(--c-teal); outline-offset: 3px; }
 
+/* 「返回全部类别」：点开一个大类之后，回到九宫粒子场的唯一出口。
+   它由 renderSubs() 建在列表容器里（那里不许有 data-bind 子节点，这颗正好不需要），
+   所以完全不占场景的绝对定位版面——u03 那五块禁区已经排满了，
+   再往画面上摆一颗独立按钮，三档分辨率里至少有一档会压到粒子。
+   分栏态下它占满第一列的四行，成为列表左缘的一条回退轨。 */
+.worry-sub--back {
+  align-self: center;
+  padding-right: clamp(12px, 1.4vw, 22px);
+  color: var(--c-teal);
+  border-bottom-color: transparent;
+}
+
+.worry-sub--back:hover { color: var(--c-teal-deep); }
+
+.worry-subs--full .worry-sub--back {
+  grid-row: 1 / -1;
+  margin-right: clamp(4px, 0.6vw, 12px);
+  border-right: 1px solid var(--line);
+  border-bottom: 0;
+}
+
 /* 确认按钮：正中偏下，正好在放大后的插画下方。
    规格上它是**选中之后才出现**的，所以默认不在场（worry-picker.js 的 sync()
    按有没有选中在场景根上切 .is-picked）。这里只淡出、不 display:none——
@@ -1333,6 +1462,10 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   top: 52%;
   z-index: 3;
   margin: 0;
+  /* 「确认」+「清空重选」必须并排一行。允许折行的话，
+     绝对定位的收缩宽度会随文案（确认键的字数跟着选中条数变）来回跳，
+     两颗按钮时高时矮，正好压在放大件的下沿。 */
+  flex-wrap: nowrap;
   opacity: 0;
   visibility: hidden;
   transform: translateX(-50%);
@@ -1386,8 +1519,16 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
 .scene--pick .worry-hint {
   position: absolute;
   left: 0;
-  bottom: 15%;
+  bottom: 14%;
   margin: 0;
+  /* 宽度必须封顶。多选之后这行会把三条烦恼原文一起列出来，
+     不封顶它就一路横过去钻到「社交」那颗粒子（left:52%）底下——
+     字还看得见，但读起来像两层东西叠在一起。
+     46% 是量出来的：粒子场最左那一列从 52% 起，留 6% 的空当。
+     封顶之后长清单会折成两行，所以 bottom 从 15% 降到 14%，
+     给第二行留出往上长的余地，不至于顶到标题。 */
+  width: min(46%, 620px);
+  line-height: 1.55;
 }
 
 .worry-free {
@@ -2394,7 +2535,10 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
     gap: var(--sp-4);
   }
   .split__visual { order: -1; }
-  .doraemon, .pocket, .match__figure { width: min(46vw, 300px); }
+  .doraemon, .match__figure { width: min(46vw, 300px); }
+  /* 口袋改的是 --pocket-w，不是 width——袋口里那叠道具按它算宽度，
+     只改 width 的话叠层还停在大屏的尺寸上。 */
+  .pocket { --pocket-w: min(46vw, 300px); }
   .worry-particle { width: clamp(72px, 11vw, 100px); }
   .intro-card { width: min(90vw, 620px); }
   .slot { width: 88vw; }

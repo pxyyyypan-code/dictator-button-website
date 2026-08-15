@@ -67,9 +67,14 @@
     <div class="worry-subs" data-bind="worrySubs" role="group" aria-label="细分烦恼"></div>
     <div class="worry-particles" data-bind="worryCategories" role="group" aria-label="烦恼大类"></div>
 
+    <!-- 确认键的文案随选中条数变（worry-picker.js 的 sync() 改写），
+         所以这里的字只是首屏默认值，不代表最终文案。
+         「清空重选」是多选之后新增的：选到第 3 条才发现选错，总得有一条退路，
+         而它不能藏进推测面板里——预设条目那条支线根本不会打开面板。 -->
     <div class="scene__actions scene__actions--center">
       <button type="button" class="btn btn--primary" data-action="confirm-worry"
               data-bind="confirmWorry" disabled>确认这个烦恼</button>
+      <button type="button" class="btn btn--link" data-action="reset-worry-pick">清空重选</button>
     </div>
 
     <p class="scene__tag">STEP 03 · 选择烦恼</p>
@@ -94,7 +99,10 @@
       <div class="classify-panel__actions">
         <button type="button" class="btn btn--primary btn--compact" data-action="confirm-worry"
                 data-bind="classifyConfirm">确认分类</button>
-        <button type="button" class="btn btn--link" data-action="reset-worry-pick">重新选择</button>
+        <!-- 这颗以前是 reset-worry-pick（清掉唯一那条选择）。改成多选后不能再那么干：
+             自由输入只是三条里的一条，点它不该把前面挑好的两条一起抹掉。
+             现在它只收起面板、放回自由输入框和粒子场，已选的原样留着。 -->
+        <button type="button" class="btn btn--link" data-action="worry-back">返回继续选</button>
       </div>
     </div>
   </section>
@@ -144,11 +152,25 @@
         <button type="button" class="btn btn--link" data-action="back">重新选择 →</button>
       </div>
     </div>
+    <!-- 一到三件道具：条数由玩家在 u03 选了几条烦恼决定，和老虎机三列的分配规律同源。
+         三个位置**全部静态在场**，多出来的用 hidden 收起——
+         它们都是 data-bind 节点，一旦改成按需 createElement，App.bind 的正向缓存就会写空气。
+         data-gadget-index 是点击时取哪一件的唯一依据（gadget-match.js 的 showTip 读它）。 -->
     <div class="split__visual">
-      <button type="button" class="match__figure" data-action="show-gadget-tip"
-              data-bind="gadgetFigure" aria-haspopup="dialog">
-        <img class="match__image" data-bind="gadgetImage" src="" alt="" width="360" height="360">
-      </button>
+      <div class="match__gallery" data-bind="gadgetGallery" data-count="1">
+        <button type="button" class="match__figure" data-action="show-gadget-tip" data-gadget-index="0"
+                data-bind="gadgetFigure" aria-haspopup="dialog">
+          <img class="match__image" data-bind="gadgetImage" src="" alt="" width="360" height="360">
+        </button>
+        <button type="button" class="match__figure" data-action="show-gadget-tip" data-gadget-index="1"
+                data-bind="gadgetFigure2" aria-haspopup="dialog" hidden>
+          <img class="match__image" data-bind="gadgetImage2" src="" alt="" width="360" height="360">
+        </button>
+        <button type="button" class="match__figure" data-action="show-gadget-tip" data-gadget-index="2"
+                data-bind="gadgetFigure3" aria-haspopup="dialog" hidden>
+          <img class="match__image" data-bind="gadgetImage3" src="" alt="" width="360" height="360">
+        </button>
+      </div>
       <p class="match__tip">点击道具以查看功能</p>
     </div>
   </section>
@@ -229,8 +251,13 @@
       </div>
     </div>
     <div class="split__visual">
+      <!-- 口袋里同样是一到三件，和 u05 一样三个位置全部静态在场。 -->
       <div class="pocket">
-        <img class="pocket__gadget" data-bind="pocketGadget" src="" alt="" width="200" height="200">
+        <div class="pocket__stack" data-bind="pocketStack" data-count="1">
+          <img class="pocket__gadget" data-bind="pocketGadget" src="" alt="" width="200" height="200">
+          <img class="pocket__gadget" data-bind="pocketGadget2" src="" alt="" width="200" height="200" hidden>
+          <img class="pocket__gadget" data-bind="pocketGadget3" src="" alt="" width="200" height="200" hidden>
+        </div>
         <span class="pocket__tag" data-bind="pocketTag"></span>
       </div>
     </div>

@@ -130,21 +130,43 @@ async function run() {
     await particles.first().hover({ force: true });
     await shot('u03-hover');
 
-    // 自由输入 → 本地词表推测 → 推测面板。先演这条支线，再退回去走预设。
+    /**
+     * 点开第 index 个大类。
+     *
+     * 这里刻意**不走指针**：粒子被悬停后会飞到画面正中，鼠标就落在它原来的位置上了，
+     * 于是 pointerout → 失焦飞回来 → 又被悬停 → 再飞走，来回震荡，
+     * Playwright 的「元素静止」检查永远等不到头（1366 那一档就是卡在这儿超时的）。
+     * 直接让元素自己 click()，事件照样冒泡到 app.js 的委托监听，
+     * 落到的 DOM 状态和真人点一模一样——而悬停预览那张照片，
+     * 上面已经用真实 hover 拍过了，没有漏掉的态。
+     */
+    async function openCategory(index) {
+      await page.evaluate(function (i) {
+        document.querySelectorAll('[data-bind="worryCategories"] [data-action="pick-category"]')[i].click();
+      }, index);
+      await sleep(500);   // 等飞到中央 + 列表展开的过渡走完
+    }
+
+    // 自由输入 → 本地词表推测 → 推测面板。自由输入本身也算一条选择，
+    // 所以退出面板走的是「返回继续选」（只收面板），不是「清空重选」——
+    // 后者会把这一条连同后面挑的一起抹掉，也就拍不到多选的版式了。
     await page.fill('#worry-text', '最近总担心考试考不好');
     await page.click('[data-action="classify-worry"]');
     await shot('u03-classify');
-    await page.click('[data-action="reset-worry-pick"]');
+    await page.click('.classify-panel [data-action="worry-back"]');
 
-    // 点击要分两步，跟真人一样：先悬停把粒子送到中央，等它停稳，再点。
-    // 一步点不中——粒子在 pointerover 的瞬间就开始往中央移，
-    // Playwright 算好的落点已经是空地了。
-    await particles.first().hover({ force: true });
-    await sleep(500);
-    await particles.first().click();
-    await shot('u03-expanded');       // 完整列表（最多 15 条，紧凑分栏）
+    await openCategory(0);
+    await shot('u03-expanded');       // 完整列表 + 左侧「← 返回全部类别」
     await page.locator('[data-bind="worrySubs"] [data-action="pick-worry"]').first().click();
-    await shot('u03');
+    await shot('u03');                // 两条：确认键文案变成「确认这 2 条烦恼」
+
+    // 再挑一条凑满 3 条，这是版面压力最大的一档：
+    // 提示行最长、确认键最宽，u05 与 u11 也要摆三件道具。
+    // 换大类先按返回键退回粒子场——这正是玩家的走法，也顺带证明返回键真的能用。
+    await page.click('[data-bind="worrySubs"] [data-action="worry-back"]');
+    await openCategory(1);
+    await page.locator('[data-bind="worrySubs"] [data-action="pick-worry"]').first().click();
+    await shot('u03-max');
 
     // 确认 → 米白标签沿弧线飞进四次元口袋 → u04
     await page.click('[data-bind="confirmWorry"]');

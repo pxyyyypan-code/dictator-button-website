@@ -10,9 +10,12 @@
 
 const appData = {
   // ---- 选择结果（u03 / u04 / u05）----
+  // 玩家一次选 1~3 条（CONFIG.WORRY_MAX_PICK）。下面两个数组**同序等长**：
+  // selectedWorries[i] 配到的就是 matchedGadgets[i]，
+  // u04 的三列分配、u05 的算式、u11/u12 的记录全靠这层对应关系，别单独重排其中一个。
   pickedCategory: '',
-  selectedWorry: null,      // WorryData.createProfile 的返回值
-  matchedGadget: null,      // GadgetData 记录
+  selectedWorries: [],      // WorryData.createProfile 的返回值，按选中顺序
+  matchedGadgets: [],       // GadgetData 记录，和上面一一对应
   worries: [],              // 送进 BubbleGame 的泡泡文案：选中的烦恼 + 同类兄弟
 
   // ---- 沉浸段计数（u06~u10）----
@@ -39,7 +42,7 @@ const appData = {
 
   // ---- 结尾段（u11 / u12）----
   dialogueIndex: 0,
-  selectedWorryText: '',
+  selectedWorryText: '',   // u10 停下来观察时，玩家盯着的那个泡泡的文案（只有一条）
   finalChoice: '',
   observeSelected: false
 };
@@ -93,8 +96,8 @@ const App = (function () {
     stopAllTickers();
     hideReturnChoice();
     appData.pickedCategory = '';
-    appData.selectedWorry = null;
-    appData.matchedGadget = null;
+    appData.selectedWorries.length = 0;
+    appData.matchedGadgets.length = 0;
     appData.worries.length = 0;
     appData.bubbles.length = 0;
     appData.successfulDeleteCount = 0;
@@ -126,61 +129,121 @@ const App = (function () {
   // 它们的消费者是 u06 和 u11，不属于选择页，所以没有跟着搬走。
 
   /**
-   * 沉浸段的泡泡不只放选中的那一条：
+   * 沉浸段的泡泡不只放选中的那几条：
    * 同一大类的兄弟烦恼一起进场，才撑得起「已处理 0 / 12」的场面。
-   * 选中的那条永远排第一，保证它一定出现在首批泡泡里。
+   * 选中的那几条永远排在最前，保证它们一定出现在首批泡泡里。
+   *
+   * 兄弟按大类**轮流**取（round-robin），不是把第一类抽干再抽第二类：
+   * 选了三条就该三类的烦恼都在场上飘，否则玩家看到的还是单一类别的泡泡场。
    */
   function buildWorryField() {
     appData.worries.length = 0;
-    if (!appData.selectedWorry) return;
-    appData.worries.push(appData.selectedWorry);
-    const siblings = WorryData.byCategory(appData.selectedWorry.category) || [];
-    siblings.forEach(function (preset) {
-      if (appData.worries.length >= CONFIG.WORRY_SIBLING_COUNT) return;
-      if (preset.text === appData.selectedWorry.text) return;
-      appData.worries.push(WorryData.createProfile(preset.text, {
-        presetId: preset.id,
-        category: preset.category,
-        behaviorType: preset.behaviorType
-      }));
+    if (!appData.selectedWorries.length) return;
+    const seen = Object.create(null);
+    appData.selectedWorries.forEach(function (worry) {
+      seen[worry.text] = true;
+      appData.worries.push(worry);
     });
+
+    // 每个已选大类各留一份兄弟队列，同一大类被选中两条时只留一份，避免重复配额。
+    const queues = [];
+    appData.selectedWorries.forEach(function (worry) {
+      if (queues.some(function (q) { return q.category === worry.category; })) return;
+      queues.push({ category: worry.category, list: (WorryData.byCategory(worry.category) || []).slice(), i: 0 });
+    });
+
+    let alive = true;
+    while (alive && appData.worries.length < CONFIG.WORRY_SIBLING_COUNT) {
+      alive = false;
+      for (let q = 0; q < queues.length; q += 1) {
+        const queue = queues[q];
+        while (queue.i < queue.list.length && seen[queue.list[queue.i].text]) queue.i += 1;
+        if (queue.i >= queue.list.length) continue;
+        alive = true;
+        const preset = queue.list[queue.i];
+        queue.i += 1;
+        seen[preset.text] = true;
+        appData.worries.push(WorryData.createProfile(preset.text, {
+          presetId: preset.id,
+          category: preset.category,
+          behaviorType: preset.behaviorType
+        }));
+        if (appData.worries.length >= CONFIG.WORRY_SIBLING_COUNT) break;
+      }
+    }
   }
 
-  /** 自由输入可能没有预设道具，此时按大类退化，而不是永远发 1 号道具。 */
-  function matchGadget(profile) {
+  /**
+   * 自由输入可能没有预设道具，此时按大类退化，而不是永远发 1 号道具。
+   * taken 是本轮已经发出去的道具 id：两条烦恼配到同一件时换一件，
+   * 否则老虎机会出现"两列显示同一张图却说是两件道具"的自相矛盾。
+   */
+  function matchGadget(profile, taken) {
     if (!profile) return null;
+    const used = taken || Object.create(null);
     const direct = GadgetData.forWorry(profile);
-    if (direct) return direct;
-    const sibling = (WorryData.byCategory(profile.category) || []).find(function (item) {
-      return Boolean(item.gadget);
+    if (direct && !used[direct.id]) return direct;
+
+    // 同大类里另找一件没被占用的。
+    const siblings = WorryData.byCategory(profile.category) || [];
+    for (let i = 0; i < siblings.length; i += 1) {
+      if (!siblings[i].gadget) continue;
+      const found = GadgetData.byName(siblings[i].gadget);
+      if (found && !used[found.id]) return found;
+    }
+    // 同类里全被占了就在全表里兜一件，实在兜不到才允许重复。
+    const spare = GadgetData.all.find(function (item) { return !used[item.id]; });
+    return spare || direct || GadgetData.all[0] || null;
+  }
+
+  /* ---------------- worry-picker.js 的回调 ---------------- */
+
+  /**
+   * 加/减一条烦恼。返回值决定 worry-picker 说哪句话：
+   *   'added' 加上了 · 'removed' 取消了 · 'full' 已经选满、这次什么都没做。
+   * 选满时**不顶替**：替掉哪一条都是替玩家做主，让他自己先取消一条。
+   */
+  function onWorryToggle(profile) {
+    if (!profile) return 'full';
+    // 同一条的判定用文案而不是 presetId：自由输入没有 presetId，
+    // 而"把预设里那句话原样打一遍"和点那一条，对玩家来说就是同一件事。
+    const at = appData.selectedWorries.findIndex(function (item) {
+      return item.text === profile.text;
     });
-    return (sibling && GadgetData.byName(sibling.gadget)) || GadgetData.all[0] || null;
+    if (at >= 0) {
+      appData.selectedWorries.splice(at, 1);
+      appData.pickedCategory = appData.selectedWorries.length
+        ? appData.selectedWorries[appData.selectedWorries.length - 1].category
+        : '';
+      return 'removed';
+    }
+    if (appData.selectedWorries.length >= CONFIG.WORRY_MAX_PICK) return 'full';
+    appData.selectedWorries.push(profile);
+    appData.pickedCategory = profile.category;
+    return 'added';
   }
 
-  /* ---------------- worry-picker.js 的四个回调 ---------------- */
-
-  /** 选中一条烦恼（预设条目或自由输入都走这里）。 */
-  function onWorrySelect(profile) {
-    appData.selectedWorry = profile || null;
-    appData.pickedCategory = profile ? profile.category : '';
-  }
-
-  /** 放弃当前选择：换大类、认不出、点「重新选择」都会到这里。 */
+  /** 清空全部选择：u03 的「清空重选」、u05 的「重新选择」、restart 都会到这里。 */
   function onWorryClear() {
-    appData.selectedWorry = null;
+    appData.selectedWorries.length = 0;
     appData.pickedCategory = '';
-    appData.matchedGadget = null;
+    appData.matchedGadgets.length = 0;
     appData.worries.length = 0;
   }
 
   /**
    * 烦恼已经沿弧线飞进四次元口袋——这时才配道具、翻到老虎机页。
-   * 配道具放在动画之后而不是之前：老虎机中列要停在这枚道具上，
+   * 配道具放在动画之后而不是之前：老虎机三列要停在这几枚道具上，
    * 早一步晚一步无所谓，但顺序反了就得在两处各写一遍匹配逻辑。
    */
   function onWorryConfirmed() {
     buildWorryField();
-    appData.matchedGadget = matchGadget(appData.selectedWorry);
+    const taken = Object.create(null);
+    appData.matchedGadgets = appData.selectedWorries.map(function (worry) {
+      const found = matchGadget(worry, taken);
+      if (found) taken[found.id] = true;
+      return found;
+    }).filter(Boolean);
     SceneManager.goToId('u04');
   }
 
@@ -311,12 +374,19 @@ const App = (function () {
     );
   }
 
-  /** 道具在失控阶段逐渐失效——HUD 左上角同步变灰。 */
+  /**
+   * 道具在失控阶段逐渐失效——HUD 左上角同步变灰。
+   * 拿到几件就写几件的名字；图标位只有一格，放第一件——
+   * HUD 是角落里的一行小字，塞三个图标会把标题挤下去。
+   */
   function updateGadgetHud(weakened) {
     const name = bind('gadgetHudName');
     const icon = bind('gadgetHudIcon');
-    const gadget = appData.matchedGadget;
-    if (name) name.textContent = gadget ? gadget.name : '';
+    const list = appData.matchedGadgets;
+    const gadget = list[0] || null;
+    if (name) {
+      name.textContent = list.map(function (item) { return item.name; }).join('、');
+    }
     if (icon && gadget && icon.getAttribute('src') !== gadget.image) {
       icon.src = gadget.image;
       icon.alt = gadget.name;
@@ -636,24 +706,69 @@ const App = (function () {
     if (appData.returnChoiceResolved) return;
     appData.returnChoiceResolved = true;
     appData.finalChoice = '停下来看看';
-    appData.selectedWorryText = appData.selectedWorry ? appData.selectedWorry.text : '';
+    appData.selectedWorryText = joinWorryTexts();
     hideReturnChoice();
     SceneManager.goToId('u11');
   }
 
   /* ---------------- 结尾段（u11 / u12） ---------------- */
 
+  /** 「A、B、C」——记录里的横排写法。 */
+  function joinWorryTexts() {
+    return appData.selectedWorries.map(function (item) { return item.text; }).join('、');
+  }
+
+  /** 「A」「B」「C」——正文里的引号写法，书名号本身就断得开，不再加顿号。 */
+  function quoteWorryTexts() {
+    return appData.selectedWorries.map(function (item) { return '「' + item.text + '」'; }).join('');
+  }
+
+  function joinGadgetNames() {
+    return appData.matchedGadgets.map(function (item) { return item.name; }).join('、');
+  }
+
+  /** u11 口袋里的道具位：三个全部静态在场，多出来的收起来。 */
+  const POCKET_BINDS = ['pocketGadget', 'pocketGadget2', 'pocketGadget3'];
+
   function renderSummary() {
-    const worry = appData.selectedWorry;
-    setText('summaryWorry', worry ? '关于「' + worry.text + '」' : '');
-    setText('summaryText', worry ? WorryData.summaryFor(worry) : '');
-    const gadget = appData.matchedGadget;
-    const image = bind('pocketGadget');
-    if (image && gadget) {
-      image.src = gadget.image;
-      image.alt = gadget.name;
-    }
-    setText('pocketTag', gadget ? gadget.name : '');
+    const picks = appData.selectedWorries;
+    setText('summaryWorry', picks.length ? '关于' + quoteWorryTexts() : '');
+
+    // 每条烦恼有自己的总结段落，但同 behaviorType 的几条会给出同一段话，
+    // 原样堆三遍就成了复读机——去重之后一段一行（.summary-body 是 pre-line）。
+    const seen = Object.create(null);
+    const paragraphs = [];
+    picks.forEach(function (worry) {
+      const text = WorryData.summaryFor(worry);
+      if (!text || seen[text]) return;
+      seen[text] = true;
+      paragraphs.push(text);
+    });
+    setText('summaryText', paragraphs.join('\n'));
+
+    // 段数决定这一栏的字号档位。这一屏是定高的，三段按原字号排下来会把
+    // 底下那两个按钮顶出视口——而它们是这一页唯一的出口。
+    // 报的是去重之后的**段数**而不是选了几条烦恼：真正吃高度的是段数，
+    // 三条同类型的烦恼去重后只剩一段，那就该按一段的字号排。
+    const tier = String(Math.min(paragraphs.length, 3) || 1);
+    const worryNode = bind('summaryWorry');
+    const textNode = bind('summaryText');
+    if (worryNode) worryNode.dataset.count = tier;
+    if (textNode) textNode.dataset.count = tier;
+
+    const stack = bind('pocketStack');
+    if (stack) stack.dataset.count = String(Math.min(appData.matchedGadgets.length, 3) || 1);
+    POCKET_BINDS.forEach(function (name, i) {
+      const image = bind(name);
+      const gadget = appData.matchedGadgets[i];
+      if (!image) return;
+      image.hidden = !gadget;
+      if (gadget) {
+        image.src = gadget.image;
+        image.alt = gadget.name;
+      }
+    });
+    setText('pocketTag', joinGadgetNames());
 
     const nextButton = bind('summaryNext');
     if (!nextButton) return;
@@ -671,16 +786,15 @@ const App = (function () {
     stopAllTickers();
     BubbleGame.stop();
 
-    const worry = appData.selectedWorry;
-    const gadget = appData.matchedGadget;
-    setText('logSubtitle', worry
-      ? '你带着「' + worry.text + '」走完了一次删除实验。'
+    const picks = appData.selectedWorries;
+    setText('logSubtitle', picks.length
+      ? '你带着' + quoteWorryTexts() + '走完了一次删除实验。'
       : '你走完了一次删除实验。');
     setText('logHint', '');
 
     const nodes = [
-      { label: '你选择的烦恼', value: worry ? worry.text : '—' },
-      { label: '系统匹配的道具', value: gadget ? gadget.name : '—' },
+      { label: '你选择的烦恼', value: picks.length ? joinWorryTexts() : '—' },
+      { label: '系统匹配的道具', value: appData.matchedGadgets.length ? joinGadgetNames() : '—' },
       { label: '删除有效期', value: '成功删除 ' + appData.successfulDeleteCount + ' 次' },
       {
         label: '失控之后',
@@ -923,6 +1037,10 @@ const App = (function () {
       case 'exit-confirm':
       case 'restart': restart(); break;
       case 'pick-category': WorryPicker.pickCategory(target.dataset.category); break;
+      // 从展开的完整列表退回九宫粒子场。展开列表里的「← 返回全部类别」
+      // 和推测面板上的「返回继续选」都走这一条：两处都只是收起当前视图，
+      // 已经挑好的几条烦恼原样留着，别在这里顺手清空。
+      case 'worry-back': WorryPicker.backToCategories(); break;
       case 'pick-worry': WorryPicker.pickWorry(target.dataset.presetId); break;
       case 'classify-worry': WorryPicker.classifyFree(); break;
       case 'confirm-worry': WorryPicker.confirm(); break;
@@ -930,7 +1048,8 @@ const App = (function () {
       // 「跳过」只跳过滚动本身；拨杆是规格里明写的衔接动作，不能一起跳掉。
       case 'skip-slot': GadgetMatch.skipSpin(); break;
       case 'pull-lever': GadgetMatch.pullLever(); break;
-      case 'show-gadget-tip': GadgetMatch.showTip(); break;
+      // 三个道具位共用这一个 action，点的是哪一件由 data-gadget-index 说了算。
+      case 'show-gadget-tip': GadgetMatch.showTip(target.dataset.gadgetIndex); break;
       case 'hide-gadget-tip': GadgetMatch.hideTip(); break;
       case 'trigger-inline-button': triggerInlineButton(); break;
       case 'return-stop': stopAndObserve(); break;
@@ -989,15 +1108,17 @@ const App = (function () {
     Dialogue.mount({
       onFinish: function () { SceneManager.goToId('u03'); }
     });
+    // getSelected / getGadget / getWorry 一律返回**数组**（可能是空的），
+    // 而且 getGadget 和 getWorry 同序等长——u05 的算式、u04 的三列分配都靠这层对应。
     WorryPicker.mount({
-      getSelected: function () { return appData.selectedWorry; },
-      onSelect: onWorrySelect,
+      getSelected: function () { return appData.selectedWorries; },
+      onToggle: onWorryToggle,
       onClear: onWorryClear,
       onConfirmed: onWorryConfirmed
     });
     GadgetMatch.mount({
-      getGadget: function () { return appData.matchedGadget; },
-      getWorry: function () { return appData.selectedWorry; },
+      getGadget: function () { return appData.matchedGadgets; },
+      getWorry: function () { return appData.selectedWorries; },
       onLifted: function () { SceneManager.goToId('u05'); }
     });
 
