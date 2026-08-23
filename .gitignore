@@ -1,3 +1,9 @@
 # 三档分辨率验收截图：每跑一次 _v08-shots.js 就重生成 39 张，共约 12MB。
 # 是核对用的中间产物，不是源码，不进仓库。要看效果直接跑脚本重截。
 assets/dev/_shots-v08/
+
+# 原型切片的对照截图，同理：跑 _proto-shot.js 重生成。
+assets/dev/_shots-proto/
+
+# u06 材质验收截图，同理：跑 _level-look-shot.js 重生成。
+assets/dev/_shots-level/

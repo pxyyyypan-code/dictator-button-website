@@ -218,6 +218,54 @@ const CONFIG = {
   LEVEL_GAME_PRESSURE_CRITICAL: 0.82,
   LEVEL_GAME_BAG_VISUAL_STRETCH: 0.055,
 
+  // ================= 泡泡材质：薄膜干涉（2026-08 定稿）=================
+  // 这一组是在 assets/dev/proto/bubble-look.html 上调出来的，进主站原样搬过来。
+  // 渲染方式是「离线烘焙精灵 + 运行时贴图」：逐像素只在 mount/resize 时算一次，
+  // 之后每颗泡泡就是两次 drawImage。1920×1080 满员 60 颗实测 0.64ms/帧，
+  // 所以不需要 WebGL/three.js。
+  //
+  // 物理量，不要当成风格滑块随便动：
+  //   FILM_IOR / FILM_LAMBDA 是皂液折射率与 R/G/B 代表波长，
+  //   干涉强度 = sin²(π·OPD/λ)，OPD = 2·n·t·cosθr。改了就不是肥皂泡了。
+  BUBBLE_FILM_IOR: 1.33,
+  BUBBLE_FILM_LAMBDA: Object.freeze([612, 549, 465]),
+
+  // 精灵位图：SPRITE 是边长，SPRITE_R 是其中球体的半径。
+  // 差出来的 8px 留给边缘菲涅尔亮环做抗锯齿，不留会被切平。
+  BUBBLE_SPRITE_SIZE: 224,
+  BUBBLE_SPRITE_RADIUS: 104,
+  // 膜厚相位帧数。膜在流动，逐帧算不起，离散成 FRAMES 帧循环 + 相邻帧交叉淡入。
+  // 常规态与警戒态各烘一套，所以实际是 2×FRAMES 张。
+  BUBBLE_SPRITE_FRAMES: 20,
+
+  // 光环境。角度是度数；lz 固定 0.55（光略偏观察者一侧，
+  // 纯侧光会让主高光贴在轮廓上，看着像描边而不像反光）。
+  BUBBLE_LIGHT_ANGLE_DEG: 347,
+  BUBBLE_ENV_STRENGTH: 1.60,
+  BUBBLE_SPEC_STRENGTH: 0.88,
+  BUBBLE_CAUSTIC_STRENGTH: 1.46,
+
+  // 膜本身。155nm 偏薄，干涉只走一两个色周期，出来是淡色而不是彩虹圈；
+  // 配 0.68 的重力排液，读起来是「上缘偏冷、下缘偏暖」。
+  BUBBLE_FILM_THICKNESS_NM: 155,
+  BUBBLE_IRIDESCENCE: 0.54,
+  BUBBLE_FILM_DRAIN: 0.68,
+  BUBBLE_FILM_SWIRL: 0.42,
+  BUBBLE_FILM_SPEED: 0.21,
+  BUBBLE_BODY_OPACITY: 0.05,
+
+  // 球面环境反射取样用的天光/地面色，必须跟 .game-scene 的实际底色一致，
+  // 否则那圈 45° 环形反光会和背景对不上。当前是米白自然光空间。
+  BUBBLE_ENV_SKY: Object.freeze([251, 245, 234]),
+  BUBBLE_ENV_GROUND: Object.freeze([237, 224, 205]),
+  // 警戒态：把反射整体推向警示红。这不是物理，是玩法信号，
+  // 所以在合成的最后一步乘上去，不去污染前面的干涉计算。
+  BUBBLE_WARN_TINT: Object.freeze([1.30, 0.52, 0.44]),
+  // 米白底上泡泡文字必须是深墨色，原来的近白字会直接消失。
+  BUBBLE_TEXT_COLOR: 'rgba(39,57,68,0.90)',
+  // 破裂飞沫同理：原来的 #F7EEE1 正好等于新底色，会整片看不见。
+  BUBBLE_PARTICLE_COLOR: '#2C89A8',
+
   // ================= 阶段 4：前半段交互 =================
   // dialogue.js / worry-picker.js / gadget-match.js 三个模块共用，
   // 三者都不许自己写魔数（CLAUDE.md：阈值与时长统一放这里）。

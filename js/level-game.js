@@ -34,6 +34,44 @@ const LevelGame = (function () {
   const PRESSURE_CRITICAL = Number(LEVEL_TUNING.LEVEL_GAME_PRESSURE_CRITICAL) || 0.82;
   const BAG_VISUAL_STRETCH = Number(LEVEL_TUNING.LEVEL_GAME_BAG_VISUAL_STRETCH) || 0.055;
 
+  // ── 泡泡材质：薄膜干涉精灵。数值全部来自 config.js，这里只做取值与兜底。──
+  const SPRITE = Number(LEVEL_TUNING.BUBBLE_SPRITE_SIZE) || 224;
+  const SPRITE_R = Number(LEVEL_TUNING.BUBBLE_SPRITE_RADIUS) || 104;
+  const SPRITE_FRAMES = Number(LEVEL_TUNING.BUBBLE_SPRITE_FRAMES) || 20;
+  const N_FILM = Number(LEVEL_TUNING.BUBBLE_FILM_IOR) || 1.33;
+  const LAMBDA = LEVEL_TUNING.BUBBLE_FILM_LAMBDA || [612, 549, 465];
+  const ENV_SKY = LEVEL_TUNING.BUBBLE_ENV_SKY || [251, 245, 234];
+  const ENV_GROUND = LEVEL_TUNING.BUBBLE_ENV_GROUND || [237, 224, 205];
+  const WARN_TINT = LEVEL_TUNING.BUBBLE_WARN_TINT || [1.30, 0.52, 0.44];
+  const BUBBLE_TEXT_COLOR = LEVEL_TUNING.BUBBLE_TEXT_COLOR || 'rgba(39,57,68,0.90)';
+  const PARTICLE_COLOR = LEVEL_TUNING.BUBBLE_PARTICLE_COLOR || '#2C89A8';
+
+  const FILM = {
+    light: Number(LEVEL_TUNING.BUBBLE_LIGHT_ANGLE_DEG) || 347,
+    env: Number(LEVEL_TUNING.BUBBLE_ENV_STRENGTH) || 1.60,
+    spec: Number(LEVEL_TUNING.BUBBLE_SPEC_STRENGTH) || 0.88,
+    caustic: Number(LEVEL_TUNING.BUBBLE_CAUSTIC_STRENGTH) || 1.46,
+    thick: Number(LEVEL_TUNING.BUBBLE_FILM_THICKNESS_NM) || 155,
+    irid: Number(LEVEL_TUNING.BUBBLE_IRIDESCENCE) || 0.54,
+    drain: Number(LEVEL_TUNING.BUBBLE_FILM_DRAIN) || 0.68,
+    swirl: Number(LEVEL_TUNING.BUBBLE_FILM_SWIRL) || 0.42,
+    speed: Number(LEVEL_TUNING.BUBBLE_FILM_SPEED) || 0.21,
+    body: Number(LEVEL_TUNING.BUBBLE_BODY_OPACITY) || 0.05
+  };
+
+  // 干涉强度 sin²(π·OPD/λ) 对 OPD/λ 的小数部分周期为 1，可以整表打掉。
+  // 烘焙一次要算 2 套 × 20 帧 × 3 通道 × 5 万像素，直接调 Math.sin 会明显拖慢入场。
+  const LUT_N = 2048;
+  const SINSQ = new Float32Array(LUT_N);
+  for (let lutIndex = 0; lutIndex < LUT_N; lutIndex += 1) {
+    const lutSin = Math.sin(Math.PI * lutIndex / LUT_N);
+    SINSQ[lutIndex] = lutSin * lutSin;
+  }
+  function sinsq01(value) {
+    const frac = value - Math.floor(value);
+    return SINSQ[(frac * LUT_N) | 0];
+  }
+
   let canvas = null;
   let ctx = null;
   let dpr = 1;
@@ -58,6 +96,10 @@ const LevelGame = (function () {
   let collisionEvents = 0;
   let growthBlockedRatio = 0;
   let bag = null;
+  let filmGeometry = null;      // 与膜厚相位无关的那半：法线、菲涅尔、环境反射、高光、焦散
+  let filmSprites = null;       // 常规态 SPRITE_FRAMES 张离屏 canvas
+  let filmSpritesWarn = null;   // 警戒态同上；edgeGlow 在两套之间做连续交叉淡入
+  let filmBakeMs = 0;
   let nextId = 1;
   let profileCursor = 0;
   let stats = freshStats();
@@ -126,6 +168,175 @@ const LevelGame = (function () {
     return '"Canger YuYangTi", "Microsoft YaHei", "PingFang SC", sans-serif';
   }
 
+  function prefersReducedMotion() {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     泡泡材质：逐像素烘焙
+     拆成两段是因为只有干涉依赖膜厚相位：
+       · filmGeometry —— 法线、菲涅尔、环境反射、高光、焦散，与相位无关，整个生命周期算一次；
+       · 每帧 —— 只算膜厚 → 光程差 → 三通道干涉，再和几何合成。
+     不拆的话 20 帧要把菲涅尔和两个 pow 高光重算 20 遍。
+     ───────────────────────────────────────────────────────────── */
+
+  function buildFilmGeometry() {
+    const total = SPRITE * SPRITE;
+    const geom = {
+      ny: new Float32Array(total), cosr: new Float32Array(total), ang: new Float32Array(total),
+      fres: new Float32Array(total), spec: new Float32Array(total), caustic: new Float32Array(total),
+      envR: new Float32Array(total), envG: new Float32Array(total), envB: new Float32Array(total),
+      cover: new Float32Array(total)
+    };
+
+    const skyR = ENV_SKY[0] / 255, skyG = ENV_SKY[1] / 255, skyB = ENV_SKY[2] / 255;
+    const grR = ENV_GROUND[0] / 255, grG = ENV_GROUND[1] / 255, grB = ENV_GROUND[2] / 255;
+
+    // 光源方向。lz = 0.55：光略偏观察者一侧。纯侧光会让主高光贴在轮廓上，
+    // 看着像描边而不像反光。
+    const la = FILM.light * Math.PI / 180;
+    let lx = Math.cos(la), ly = Math.sin(la), lz = 0.55;
+    const ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+    lx /= ll; ly /= ll; lz /= ll;
+    // 半程向量 h = normalize(L + V)，V = (0,0,1)。
+    let hx = lx, hy = ly, hz = lz + 1;
+    const hl = Math.sqrt(hx * hx + hy * hy + hz * hz);
+    hx /= hl; hy /= hl; hz /= hl;
+
+    const center = SPRITE / 2;
+    const feather = 1.6 / SPRITE_R;     // 轮廓抗锯齿宽度，单位是归一化半径
+    const invN2 = 1 / (N_FILM * N_FILM);
+
+    for (let py = 0; py < SPRITE; py += 1) {
+      const ny = (py + 0.5 - center) / SPRITE_R;
+      for (let px = 0; px < SPRITE; px += 1) {
+        const idx = py * SPRITE + px;
+        const nx = (px + 0.5 - center) / SPRITE_R;
+        const d2 = nx * nx + ny * ny;
+        if (d2 >= 1 + feather) { geom.cover[idx] = 0; continue; }
+
+        const dist = Math.sqrt(d2);
+        const cov = dist > 1 - feather ? Math.max(0, (1 + feather - dist) / (2 * feather)) : 1;
+        const nzs = 1 - Math.min(d2, 0.999999);
+        const nz = Math.sqrt(nzs);
+
+        // 菲涅尔：正对我们的地方几乎完全透明（F0≈0.02），越接近轮廓反射率越趋近 1。
+        // 肥皂泡「中间空、边缘亮」就是这一条，也是它和实心玻璃球最根本的差别。
+        const om = 1 - nz;
+        const om2 = om * om;
+        const fres = 0.02 + 0.98 * om2 * om2 * om;
+
+        // 膜内折射角：斯涅尔定律。sin²θi = 1 - nz²。
+        const cosr = Math.sqrt(1 - (1 - nzs) * invN2);
+
+        // 球面环境反射的竖直分量。屏幕 y 向下，ry<0 表示反射朝上 → 看到天光。
+        let t = (1 - 2 * ny * nz) * 0.5;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+
+        // Blinn-Phong 主高光 + 一圈宽柔光晕。关键是所有泡泡共用同一个 h ——
+        // 满屏高光朝同一个方向，这是「同一束自然光」唯一的读法。
+        let ndh = nx * hx + ny * hy + nz * hz;
+        if (ndh < 0) ndh = 0;
+        const n2 = ndh * ndh, n4 = n2 * n2, n8 = n4 * n4;
+        let specular = n8 * n8 * n8 * n4 * ndh    // ≈ pow(ndh, 221) 紧高光
+                     + n8 * n4 * 0.22;            // ≈ pow(ndh, 12)  柔光晕
+        // 背面膜的二次反射：位置大致在主高光的镜像点，更暗更散。
+        // 有它才读得出「这是个空壳」，没有它就是个实心球。
+        let bdh = -(nx * hx + ny * hy) + nz * hz;
+        if (bdh < 0) bdh = 0;
+        const b2 = bdh * bdh, b4 = b2 * b2, b8 = b4 * b4;
+        specular += b8 * b8 * b4 * 0.30;          // ≈ pow(bdh, 40)
+
+        // 焦散：光穿过泡泡后在背光那侧的边缘聚成一道暖亮弧。
+        let away = -(nx * lx + ny * ly);
+        if (away < 0) away = 0;
+        const rimf = om2 * Math.sqrt(om);         // ≈ pow(1-nz, 2.5)
+
+        geom.ny[idx] = ny;
+        geom.cosr[idx] = cosr;
+        geom.ang[idx] = Math.atan2(ny, nx);
+        geom.fres[idx] = fres;
+        geom.spec[idx] = specular;
+        geom.caustic[idx] = rimf * away * Math.sqrt(away);
+        geom.cover[idx] = cov;
+        geom.envR[idx] = grR + (skyR - grR) * t;
+        geom.envG[idx] = grG + (skyG - grG) * t;
+        geom.envB[idx] = grB + (skyB - grB) * t;
+      }
+    }
+    filmGeometry = geom;
+  }
+
+  function bakeFilmSet(tintR, tintG, tintB) {
+    const total = SPRITE * SPRITE;
+    const geom = filmGeometry;
+    const frames = [];
+    for (let f = 0; f < SPRITE_FRAMES; f += 1) {
+      const phase = f / SPRITE_FRAMES * Math.PI * 2;
+      const cv = document.createElement('canvas');
+      cv.width = SPRITE;
+      cv.height = SPRITE;
+      const g = cv.getContext('2d');
+      const img = g.createImageData(SPRITE, SPRITE);
+      const data = img.data;
+
+      for (let i = 0; i < total; i += 1) {
+        const cov = geom.cover[i];
+        if (cov <= 0) continue;
+
+        // 膜厚：基准值 + 重力排液（上薄下厚）+ 一圈流纹。
+        // 流纹随相位转，帧与帧之间的差别主要来自它。
+        let th = FILM.thick * (1 + FILM.drain * geom.ny[i] +
+          FILM.swirl * Math.sin(3 * geom.ang[i] + phase));
+        if (th < 20) th = 20;
+        const opd = 2 * N_FILM * th * geom.cosr[i];
+
+        // 三通道各自的干涉强度。均值 0.5，所以 ×2 后再和「无色」按虹彩强度插值，
+        // 这样调虹彩强度不会顺带把整体亮度也调走。
+        const tr = 1 + FILM.irid * (2 * sinsq01(opd / LAMBDA[0]) - 1);
+        const tg = 1 + FILM.irid * (2 * sinsq01(opd / LAMBDA[1]) - 1);
+        const tb = 1 + FILM.irid * (2 * sinsq01(opd / LAMBDA[2]) - 1);
+
+        const refl = geom.fres[i] * FILM.env;
+        const sp = geom.spec[i] * FILM.spec;
+        const ca = geom.caustic[i] * FILM.caustic;
+
+        const lr = geom.envR[i] * tr * refl + sp + ca * 1.00;
+        const lg = geom.envG[i] * tg * refl + sp + ca * 0.86;
+        const lb = geom.envB[i] * tb * refl + sp + ca * 0.62;
+
+        // 不透明度＝真正挡住背景的那部分。中心 ≈ body，边缘 ≈ 1。
+        let a = geom.fres[i] * 0.95 + FILM.body + sp * 1.15 + ca * 0.8;
+        if (a > 1) a = 1; else if (a < 0.004) a = 0.004;
+
+        // ImageData 是直通 alpha（非预乘），颜色要除以 alpha，
+        // 否则半透明处会整体压暗，泡泡看着像脏。
+        const cr = lr / a * tintR, cg = lg / a * tintG, cb = lb / a * tintB;
+        const o = i * 4;
+        data[o] = cr > 1 ? 255 : cr * 255;
+        data[o + 1] = cg > 1 ? 255 : cg * 255;
+        data[o + 2] = cb > 1 ? 255 : cb * 255;
+        data[o + 3] = a * cov * 255;
+      }
+      g.putImageData(img, 0, 0);
+      frames.push(cv);
+    }
+    return frames;
+  }
+
+  // 精灵与画布分辨率无关，所以只在 mount 时烘一次，resize 不重来。
+  function ensureFilmSprites() {
+    if (filmSprites) return;
+    if (typeof document === 'undefined') return;
+    const t0 = (typeof performance !== 'undefined' ? performance.now() : 0);
+    buildFilmGeometry();
+    filmSprites = bakeFilmSet(1, 1, 1);
+    filmSpritesWarn = bakeFilmSet(WARN_TINT[0], WARN_TINT[1], WARN_TINT[2]);
+    filmGeometry = null;   // 合成完就没用了，5 万像素 × 10 条 Float32 及时放掉
+    filmBakeMs = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+  }
+
   function normalizeProfiles(input) {
     const list = Array.isArray(input) ? input.filter(function (item) {
       return item && String(item.text || '').trim();
@@ -180,6 +391,7 @@ const LevelGame = (function () {
     detach();
     canvas = nextCanvas;
     resize();
+    ensureFilmSprites();
     pointerHandler = function (event) {
       if (!gameplay || !canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -251,6 +463,10 @@ const LevelGame = (function () {
     profiles = [];
     spec = null;
     bag = null;
+    // 精灵和分辨率、关卡都无关，重挂载时不用重烘；只在整局销毁时放掉这 8MB。
+    filmSprites = null;
+    filmSpritesWarn = null;
+    filmGeometry = null;
     pressure = 0;
     pressureStage = 0;
     collisionEvents = 0;
@@ -449,7 +665,7 @@ const LevelGame = (function () {
         if (!bubble.burstStarted) {
           bubble.burstStarted = true;
           emitParticles(bubble.x, bubble.y,
-            bubble.burstAutomatic ? '#F5654F' : '#F7EEE1', 13);
+            bubble.burstAutomatic ? '#F5654F' : PARTICLE_COLOR, 13);
         }
         bubble.scale += dt * 1.9;
         bubble.opacity = Math.max(0, bubble.opacity - dt * 2.5);
@@ -703,7 +919,7 @@ const LevelGame = (function () {
       bubble.state = 'manual';
       bubble.stateTime = 0;
       stats.manualCleared += 1;
-      emitParticles(bubble.x, bubble.y, '#F7EEE1', 10);
+      emitParticles(bubble.x, bubble.y, PARTICLE_COLOR, 10);
       if (typeof callbacks.onManualClear === 'function') callbacks.onManualClear(getStats());
       notifyStats();
       return true;
@@ -737,7 +953,7 @@ const LevelGame = (function () {
         if (bubble.state !== 'manual' && bubble.state !== 'button-clear') {
           bubble.state = 'button-clear';
           bubble.stateTime = 0;
-          emitParticles(bubble.x, bubble.y, '#F7EEE1', 7);
+          emitParticles(bubble.x, bubble.y, PARTICLE_COLOR, 7);
         }
       });
       finishDelay = 1050;
@@ -829,13 +1045,26 @@ const LevelGame = (function () {
     particles.forEach(drawParticle);
   }
 
+  // 米白空间里的自然光：一束跟着 BUBBLE_LIGHT_ANGLE_DEG 的斜射窗光，
+  // 加一点下沉的暖灰。两层都压得很轻（≤0.05），只给空间一个方向感，
+  // 不足以改变泡泡精灵烘焙时假设的那个平底色。
   function drawAmbient() {
-    const gradient = ctx.createRadialGradient(width * 0.5, height * 0.52, 0, width * 0.5, height * 0.52, Math.max(width, height) * 0.72);
-    gradient.addColorStop(0, 'rgba(247,238,225,0.055)');
-    gradient.addColorStop(1, 'rgba(7,80,108,0)');
-    ctx.fillStyle = gradient;
+    const angle = FILM.light * Math.PI / 180;
+    const lightX = width * 0.5 - Math.cos(angle) * width * 0.42;
+    const lightY = height * 0.5 - Math.sin(angle) * height * 0.55;
+    const pool = ctx.createRadialGradient(lightX, lightY, 0, lightX, lightY, Math.max(width, height) * 0.78);
+    pool.addColorStop(0, 'rgba(255,250,232,0.50)');
+    pool.addColorStop(1, 'rgba(255,250,232,0)');
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, 0, width, height);
+
+    const vignette = ctx.createLinearGradient(0, height * 0.55, 0, height);
+    vignette.addColorStop(0, 'rgba(150,124,88,0)');
+    vignette.addColorStop(1, 'rgba(150,124,88,0.10)');
+    ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
   }
+
 
   function wrapBubbleText(text, maxWidth, maxLines) {
     const chars = Array.from(String(text || '烦恼').replace(/\s+/g, ' ').trim());
@@ -880,15 +1109,17 @@ const LevelGame = (function () {
     return path;
   }
 
+  // 注意：这里只是把袋子从「米白线条压青底」翻成「冷灰线条压米白底」，
+  // 让它在新背景上还看得见。真正的软体塑料袋是 5.3 的事，形态逻辑先不动。
   function drawSack(time) {
     if (!bag) return;
     const path = sackPath(time);
     ctx.save();
-    ctx.fillStyle = 'rgba(247,238,225,0.105)';
+    ctx.fillStyle = 'rgba(88,116,132,0.055)';
     ctx.fill(path);
     ctx.clip(path);
 
-    ctx.strokeStyle = 'rgba(247,238,225,0.13)';
+    ctx.strokeStyle = 'rgba(70,100,118,0.10)';
     ctx.lineWidth = 0.7;
     const mesh = 13;
     const drift = (time * 2.2) % mesh;
@@ -908,12 +1139,12 @@ const LevelGame = (function () {
 
     ctx.save();
     ctx.strokeStyle = pressureStage >= 2
-      ? 'rgba(255,212,204,' + (0.72 + pressure * 0.22) + ')'
-      : 'rgba(247,238,225,0.72)';
+      ? 'rgba(217,70,54,' + (0.52 + pressure * 0.30) + ')'
+      : 'rgba(64,96,114,0.44)';
     ctx.lineWidth = Math.max(1.4, width * 0.0014);
     ctx.stroke(path);
     ctx.setLineDash([7, 7]);
-    ctx.strokeStyle = 'rgba(247,238,225,0.42)';
+    ctx.strokeStyle = 'rgba(64,96,114,0.22)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.ellipse(bag.cx, bag.cy, bag.rx * 0.92, bag.ry * 0.90, 0, 0, Math.PI * 2);
@@ -921,70 +1152,87 @@ const LevelGame = (function () {
     ctx.setLineDash([]);
 
     const seamY = bag.top + bag.ry * 0.14;
-    ctx.strokeStyle = 'rgba(247,238,225,0.74)';
+    ctx.strokeStyle = 'rgba(64,96,114,0.52)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(bag.cx - bag.rx * 0.72, seamY);
     ctx.quadraticCurveTo(bag.cx, bag.top - bag.ry * 0.04, bag.cx + bag.rx * 0.72, seamY);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(247,238,225,0.78)';
+    ctx.fillStyle = 'rgba(64,96,114,0.56)';
     ctx.beginPath();
     ctx.ellipse(bag.cx, bag.bottom - bag.ry * 0.01, bag.rx * 0.055, bag.ry * 0.035, 0, 0, Math.PI * 2);
     ctx.fill();
     if (pressureStage > 0) {
       ctx.globalAlpha = clamp(pressure * 0.48, 0, 0.48);
-      ctx.strokeStyle = '#FFD4CC';
+      ctx.strokeStyle = '#F5654F';
       ctx.lineWidth = 5 + pressure * 5;
-      ctx.shadowColor = 'rgba(245,101,79,0.55)';
+      ctx.shadowColor = 'rgba(217,70,54,0.55)';
       ctx.shadowBlur = 18 + pressure * 24;
       ctx.stroke(path);
     }
     ctx.restore();
   }
 
+
+  // 泡泡 = 精灵贴图 + 文字。运行时不做任何逐像素计算。
+  // 两层交叉淡入：膜相位在相邻两帧之间淡（只取整帧的话 0.21 的流速相当于每 240ms
+  // 才换一帧，能看出跳格），警戒态在常规/警戒两套精灵之间按 edgeGlow 淡。
   function drawBubble(bubble, time) {
     const radius = bubble.r * bubble.scale;
     if (radius < 0.4 || bubble.opacity <= 0.01) return;
     ctx.save();
-    ctx.translate(bubble.x, bubble.y);
     ctx.globalAlpha = bubble.opacity;
-    const warning = bubble.edgeGlow;
-    const gradient = ctx.createRadialGradient(-radius * 0.28, -radius * 0.32, radius * 0.05, 0, 0, radius);
-    gradient.addColorStop(0, 'rgba(247,238,225,0.66)');
-    gradient.addColorStop(0.48, warning > 0 ? 'rgba(245,101,79,0.34)' : 'rgba(169,220,236,0.38)');
-    gradient.addColorStop(1, warning > 0 ? 'rgba(217,70,54,0.24)' : 'rgba(39,96,123,0.20)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = warning > 0 ? 'rgba(245,101,79,0.82)' : 'rgba(247,238,225,0.64)';
-    ctx.lineWidth = warning > 0 ? 2 : 1.2;
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.52)';
-    ctx.lineWidth = Math.max(1.2, radius * 0.045);
-    ctx.beginPath();
-    ctx.arc(-radius * 0.22, -radius * 0.26, radius * 0.25, Math.PI * 1.05, Math.PI * 1.52);
-    ctx.stroke();
+
+    if (filmSprites) {
+      const drift = prefersReducedMotion() ? 0 : time * FILM.speed;
+      const cycle = bubble.phase + drift;
+      const pos = (cycle - Math.floor(cycle)) * SPRITE_FRAMES;
+      const i0 = Math.floor(pos) % SPRITE_FRAMES;
+      const i1 = (i0 + 1) % SPRITE_FRAMES;
+      const mix = pos - Math.floor(pos);
+      const size = radius * 2 * (SPRITE / (SPRITE_R * 2));
+      const dx = bubble.x - size / 2;
+      const dy = bubble.y - size / 2;
+      const warning = clamp(bubble.edgeGlow, 0, 1);
+
+      ctx.drawImage(filmSprites[i0], dx, dy, size, size);
+      if (mix > 0.004) {
+        ctx.globalAlpha = bubble.opacity * mix;
+        ctx.drawImage(filmSprites[i1], dx, dy, size, size);
+        ctx.globalAlpha = bubble.opacity;
+      }
+      if (warning > 0.004 && filmSpritesWarn) {
+        ctx.globalAlpha = bubble.opacity * warning;
+        ctx.drawImage(filmSpritesWarn[i0], dx, dy, size, size);
+        if (mix > 0.004) {
+          ctx.globalAlpha = bubble.opacity * warning * mix;
+          ctx.drawImage(filmSpritesWarn[i1], dx, dy, size, size);
+        }
+        ctx.globalAlpha = bubble.opacity;
+      }
+    }
 
     if (bubble.state === 'normal' && radius > 24) {
       const fontMin = Number(LEVEL_TUNING.LEVEL_GAME_FONT_MIN_PX) || 16;
       const fontMax = Number(LEVEL_TUNING.LEVEL_GAME_FONT_MAX_PX) || 24;
       const maxLines = Number(LEVEL_TUNING.LEVEL_GAME_TEXT_MAX_LINES) || 3;
       const fontSize = clamp(radius * 0.34, fontMin, fontMax);
-      ctx.fillStyle = 'rgba(247,238,225,0.94)';
+      ctx.fillStyle = BUBBLE_TEXT_COLOR;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = '500 ' + fontSize + 'px ' + fontStack(bubble.text);
       const lines = wrapBubbleText(bubble.text, radius * 1.52, maxLines);
       const lineHeight = fontSize * 1.14;
-      const originY = -(lines.length - 1) * lineHeight * 0.5 + Math.sin(time + bubble.phase) * 1.2;
+      const originY = bubble.y - (lines.length - 1) * lineHeight * 0.5 +
+        Math.sin(time + bubble.phase) * 1.2;
       lines.forEach(function (line, index) {
-        ctx.fillText(line, 0, originY + index * lineHeight, radius * 1.52);
+        ctx.fillText(line, bubble.x, originY + index * lineHeight, radius * 1.52);
       });
     }
     ctx.restore();
   }
+
 
   function drawParticle(particle) {
     ctx.save();
@@ -1008,7 +1256,8 @@ const LevelGame = (function () {
     _test: Object.freeze({
       resolvePair: resolvePair,
       collisionGap: COLLISION_GAP,
-      motionTuningFor: motionTuningFor
+      motionTuningFor: motionTuningFor,
+      filmBakeMs: function () { return filmBakeMs; }
     })
   };
 })();

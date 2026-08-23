@@ -1,0 +1,772 @@
+<meta charset="utf-8">
+<title>5.2 泡泡阳光质感 · 原型切片</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!--
+  bubble-look.html —— 阶段 5.2「泡泡的阳光质感」独立原型。
+
+  这是**开发用切片，不属于生产站点**。它不 import 主站任何 JS，主站也不 import 它。
+  唯一共用的是 assets/fonts/ 里的字体文件和 js/font-support.js——字体规则要求
+  Canvas 里的字体栈只能从 FontSupport.fontStackFor() 拿，所以这里直接引真的那份，
+  而不是抄一段字体栈进来（抄一份就会和 _build-fonts.py 的子集脱钩）。
+
+  为什么值得单独做一页：
+  肥皂泡的观感几乎全部来自「膜」，而膜的颜色是**薄膜干涉**——它依赖入射角，
+  所以同一颗泡泡从中心到边缘颜色是连续变化的，这个东西没法靠调几个 rgba 试出来，
+  必须按公式算。算一次很贵（逐像素），所以这里的做法是：把一颗「标准泡泡」按物理
+  烘焙成一组精灵位图（不同膜厚相位各一帧），运行时只 drawImage。
+  真正进主站的时候，这套烘焙照搬即可，每帧成本就是 N 次 drawImage。
+
+  页面同时提供「现版 / 新版 / 左右对比」和三种背景，用来回答两个待定问题：
+    1. 新材质比现在的玻璃弹珠强多少；
+    2. 背景到底能不能是纯米白（我的判断是不能，这页可以直接看出来）。
+
+  用浏览器直接打开本文件即可（file:// 下 @font-face 会被同源策略挡住的话，
+  在仓库根目录跑一个静态服务器，例如 python -m http.server，再访问本页）。
+-->
+<script src="../../../js/font-support.js"></script>
+<style>
+  /* 字体来自仓库现有文件，路径相对本页：assets/dev/proto → ../../fonts */
+  @font-face {
+    font-family: "Canger YuYangTi"; src: url("../../fonts/CangerYuYangTi-W03.woff2") format("woff2");
+    font-weight: 400; font-display: swap;
+  }
+  @font-face {
+    font-family: "Canger YuYangTi"; src: url("../../fonts/CangerYuYangTi-W04.woff2") format("woff2");
+    font-weight: 500; font-display: swap;
+  }
+  @font-face {
+    font-family: "Canger YuYangTi"; src: url("../../fonts/CangerYuYangTi-W05.woff2") format("woff2");
+    font-weight: 600; font-display: swap;
+  }
+  @font-face {
+    font-family: "Qiantu Marker"; src: url("../../fonts/QiantuMarker.woff2") format("woff2");
+    font-weight: 400; font-display: swap;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d1f; }
+  body { font-family: "Canger YuYangTi", "Microsoft YaHei", sans-serif; }
+
+  /* Canvas 不加 border / padding，祖先不加 transform——和主站同一条规矩，
+     否则点击坐标整体偏移。这页虽然还没有点击行为，但坐标要和主站一致才有参考价值。 */
+  #stage { display: block; position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0; }
+
+  #panel {
+    position: absolute; top: 14px; right: 14px; width: 268px; max-height: calc(100% - 28px);
+    overflow-y: auto; padding: 14px 15px 16px; border-radius: 12px;
+    background: rgba(24, 27, 30, 0.82); backdrop-filter: blur(10px);
+    color: #E8E4DC; font-size: 12px; line-height: 1.5; z-index: 10;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.36);
+  }
+  #panel.is-hidden { display: none; }
+  #panel h1 { margin: 0 0 2px; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+  #panel .sub { margin: 0 0 12px; font-size: 11px; color: #9AA0A6; }
+  #panel fieldset { border: 0; border-top: 1px solid rgba(255,255,255,.09); margin: 12px 0 0; padding: 10px 0 0; }
+  #panel legend { padding: 0 6px 0 0; font-size: 11px; color: #8FB6C4; letter-spacing: .06em; }
+
+  .seg { display: flex; gap: 4px; margin: 6px 0 2px; }
+  .seg button {
+    flex: 1; padding: 6px 2px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px;
+    background: transparent; color: #C9CDD2; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .seg button.is-on { background: #0289B4; border-color: #049CBF; color: #fff; }
+  .seg button:hover:not(.is-on) { background: rgba(255,255,255,.07); }
+
+  .row { display: grid; grid-template-columns: 1fr auto; align-items: center; margin-top: 9px; gap: 2px 8px; }
+  .row label { font-size: 11px; color: #C9CDD2; }
+  .row output { font-size: 11px; color: #8FB6C4; font-variant-numeric: tabular-nums; }
+  .row input[type=range] { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; accent-color: #049CBF; }
+  .chk { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: #C9CDD2; }
+  .chk input { accent-color: #049CBF; }
+
+  #reset {
+    width: 100%; margin-top: 12px; padding: 7px; border: 1px solid rgba(255,255,255,.16);
+    border-radius: 6px; background: transparent; color: #C9CDD2; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  #reset:hover { background: rgba(255,255,255,.07); }
+
+  #perf {
+    position: absolute; left: 14px; bottom: 12px; z-index: 10;
+    padding: 6px 10px; border-radius: 7px; background: rgba(24,27,30,.66);
+    color: #9AA0A6; font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: .02em;
+  }
+  #hint {
+    position: absolute; left: 14px; top: 14px; z-index: 10;
+    padding: 6px 10px; border-radius: 7px; background: rgba(24,27,30,.5);
+    color: #7E858C; font-size: 11px;
+  }
+</style>
+
+<canvas id="stage"></canvas>
+<div id="hint">H 键收起面板 · 空格暂停</div>
+<div id="perf">—</div>
+
+<div id="panel">
+  <h1>5.2 泡泡的阳光质感</h1>
+  <p class="sub">原型切片，未接入主站</p>
+
+  <fieldset>
+    <legend>背景</legend>
+    <div class="seg" data-seg="bg">
+      <button data-val="warm" class="is-on">暖白光房</button>
+      <button data-val="flat">纯米白</button>
+      <button data-val="teal">现在的青底</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>渲染</legend>
+    <div class="seg" data-seg="mode">
+      <button data-val="new" class="is-on">新版</button>
+      <button data-val="old">现版</button>
+      <button data-val="split">左右对比</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>光</legend>
+    <div class="row"><label for="p-light">光源角度</label><output id="o-light"></output>
+      <input type="range" id="p-light" min="0" max="360" step="1"></div>
+    <div class="row"><label for="p-env">环境反射</label><output id="o-env"></output>
+      <input type="range" id="p-env" min="0" max="1.6" step="0.02"></div>
+    <div class="row"><label for="p-spec">高光</label><output id="o-spec"></output>
+      <input type="range" id="p-spec" min="0" max="2" step="0.02"></div>
+    <div class="row"><label for="p-caustic">焦散（背光侧透光）</label><output id="o-caustic"></output>
+      <input type="range" id="p-caustic" min="0" max="1.6" step="0.02"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>膜</legend>
+    <div class="row"><label for="p-thick">膜厚 nm</label><output id="o-thick"></output>
+      <input type="range" id="p-thick" min="80" max="900" step="5"></div>
+    <div class="row"><label for="p-irid">虹彩强度</label><output id="o-irid"></output>
+      <input type="range" id="p-irid" min="0" max="1" step="0.02"></div>
+    <div class="row"><label for="p-drain">重力排液（上薄下厚）</label><output id="o-drain"></output>
+      <input type="range" id="p-drain" min="0" max="0.9" step="0.02"></div>
+    <div class="row"><label for="p-swirl">流纹</label><output id="o-swirl"></output>
+      <input type="range" id="p-swirl" min="0" max="0.8" step="0.02"></div>
+    <div class="row"><label for="p-speed">流动速度</label><output id="o-speed"></output>
+      <input type="range" id="p-speed" min="0" max="0.4" step="0.005"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>可读性</legend>
+    <div class="row"><label for="p-body">体量（最低不透明度）</label><output id="o-body"></output>
+      <input type="range" id="p-body" min="0" max="0.5" step="0.01"></div>
+    <div class="row"><label for="p-count">泡泡数量</label><output id="o-count"></output>
+      <input type="range" id="p-count" min="1" max="60" step="1"></div>
+    <label class="chk"><input type="checkbox" id="p-text" checked>显示烦恼文字</label>
+    <label class="chk"><input type="checkbox" id="p-dark" checked>文字用深色</label>
+    <label class="chk"><input type="checkbox" id="p-shadow" checked>背后投影</label>
+    <label class="chk"><input type="checkbox" id="p-warn">警戒态（失控阶段配色）</label>
+  </fieldset>
+
+  <button id="reset">恢复默认</button>
+</div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════
+   0. 常量与默认参数
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 半径范围照抄 config.js 的 LEVEL_GAME_RADIUS_MIN/MAX/CAP，
+   不然调出来的观感换到真实尺寸就不成立了。 */
+var RADIUS_MIN = 42, RADIUS_MAX = 56, RADIUS_CAP = 82;
+var FONT_MIN_PX = 16, FONT_MAX_PX = 24, TEXT_MAX_LINES = 3;
+
+/* 精灵位图：SPRITE 是边长，SPRITE_R 是球体半径。
+   留 8px 余量给边缘那圈菲涅尔亮环的抗锯齿，不留会被切平。
+   最大泡泡直径 164px，用 208px 的球下采样，够清晰。 */
+var SPRITE = 224, SPRITE_R = 104;
+
+/* 膜厚相位帧数。膜是流动的，但逐帧算不起，所以离散成 FRAMES 帧循环播放。
+   20 帧 @ 0.06 循环/秒 ≈ 每 0.83 秒换一帧，配合每颗泡泡自己的相位偏移，
+   看不出是在放循环。 */
+var FRAMES = 20;
+
+var N_FILM = 1.33;                       /* 皂液折射率 */
+var LAMBDA = [612, 549, 465];            /* R/G/B 代表波长 nm */
+
+/* ── 已定稿的参数（2026-08-23 由你在本页调出，后续进主站以这组为准）──
+   两处和我原来的建议不同，都保留你的选择：
+     · 背景选了纯米白而不是暖白光房。纯米白的天光/地面色差极小，
+       球面那圈环形反光本来会消失——你把环境反射顶到 1.60、焦散拉到 1.46，
+       正好是在补这个：前者放大仅存的那点色差，后者用背光侧的亮弧重新描出轮廓。
+       所以这组数是自洽的，不是「忽略了背景问题」。
+     · 背后投影关掉。泡泡在袋子里飘着，本来也没有承影面，关掉更干净。
+   膜厚 155nm 偏薄，干涉只走到一两个色周期，颜色淡而不是彩虹圈——
+   配合 0.68 的重力排液，读起来是「上缘偏冷、下缘偏暖」的自然渐变。 */
+var DEFAULTS = {
+  bg: 'flat', mode: 'new',
+  light: 347, env: 1.60, spec: 0.88, caustic: 1.46,
+  thick: 155, irid: 0.54, drain: 0.68, swirl: 0.42, speed: 0.21,
+  body: 0.05, count: 24,
+  text: true, dark: true, shadow: false, warn: false
+};
+var P = {};
+for (var k in DEFAULTS) P[k] = DEFAULTS[k];
+
+/* 背景预设。sky / ground 是**给球面反射用的环境色**：
+   球面反射的竖直分量 ry = 2·ny·nz，上半边看到天光、下半边看到地面，
+   两者之间那条 45° 亮带就是肥皂泡最标志性的一圈环形反光。
+   所以背景一旦是纯色（sky≈ground），这圈亮带就消失，泡泡立刻变回贴纸。 */
+var BACKGROUNDS = {
+  warm: { sky: [255, 252, 244], ground: [205, 184, 154], darkText: true,
+          paint: function (g, w, h) {
+            var lin = g.createLinearGradient(0, 0, w * 0.55, h);
+            lin.addColorStop(0, '#FFFDF8');
+            lin.addColorStop(0.46, '#F8EFE0');
+            lin.addColorStop(1, '#E4D3B9');
+            g.fillStyle = lin; g.fillRect(0, 0, w, h);
+            /* 一束斜射进来的窗光：位置跟着光源角度走，
+               这样调光源角度时整个空间是一起转的，不是只有高光在动。 */
+            var a = P.light * Math.PI / 180;
+            var pool = g.createRadialGradient(
+              w * 0.5 - Math.cos(a) * w * 0.42, h * 0.5 - Math.sin(a) * h * 0.55, 0,
+              w * 0.5 - Math.cos(a) * w * 0.42, h * 0.5 - Math.sin(a) * h * 0.55, Math.max(w, h) * 0.78);
+            pool.addColorStop(0, 'rgba(255,250,232,0.72)');
+            pool.addColorStop(1, 'rgba(255,250,232,0)');
+            g.fillStyle = pool; g.fillRect(0, 0, w, h);
+            var vig = g.createLinearGradient(0, h * 0.55, 0, h);
+            vig.addColorStop(0, 'rgba(150,124,88,0)');
+            vig.addColorStop(1, 'rgba(150,124,88,0.16)');
+            g.fillStyle = vig; g.fillRect(0, 0, w, h);
+          } },
+  flat: { sky: [251, 245, 234], ground: [237, 224, 205], darkText: true,
+          paint: function (g, w, h) { g.fillStyle = '#F7EEE1'; g.fillRect(0, 0, w, h); } },
+  teal: { sky: [121, 207, 232], ground: [2, 63, 82], darkText: false,
+          paint: function (g, w, h) {
+            var lin = g.createLinearGradient(0, 0, 0, h);
+            lin.addColorStop(0, '#049CBF'); lin.addColorStop(1, '#04566C');
+            g.fillStyle = lin; g.fillRect(0, 0, w, h);
+          } }
+};
+
+/* 真实烦恼文案，全部落在 QiantuMarker 的 1189 字子集内，
+   所以 FontSupport 会给它们手写体——和主站里泡泡的实际观感一致。 */
+var WORRIES = [
+  '被父母催促', '作业太多写不完', '考试考不好', '和朋友吵架了',
+  '不知道选什么专业', '总是睡不着', '存不下钱', '害怕一个人待着',
+  '担心未来', '身材焦虑', '手机停不下来', '被比较',
+  '工作没有意义', '和家人越来越少沟通', '房租又涨了', '身体总是很累'
+];
+
+var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ═══════════════════════════════════════════════════════════════
+   1. sin² 查表
+   ───────────────────────────────────────────────────────────────
+   干涉强度是 sin²(π·OPD/λ)，对 OPD/λ 的**小数部分**周期为 1，
+   所以可以整表打掉。烘焙一帧要算 3 个通道 × 5 万像素，
+   直接调 Math.sin 会让拖滑块变卡。
+   ═══════════════════════════════════════════════════════════════ */
+var LUT_N = 2048;
+var SINSQ = new Float32Array(LUT_N);
+for (var i = 0; i < LUT_N; i += 1) {
+  var s = Math.sin(Math.PI * i / LUT_N);
+  SINSQ[i] = s * s;
+}
+function sinsq01(x) {            /* x 任意实数，取小数部分查表 */
+  var f = x - Math.floor(x);
+  return SINSQ[(f * LUT_N) | 0];
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   2. 逐像素烘焙
+   ───────────────────────────────────────────────────────────────
+   拆成两段是因为**只有干涉依赖膜厚相位**：
+     · GEOM —— 法线、菲涅尔、环境反射、高光、焦散，与相位无关，整套参数改一次算一次；
+     · 每帧 —— 只算膜厚 → OPD → 三通道干涉，再和 GEOM 合成。
+   不拆的话 20 帧要把菲涅尔和两个 pow 高光重算 20 遍。
+   ═══════════════════════════════════════════════════════════════ */
+
+var GEOM = null;   /* { nx, ny, nz, cosr, ang, dist, fres, spec, caustic, envR/G/B, cover } */
+
+function buildGeometry() {
+  var n = SPRITE * SPRITE;
+  var G = {
+    ny: new Float32Array(n), cosr: new Float32Array(n), ang: new Float32Array(n),
+    fres: new Float32Array(n), spec: new Float32Array(n), caustic: new Float32Array(n),
+    envR: new Float32Array(n), envG: new Float32Array(n), envB: new Float32Array(n),
+    cover: new Float32Array(n)
+  };
+
+  var bg = BACKGROUNDS[P.bg];
+  var skyR = bg.sky[0] / 255, skyG = bg.sky[1] / 255, skyB = bg.sky[2] / 255;
+  var grR = bg.ground[0] / 255, grG = bg.ground[1] / 255, grB = bg.ground[2] / 255;
+
+  /* 光源方向。lz 取 0.55：光略微在观察者这一侧，
+     纯侧光（lz=0）会让主高光贴在轮廓上，看着像描边而不像反光。 */
+  var la = P.light * Math.PI / 180;
+  var lx = Math.cos(la), ly = Math.sin(la), lz = 0.55;
+  var ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+  lx /= ll; ly /= ll; lz /= ll;
+  /* 半程向量 h = normalize(L + V)，V = (0,0,1)。 */
+  var hx = lx, hy = ly, hz = lz + 1;
+  var hl = Math.sqrt(hx * hx + hy * hy + hz * hz);
+  hx /= hl; hy /= hl; hz /= hl;
+
+  var c = SPRITE / 2;
+  var feather = 1.6 / SPRITE_R;      /* 轮廓抗锯齿宽度，单位是归一化半径 */
+  var invN2 = 1 / (N_FILM * N_FILM);
+
+  for (var py = 0; py < SPRITE; py += 1) {
+    var ny = (py + 0.5 - c) / SPRITE_R;
+    for (var px = 0; px < SPRITE; px += 1) {
+      var idx = py * SPRITE + px;
+      var nx = (px + 0.5 - c) / SPRITE_R;
+      var d2 = nx * nx + ny * ny;
+      if (d2 >= 1 + feather) { G.cover[idx] = 0; continue; }
+
+      var dist = Math.sqrt(d2);
+      var cov = dist > 1 - feather ? Math.max(0, (1 + feather - dist) / (2 * feather)) : 1;
+      var nzs = 1 - Math.min(d2, 0.999999);
+      var nz = Math.sqrt(nzs);
+
+      /* 菲涅尔：正对我们的地方几乎完全透明（F0≈0.02），
+         越接近轮廓反射率越趋近 1。肥皂泡「中间空、边缘亮」就是这一条，
+         也是它和实心玻璃球最根本的差别。 */
+      var om = 1 - nz;
+      var om2 = om * om;
+      var fres = 0.02 + 0.98 * om2 * om2 * om;
+
+      /* 膜内折射角：斯涅尔定律。sin²θi = 1 - nz²。 */
+      var cosr = Math.sqrt(1 - (1 - nzs) * invN2);
+
+      /* 球面环境反射的竖直分量。屏幕 y 向下，ry<0 表示反射朝上 → 看到天光。 */
+      var ry = 2 * ny * nz;
+      var t = (1 - ry) * 0.5;
+      if (t < 0) t = 0; else if (t > 1) t = 1;
+
+      /* Blinn-Phong 主高光 + 一圈宽的柔光晕。
+         关键是**所有泡泡共用同一个 h**——满屏高光朝同一个方向，
+         这是「同一束自然光」唯一的读法，比任何渐变都管用。 */
+      var ndh = nx * hx + ny * hy + nz * hz;
+      if (ndh < 0) ndh = 0;
+      var n2 = ndh * ndh, n4 = n2 * n2, n8 = n4 * n4;
+      var spec = n8 * n8 * n8 * n4 * ndh          /* ≈ pow(ndh, 221) 紧高光 */
+               + n8 * n4 * 0.22;                   /* ≈ pow(ndh, 12)  柔光晕 */
+      /* 背面膜的二次反射：位置大致在主高光的镜像点，更暗更散。
+         有它才读得出「这是个空壳」，没有它就是个实心球。 */
+      var bdh = -(nx * hx + ny * hy) + nz * hz;
+      if (bdh < 0) bdh = 0;
+      var b2 = bdh * bdh, b4 = b2 * b2, b8 = b4 * b4;
+      spec += b8 * b8 * b4 * 0.30;                 /* ≈ pow(bdh, 40) */
+
+      /* 焦散：光穿过泡泡后在背光那侧的边缘聚成一道暖亮弧。 */
+      var away = -(nx * lx + ny * ly);
+      if (away < 0) away = 0;
+      var rimf = om2 * Math.sqrt(om);              /* ≈ pow(1-nz, 2.5) */
+      var caus = rimf * away * Math.sqrt(away);
+
+      G.ny[idx] = ny; G.cosr[idx] = cosr; G.ang[idx] = Math.atan2(ny, nx);
+      G.fres[idx] = fres; G.spec[idx] = spec; G.caustic[idx] = caus; G.cover[idx] = cov;
+      G.envR[idx] = grR + (skyR - grR) * t;
+      G.envG[idx] = grG + (skyG - grG) * t;
+      G.envB[idx] = grB + (skyB - grB) * t;
+    }
+  }
+  GEOM = G;
+}
+
+var sprites = [];      /* FRAMES 张离屏 canvas */
+var bakeMs = 0;
+
+function bakeSprites() {
+  var t0 = performance.now();
+  buildGeometry();
+
+  var n = SPRITE * SPRITE;
+  var G = GEOM;
+  /* 警戒态：把反射整体推向警示红。这不是物理，是玩法信号，
+     所以放在最后一步乘上去，不去污染前面的干涉计算。 */
+  var wr = P.warn ? 1.30 : 1, wg = P.warn ? 0.52 : 1, wb = P.warn ? 0.44 : 1;
+
+  sprites.length = 0;
+  for (var f = 0; f < FRAMES; f += 1) {
+    var phase = f / FRAMES * Math.PI * 2;
+    var cv = document.createElement('canvas');
+    cv.width = cv.height = SPRITE;
+    var g = cv.getContext('2d');
+    var img = g.createImageData(SPRITE, SPRITE);
+    var d = img.data;
+
+    for (var i2 = 0; i2 < n; i2 += 1) {
+      var cov = G.cover[i2];
+      if (cov <= 0) continue;
+
+      /* 膜厚：基准值 + 重力排液（上薄下厚）+ 一圈流纹。
+         流纹随相位转，帧与帧之间的差别主要来自它。 */
+      var th = P.thick * (1 + P.drain * G.ny[i2]
+                            + P.swirl * Math.sin(3 * G.ang[i2] + phase));
+      if (th < 20) th = 20;
+      var opd = 2 * N_FILM * th * G.cosr[i2];
+
+      /* 三通道各自的干涉强度。均值 0.5，所以 ×2 后再和「无色」按虹彩强度插值，
+         这样调虹彩强度不会顺带把整体亮度也调走。 */
+      var tr = 1 + P.irid * (2 * sinsq01(opd / LAMBDA[0]) - 1);
+      var tg = 1 + P.irid * (2 * sinsq01(opd / LAMBDA[1]) - 1);
+      var tb = 1 + P.irid * (2 * sinsq01(opd / LAMBDA[2]) - 1);
+
+      var refl = G.fres[i2] * P.env;
+      var sp = G.spec[i2] * P.spec;
+      var ca = G.caustic[i2] * P.caustic;
+
+      var lr = G.envR[i2] * tr * refl + sp + ca * 1.00;
+      var lg = G.envG[i2] * tg * refl + sp + ca * 0.86;
+      var lb = G.envB[i2] * tb * refl + sp + ca * 0.62;
+
+      /* 不透明度＝真正挡住背景的那部分。中心 ≈ body，边缘 ≈ 1。 */
+      var a = G.fres[i2] * 0.95 + P.body + sp * 1.15 + ca * 0.8;
+      if (a > 1) a = 1; else if (a < 0.004) a = 0.004;
+
+      /* ImageData 是直通 alpha（非预乘），所以颜色要除以 alpha，
+         否则半透明处会整体压暗，泡泡看着像脏。 */
+      var cr = lr / a * wr, cg2 = lg / a * wg, cb = lb / a * wb;
+      var o = i2 * 4;
+      d[o]     = cr > 1 ? 255 : cr * 255;
+      d[o + 1] = cg2 > 1 ? 255 : cg2 * 255;
+      d[o + 2] = cb > 1 ? 255 : cb * 255;
+      d[o + 3] = a * cov * 255;
+    }
+    g.putImageData(img, 0, 0);
+    sprites.push(cv);
+  }
+  bakeMs = performance.now() - t0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   3. 泡泡场
+   ═══════════════════════════════════════════════════════════════ */
+
+var canvas = document.getElementById('stage');
+var ctx = canvas.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+var bubbles = [];
+var bgCache = null;                /* 背景画一次缓存成位图，不用每帧重算渐变 */
+
+function rand(a, b) { return a + Math.random() * (b - a); }
+
+function makeBubble(i) {
+  /* 大部分在 42~56，少数长到 82——和真实关卡里「挤久了会胀」的分布一致。 */
+  var r = Math.random() < 0.22 ? rand(RADIUS_MAX, RADIUS_CAP) : rand(RADIUS_MIN, RADIUS_MAX);
+  return {
+    x: rand(r, Math.max(r + 1, W - r)), y: rand(r, Math.max(r + 1, H - r)),
+    vx: rand(-16, 16), vy: rand(-13, 13), r: r,
+    text: WORRIES[i % WORRIES.length],
+    phase: Math.random()            /* 每颗泡泡自己的膜相位偏移，避免整屏同步闪 */
+  };
+}
+
+function syncCount() {
+  while (bubbles.length < P.count) bubbles.push(makeBubble(bubbles.length));
+  bubbles.length = P.count;
+}
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  bgCache = null;
+  bubbles.forEach(function (b) {
+    b.x = Math.min(Math.max(b.x, b.r), Math.max(b.r + 1, W - b.r));
+    b.y = Math.min(Math.max(b.y, b.r), Math.max(b.r + 1, H - b.r));
+  });
+}
+
+function paintBackground() {
+  if (bgCache && bgCache.w === W && bgCache.h === H && bgCache.key === P.bg + '|' + P.light) return;
+  var cv = document.createElement('canvas');
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  var g = cv.getContext('2d');
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  BACKGROUNDS[P.bg].paint(g, W, H);
+  bgCache = { cv: cv, w: W, h: H, key: P.bg + '|' + P.light };
+}
+
+function step(dt) {
+  for (var i = 0; i < bubbles.length; i += 1) {
+    var b = bubbles[i];
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx); }
+    if (b.x > W - b.r) { b.x = W - b.r; b.vx = -Math.abs(b.vx); }
+    if (b.y < b.r) { b.y = b.r; b.vy = Math.abs(b.vy); }
+    if (b.y > H - b.r) { b.y = H - b.r; b.vy = -Math.abs(b.vy); }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4. 绘制
+   ═══════════════════════════════════════════════════════════════ */
+
+function wrapText(text, maxWidth, maxLines) {
+  var chars = Array.from(String(text || ''));
+  var lines = [], cur = '';
+  for (var i = 0; i < chars.length; i += 1) {
+    var next = cur + chars[i];
+    if (ctx.measureText(next).width > maxWidth && cur) {
+      lines.push(cur); cur = chars[i];
+      if (lines.length === maxLines - 1) { cur = chars.slice(i).join(''); break; }
+    } else { cur = next; }
+  }
+  if (cur) {
+    while (lines.length < maxLines && ctx.measureText(cur).width > maxWidth && cur.length > 1) {
+      cur = cur.slice(0, -1);
+    }
+    lines.push(cur);
+  }
+  return lines.slice(0, maxLines);
+}
+
+function drawText(b) {
+  if (!P.text || b.r <= 24) return;
+  var size = Math.min(FONT_MAX_PX, Math.max(FONT_MIN_PX, b.r * 0.34));
+  ctx.font = '500 ' + size + 'px ' + FontSupport.fontStackFor(b.text);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  var lines = wrapText(b.text, b.r * 1.52, TEXT_MAX_LINES);
+  var lh = size * 1.14;
+  var y0 = b.y - (lines.length - 1) * lh / 2;
+  ctx.fillStyle = P.dark ? 'rgba(39,57,68,0.90)' : 'rgba(247,238,225,0.94)';
+  for (var i = 0; i < lines.length; i += 1) ctx.fillText(lines[i], b.x, y0 + i * lh);
+}
+
+/* 新版：三步——投影、精灵、文字。运行时不做任何逐像素计算。 */
+function drawNew(b, time) {
+  if (P.shadow) {
+    /* 背后投影：偏移方向跟着光源走，很淡。
+       它落在「泡泡后面的空间」上，是这页里除高光之外第二个空间线索。 */
+    var la = P.light * Math.PI / 180;
+    var ox = -Math.cos(la) * b.r * 0.30, oy = -Math.sin(la) * b.r * 0.30;
+    var sg = ctx.createRadialGradient(b.x + ox, b.y + oy, b.r * 0.2, b.x + ox, b.y + oy, b.r * 1.12);
+    sg.addColorStop(0, 'rgba(90,72,48,0.16)');
+    sg.addColorStop(0.62, 'rgba(90,72,48,0.07)');
+    sg.addColorStop(1, 'rgba(90,72,48,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(b.x + ox, b.y + oy, b.r * 1.12, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /* 膜相位：在相邻两帧之间交叉淡入。
+     只取整帧的话，流动速度 0.21 相当于每 240ms 才换一帧，能看出跳格；
+     再加帧数就要多占内存（一帧 200KB）。交叉淡入不占内存、也不加烘焙时间，
+     代价只是每颗泡泡多一次 drawImage——满员 60 颗也就多 0.4ms。 */
+  var f = b.phase + (reduceMotion ? 0 : time * P.speed);
+  var pos = (f - Math.floor(f)) * FRAMES;
+  var i0 = Math.floor(pos) % FRAMES;
+  var i1 = (i0 + 1) % FRAMES;
+  var mix = pos - Math.floor(pos);
+  var s0 = sprites[i0], s1 = sprites[i1];
+  if (!s0) return;
+  var size = b.r * (SPRITE / SPRITE_R);
+  var dx = b.x - size / 2, dy = b.y - size / 2;
+  ctx.drawImage(s0, dx, dy, size, size);
+  if (s1 && mix > 0.004) {
+    ctx.save();
+    ctx.globalAlpha = mix;
+    ctx.drawImage(s1, dx, dy, size, size);
+    ctx.restore();
+  }
+  drawText(b);
+}
+
+/* 现版：从 js/level-game.js 的 drawBubble() 原样搬过来，只去掉 scale/opacity/
+   edgeGlow 这些运行时状态（这页没有它们），其余数值一个不改，
+   否则对比就不诚实了。 */
+function drawOld(b) {
+  var radius = b.r;
+  var warning = P.warn ? 1 : 0;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  var gradient = ctx.createRadialGradient(-radius * 0.28, -radius * 0.32, radius * 0.05, 0, 0, radius);
+  gradient.addColorStop(0, 'rgba(247,238,225,0.66)');
+  gradient.addColorStop(0.48, warning > 0 ? 'rgba(245,101,79,0.34)' : 'rgba(169,220,236,0.38)');
+  gradient.addColorStop(1, warning > 0 ? 'rgba(217,70,54,0.24)' : 'rgba(39,96,123,0.20)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = warning > 0 ? 'rgba(245,101,79,0.82)' : 'rgba(247,238,225,0.64)';
+  ctx.lineWidth = warning > 0 ? 2 : 1.2;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.52)';
+  ctx.lineWidth = Math.max(1.2, radius * 0.045);
+  ctx.beginPath();
+  ctx.arc(-radius * 0.22, -radius * 0.26, radius * 0.25, Math.PI * 1.05, Math.PI * 1.52);
+  ctx.stroke();
+  ctx.restore();
+  drawText(b);
+}
+
+function label(text, x, y) {
+  ctx.save();
+  ctx.font = '600 13px "Canger YuYangTi", sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  var w = ctx.measureText(text).width + 18;
+  ctx.fillStyle = 'rgba(24,27,30,0.62)';
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y, w, 24, 12); ctx.fill();
+  ctx.fillStyle = '#E8E4DC';
+  ctx.fillText(text, x, y + 5);
+  ctx.restore();
+}
+
+function render(time) {
+  paintBackground();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bgCache.cv, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  var i;
+  if (P.mode === 'old') {
+    for (i = 0; i < bubbles.length; i += 1) drawOld(bubbles[i]);
+  } else if (P.mode === 'new') {
+    for (i = 0; i < bubbles.length; i += 1) drawNew(bubbles[i], time);
+  } else {
+    /* 对比模式：同一批泡泡、同一个时刻，左右各画一遍，中缝切开。
+       两边共用同一组坐标，所以尺寸和密度是完全可比的。 */
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W / 2, H); ctx.clip();
+    for (i = 0; i < bubbles.length; i += 1) drawOld(bubbles[i]);
+    ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(W / 2, 0, W / 2, H); ctx.clip();
+    for (i = 0; i < bubbles.length; i += 1) drawNew(bubbles[i], time);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(24,27,30,0.28)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W / 2 + 0.5, 0); ctx.lineTo(W / 2 + 0.5, H); ctx.stroke();
+    label('现版', W * 0.25, 16);
+    label('新版', W * 0.75, 16);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   5. 主循环
+   ═══════════════════════════════════════════════════════════════ */
+
+var paused = false, last = 0, clock = 0;
+var fpsAcc = 0, fpsFrames = 0, fpsShown = 0;
+var perfEl = document.getElementById('perf');
+
+function frame(now) {
+  var dt = last ? Math.min((now - last) / 1000, 0.05) : 0;
+  last = now;
+  if (!paused && !reduceMotion) { clock += dt; step(dt); }
+
+  var t0 = performance.now();
+  render(clock);
+  var drawMs = performance.now() - t0;
+
+  fpsAcc += drawMs; fpsFrames += 1;
+  if (fpsFrames >= 30) {
+    fpsShown = fpsAcc / fpsFrames;
+    fpsAcc = 0; fpsFrames = 0;
+    perfEl.textContent = bubbles.length + ' 颗 · 绘制 ' + fpsShown.toFixed(2) + ' ms/帧 · '
+      + '烘焙 ' + bakeMs.toFixed(0) + ' ms × ' + FRAMES + ' 帧 · '
+      + W + '×' + H + ' @' + DPR + 'x';
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   6. 控件
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 哪些参数改了要重烘焙。数量、文字、投影、模式不影响精灵内容。 */
+var BAKE_KEYS = { bg: 1, light: 1, env: 1, spec: 1, caustic: 1,
+                  thick: 1, irid: 1, drain: 1, swirl: 1, body: 1, warn: 1 };
+var bakeTimer = 0;
+function requestBake() {
+  clearTimeout(bakeTimer);
+  bakeTimer = setTimeout(bakeSprites, 40);   /* 去抖：拖滑块时不要每一格都算一次 */
+}
+
+var SLIDERS = ['light', 'env', 'spec', 'caustic', 'thick', 'irid', 'drain', 'swirl', 'speed', 'body', 'count'];
+var FMT = {
+  light: function (v) { return v.toFixed(0) + '°'; },
+  thick: function (v) { return v.toFixed(0) + ' nm'; },
+  count: function (v) { return v.toFixed(0); }
+};
+
+function syncOutput(key) {
+  var el = document.getElementById('o-' + key);
+  el.textContent = FMT[key] ? FMT[key](P[key]) : P[key].toFixed(2);
+}
+
+SLIDERS.forEach(function (key) {
+  var input = document.getElementById('p-' + key);
+  input.addEventListener('input', function () {
+    P[key] = parseFloat(input.value);
+    syncOutput(key);
+    if (key === 'count') syncCount();
+    if (key === 'light') bgCache = null;
+    if (BAKE_KEYS[key]) requestBake();
+  });
+});
+
+var CHECKS = ['text', 'dark', 'shadow', 'warn'];
+CHECKS.forEach(function (key) {
+  var input = document.getElementById('p-' + key);
+  input.addEventListener('change', function () {
+    P[key] = input.checked;
+    if (BAKE_KEYS[key]) requestBake();
+  });
+});
+
+document.querySelectorAll('.seg').forEach(function (seg) {
+  seg.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-val]');
+    if (!btn) return;
+    var key = seg.dataset.seg;
+    P[key] = btn.dataset.val;
+    seg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('is-on', b === btn); });
+    if (key === 'bg') {
+      bgCache = null;
+      /* 背景一换，环境反射色跟着换，也就是「文字用深色」的默认值要跟着换。
+         用户手动改过之后这里还是会覆盖——这是刻意的，切背景就是要看它的整套默认。 */
+      var dk = document.getElementById('p-dark');
+      dk.checked = BACKGROUNDS[P.bg].darkText;
+      P.dark = dk.checked;
+      requestBake();
+    }
+  });
+});
+
+/* 把 P 的当前值刷回面板。启动和「恢复默认」共用一份——
+   分开写过一次，结果改了 DEFAULTS 之后启动时只同步了滑块，
+   分段按钮和复选框还是 HTML 里写死的初值，面板显示的和实际渲染的对不上。 */
+function applyParamsToUI() {
+  SLIDERS.forEach(function (k) { document.getElementById('p-' + k).value = P[k]; syncOutput(k); });
+  CHECKS.forEach(function (k) { document.getElementById('p-' + k).checked = P[k]; });
+  document.querySelectorAll('.seg').forEach(function (seg) {
+    var key = seg.dataset.seg;
+    seg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('is-on', b.dataset.val === P[key]); });
+  });
+}
+
+document.getElementById('reset').addEventListener('click', function () {
+  for (var key in DEFAULTS) P[key] = DEFAULTS[key];
+  applyParamsToUI();
+  bgCache = null; syncCount(); bakeSprites();
+});
+
+window.addEventListener('keydown', function (e) {
+  if (e.key === 'h' || e.key === 'H') document.getElementById('panel').classList.toggle('is-hidden');
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+});
+
+window.addEventListener('resize', resize);
+
+/* ═══════════════════════════════════════════════════════════════
+   7. 启动
+   ═══════════════════════════════════════════════════════════════ */
+
+applyParamsToUI();
+resize();
+syncCount();
+bakeSprites();
+
+/* 字体没落地就量宽度会拿到回退字形的宽度，换行位置全错。
+   等 fonts.ready 再开跑，这条和主站 Canvas 绘字的处理一致。 */
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(function () { requestAnimationFrame(frame); });
+} else {
+  requestAnimationFrame(frame);
+}
+</script>
