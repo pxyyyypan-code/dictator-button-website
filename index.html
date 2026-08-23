@@ -16,10 +16,13 @@
        Canvas 只有这一处，绝不能被 display:none 或重建（详见 u06 注释）。
        ============================================================ -->
 
-  <!-- U01 首页：同心波纹 + 道具向外扩散。规格：只有点大标题才进入。 -->
+  <!-- U01 首页：无限放大的 3D 环形隧道 + 道具从中心向外穿行。
+       环与道具只负责视觉演出；规格仍保持只有点大标题才进入。 -->
   <section class="scene scene--intro" data-scene="u01" aria-hidden="true">
-    <div class="intro-ripple" aria-hidden="true"></div>
-    <div class="intro-gadgets" aria-hidden="true"></div>
+    <div class="intro-tunnel" data-intro-tunnel aria-hidden="true">
+      <div class="intro-tunnel__rings" data-intro-rings></div>
+      <div class="intro-tunnel__gadgets" data-intro-gadgets></div>
+    </div>
     <button type="button" class="intro-card" data-action="next">
       <span class="intro-card__title">22世纪未来道具</span>
       <span class="intro-card__title">体验馆</span>
@@ -27,34 +30,126 @@
     </button>
   </section>
 
-  <!-- U02 对话：左文右哆啦A梦（原 ux-02 + ux-03 合一）。
-       dialogue.js 逐句推进：点「继续」或按空格翻句，末句后主按钮变「去选择烦恼」。
-       三个文本槽固定不动，只换内容——prev 是上一句（降透明度），
-       title 是当前句，note 是当前句的补充。规格明令不许出现大型对话框。 -->
-  <section class="scene scene--split" data-scene="u02" aria-hidden="true">
-    <p class="site-mark">22世纪未来道具体验馆</p>
-    <div class="split__text">
-      <p class="scene__tag" data-bind="dialogueTag">STEP 02 · 使用说明</p>
-      <p class="dialogue-prev" data-bind="dialoguePrev" aria-hidden="true"></p>
-      <h1 class="scene__title" data-bind="dialogueText">这个按钮，可以让烦恼消失。</h1>
-      <p class="scene__desc" data-bind="dialogueNote">请谨慎使用，它会影响你接下来的每一步。</p>
-      <div class="scene__actions">
-        <button type="button" class="btn btn--primary" data-action="next"
-                data-bind="dialogueNext">继续</button>
-        <span class="page-counter" data-bind="dialoguePage">01 / 05</span>
-        <button type="button" class="btn btn--link" data-action="back">返回道具馆</button>
+  <!-- U02 分类前引导：按 Word 流程拆成六个连续分镜，但仍保留为同一个场景，
+       所以 U03 及后面的场景编号、状态和数据入口完全不变。
+       · 首页点击后：青色从中心扩满 → 右下白洞与无按钮哆啦A梦出现；
+       · 两句欢迎对白后，用滚轮浏览道具并过渡到玩家提问；
+       · 玩家提问后直接进入独裁者按钮说明，再用点击查看体验流程。
+       所有文字都是 HTML 实时文本，继续继承网站原有字体；参考图只用于构图。 -->
+  <section class="scene scene--dialogue" data-scene="u02" data-dialogue-stage="welcome-a"
+           data-dialogue-tone="primary" aria-hidden="true">
+    <div class="u02-entry-wash" aria-hidden="true"></div>
+
+    <p class="site-mark u02-site-mark">22世纪未来道具体验馆</p>
+    <button type="button" class="btn btn--link u02-back" data-action="back">返回道具馆</button>
+
+    <!-- 分镜 1～2：白洞出场与哆啦A梦两句欢迎对白。第一句点击推进，
+         第二句按 Word 要求改为滚轮推进；底部滚轮提示同时提供可点击的无障碍后备入口。 -->
+    <div class="u02-panel u02-panel--welcome is-active" data-u02-panel="welcome" aria-hidden="false">
+      <button type="button" class="u02-bubble u02-bubble--doraemon" data-action="next"
+              data-bind="dialogueBubble" aria-label="哆啦A梦的对话，点击继续">
+        <span class="u02-bubble__speaker">哆啦A梦</span>
+        <span class="u02-bubble__text" data-bind="dialogueWelcomeText">嗨！欢迎来到22世纪未来道具体验馆。</span>
+        <span class="u02-bubble__advance" aria-hidden="true">点击继续</span>
+      </button>
+      <div class="u02-portal" aria-hidden="true">
+        <img class="u02-portal__doraemon" src="assets/images/ui/doraemon-portal.png" alt="">
       </div>
     </div>
-    <div class="split__visual" aria-hidden="true">
-      <!-- 提示写在 .doraemon 里面而不是外面：它要指的是**图上那颗红按钮**，
-           而 .doraemon 才是那张图的实际边界（split__visual 比图宽得多）。
-           挂在外层就只能相对整格定位，换个分辨率就指到空气里去了。 -->
-      <div class="doraemon doraemon--sit">
-        <!-- 独裁者按钮在这一页只是剧情提示：纯标注、pointer-events:none，
-             没有 data-action，玩家提前按不下去（规格硬要求）。 -->
-        <p class="dialogue-cue" data-bind="dialogueCue">独裁者按钮</p>
+
+    <!-- 分镜 3：滚轮浏览的未来道具墙。只复用参考图的 4×2 圆形陈列大纲。 -->
+    <div class="u02-panel u02-panel--gallery" data-u02-panel="gallery" aria-hidden="true">
+      <p class="u02-eyebrow">22世纪的道具正在眼前展开</p>
+      <div class="u02-gadget-grid" role="list" aria-label="未来道具陈列">
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-04.webp" alt="如果电话亭">
+          <figcaption class="u-visually-hidden">如果电话亭</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-03.webp" alt="时光包袱皮">
+          <figcaption class="u-visually-hidden">时光包袱皮</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-09.webp" alt="竹蜻蜓">
+          <figcaption class="u-visually-hidden">竹蜻蜓</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-07.webp" alt="石头帽">
+          <figcaption class="u-visually-hidden">石头帽</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-01.webp" alt="时间停止器">
+          <figcaption class="u-visually-hidden">时间停止器</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-05.webp" alt="任意门">
+          <figcaption class="u-visually-hidden">任意门</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-06.webp" alt="隐身斗篷">
+          <figcaption class="u-visually-hidden">隐身斗篷</figcaption>
+        </figure>
+        <figure class="u02-gadget-cell" role="listitem">
+          <img src="assets/images/gadgets/gadget-08.webp" alt="穿透环">
+          <figcaption class="u-visually-hidden">穿透环</figcaption>
+        </figure>
       </div>
     </div>
+
+    <!-- 分镜 4：玩家发问。蓝底气泡 + 明确的「你」标签，与哆啦A梦的米白气泡区分。 -->
+    <div class="u02-panel u02-panel--question" data-u02-panel="question" aria-hidden="true">
+      <button type="button" class="u02-bubble u02-bubble--player" data-action="next"
+              aria-label="你的问题，点击继续">
+        <span class="u02-bubble__speaker">你</span>
+        <span class="u02-bubble__text">哆啦A梦，我最近好烦啊。有什么道具可以帮我消除烦恼的吗？</span>
+        <span class="u02-bubble__advance" aria-hidden="true">点击继续</span>
+      </button>
+      <div class="u02-character-disc u02-character-disc--seated" aria-hidden="true">
+        <img src="assets/images/ui/doraemon-seated.png" alt="">
+      </div>
+    </div>
+
+    <!-- 分镜 5：玩家提问后直接进入道具说明。长文字仍使用全站字体与字号令牌。 -->
+    <div class="u02-panel u02-panel--info" data-u02-panel="info" aria-hidden="true">
+      <article class="u02-info-card">
+        <div class="u02-info-card__cap" aria-hidden="true">
+          <img src="assets/images/ui/doraemon-card-peek.png" alt="">
+        </div>
+        <p class="u02-info-card__tag">道具说明</p>
+        <h1>这是独裁者按钮。</h1>
+        <p>只要说出想让谁消失并按下它，对方就会从世界以及所有人的记忆中暂时消失。</p>
+        <p>不过，消失不一定等于真正解决。请谨慎使用，它可能会影响你接下来的每一步。</p>
+        <button type="button" class="btn btn--primary btn--compact" data-action="next">继续</button>
+      </article>
+      <div class="u02-info-gadget" aria-hidden="true">
+        <span class="u02-info-gadget__disc">
+          <img src="assets/images/gadgets/dictator.webp" alt="">
+        </span>
+        <p>独裁者按钮</p>
+      </div>
+    </div>
+
+    <!-- 分镜 6：分类前的最后说明，出口仍然进入原有 U03 球形烦恼分类。 -->
+    <div class="u02-panel u02-panel--guide" data-u02-panel="guide" aria-hidden="true">
+      <article class="u02-guide-card">
+        <div class="u02-guide-card__cap" aria-hidden="true">
+          <img src="assets/images/ui/doraemon-card-peek.png" alt="">
+        </div>
+        <p class="u02-info-card__tag">体验流程</p>
+        <h1>先选出此刻最困扰你的烦恼。</h1>
+        <p>你可以从不同类别中选择具体烦恼；如果没有合适选项，也可以直接写下自己的烦恼。</p>
+        <p>我会根据你的选择，从四次元口袋里匹配相应的未来道具。之后，你将亲自进入烦恼消除环节，观察道具与烦恼之间发生的变化。</p>
+        <p class="u02-guide-card__closing">准备好后，就去选择你现在最想摆脱的烦恼吧！</p>
+        <button type="button" class="btn btn--primary" data-action="next">去选择烦恼</button>
+      </article>
+    </div>
+
+    <button type="button" class="u02-scroll-cue" data-action="next" data-bind="dialogueScrollCue"
+            aria-label="向下滚动继续">
+      <span data-bind="dialogueScrollText">滚轮向下浏览道具</span>
+      <span class="u02-scroll-cue__arrow" aria-hidden="true">↓</span>
+    </button>
+    <p class="u-visually-hidden" data-bind="dialogueStatus" aria-live="polite"></p>
   </section>
 
   <!-- U03 烦恼选择（原 ux-04 + ux-05 合一）：9 大类粒子 → 3 条细分 → 确认。
@@ -140,7 +235,7 @@
   <section class="scene scene--split" data-scene="u05" aria-hidden="true">
     <p class="site-mark">22世纪未来道具体验馆</p>
     <div class="split__text">
-      <p class="scene__tag">MATCH RESULT · 匹配结果</p>
+      <p class="scene__tag">道具匹配结果</p>
       <h1 class="scene__title">
         <span class="match__lead">为你匹配到</span>
         <span class="match__name" data-bind="gadgetName"></span>
@@ -175,110 +270,80 @@
     </div>
   </section>
 
-  <!-- ============================================================
-       U06 共用全屏交互容器（原 ux-06 + ux-07 合一，并承载 u07~u10）
-       —— 全站唯一的 <canvas>，也是唯一的挂载点。三条硬约束：
-       1. 它必须在首屏就静态存在，且此后不被重建；
-       2. 它和它的祖先在 u06~u10 期间不得 display:none
-          （空白阶段请用 opacity/filter 隐藏，否则动画循环会永久停摆）；
-       3. canvas 上不加 border/padding，也不给祖先加 transform，
-          否则点击坐标会整体偏移。视觉边框交给 .immersive-frame 画。
-       ============================================================ -->
-  <section class="scene scene--immersive phase-calm" data-scene="u06" data-phase="calm" aria-hidden="true">
+  <!-- U06~U10 三关游戏共用同一块 Canvas：透明麻袋与泡泡不会在换关时重建 DOM。 -->
+  <section class="scene scene--immersive game-scene" data-scene="u06" data-phase="level" aria-hidden="true">
     <canvas class="bubble-canvas bubble-canvas--immersive bubble-canvas--interactive"
-            data-canvas="experience" aria-label="全屏烦恼泡泡交互区域"></canvas>
-    <div class="immersive-frame" aria-hidden="true"></div>
+            data-canvas="experience" aria-label="透明麻袋中的烦恼泡泡交互区域"></canvas>
 
-    <!-- 左上：匹配到的道具。失控阶段图标变暗、文案换成「道具的效果正在减弱。」 -->
-    <header class="immersive-header">
-      <span class="gadget-hud">
-        <img class="gadget-hud__icon" data-bind="gadgetHudIcon" src="" alt="" width="40" height="40">
-        <span class="gadget-hud__name" data-bind="gadgetHudName"></span>
-      </span>
-      <p class="scene__tag" data-bind="continuousTag">DELETE TEST</p>
-      <h1 class="scene__title" data-bind="continuousTitle">点击气泡，试着把烦恼清除</h1>
-      <p class="scene__desc" data-bind="continuousDesc">先观察它们如何消失。点击空白不会产生惩罚。</p>
+    <header class="game-header">
+      <p class="game-brand">▰&nbsp; 22世纪未来道具体验馆</p>
+      <p class="game-level" data-bind="gameLevel">第一关</p>
+      <h1 class="game-title" data-bind="gameTitle">在时间结束前，清空麻袋里的泡泡</h1>
+      <p class="game-worry">当前烦恼：<strong data-bind="gameWorry"></strong></p>
     </header>
 
-    <!-- 右上计数。三格的更新责任分散在 app.js 多处，不要拆到不同容器里。 -->
-    <div class="game-hud game-hud--immersive" aria-live="polite">
-      <span class="hud-pill"><span data-bind="primaryMetricLabel">已处理</span> <strong data-bind="primaryMetricValue">0</strong></span>
-      <span class="hud-pill">当前气泡 <strong data-bind="bubbleMetricValue">0</strong></span>
-      <span class="hud-pill hud-pill--status">系统状态：<strong data-bind="systemMetricValue">删除有效</strong></span>
+    <div class="game-timer" aria-live="polite">
+      <span>剩余时间</span>
+      <strong data-bind="gameTimer">00:36</strong>
     </div>
 
     <button type="button" class="btn btn--ghost immersive-exit" data-action="exit">退出体验</button>
 
-    <!-- U08 按钮抉择：右半屏。阶段 5 把点击改成「按住 2 秒」＋圆环进度。 -->
-    <div class="dictator-inline" data-bind="dictatorInline" aria-live="polite">
-      <span class="dictator-inline__label" data-bind="dictatorLabel">紧急清除协议</span>
-      <button type="button" class="btn btn--danger dictator-inline__button"
-              data-action="trigger-inline-button" data-bind="inlineButton" disabled>等待授权</button>
-      <span class="dictator-inline__ring" aria-hidden="true"></span>
-      <small class="dictator-inline__hint" data-bind="inlineButtonHint"></small>
-      <small class="dictator-inline__warn">注意：效果为暂时性，烦恼可能在未来重新出现。</small>
+    <div class="game-bag-note" aria-hidden="true">
+      <span data-bind="gameBagLabel">透明束缚袋</span>
+      <i></i><i></i><i></i>
     </div>
 
-    <!-- U10 重现：气泡不可点击，只有一个出口按钮。
-         这个面板必须存在——它是通往 u11 的唯一路径，缺了会静默卡死在 u10。 -->
-    <div class="return-choice" data-bind="returnChoice" aria-hidden="true">
-      <p class="scene__tag">STEP 10 · 再次出现</p>
-      <p class="return-choice__question" data-bind="returnChoiceQuestion">它又回来了。</p>
-      <p class="return-choice__note">有些东西无法通过删除解决。</p>
-      <button type="button" class="btn btn--primary" data-action="return-stop">看看发生了什么</button>
+    <div class="game-dictator" data-bind="gameDictator">
+      <span class="game-dictator__label">独裁者按钮</span>
+      <button type="button" class="game-dictator__button" data-action="game-dictator" aria-label="使用独裁者按钮">
+        <img src="assets/images/gadgets/dictator.webp" alt="" width="92" height="84">
+      </button>
+      <small data-bind="gameButtonHint">可以立即清空眼前的泡泡，但之后会发生变化</small>
     </div>
 
-    <p class="immersive-whisper" data-bind="immersiveStatus" role="status" aria-live="polite"></p>
+    <p class="game-status" data-bind="gameStatus" role="status" aria-live="polite"></p>
   </section>
 
-  <!-- u07 失控 / u08 按钮抉择 / u09 空白 / u10 重现 没有独立 section：
-       它们在 SCENE_FLOW 里 viewId 都指向 u06，renderVisibility 用的正是 viewId。
-       V0.7 里那 4 个空的 .scene--alias 节点从来拿不到 .scene--active，已删除。 -->
-
-  <!-- U11 总结（原 ux-12 重做）：读玩家真实选择的烦恼与对应的个性化总结。 -->
-  <section class="scene scene--split scene--on-primary" data-scene="u11" aria-hidden="true">
-    <div class="split__text">
-      <p class="scene__tag scene__tag--wide">OBSERVATION</p>
-      <h1 class="scene__title">
-        <span class="theme-line">它没有消失，</span>
-        <span class="theme-line">但你不必继续追着它跑。</span>
-      </h1>
-      <p class="summary-focus" data-bind="summaryWorry"></p>
-      <p class="summary-body" data-bind="summaryText"></p>
-      <div class="scene__actions">
-        <button type="button" class="btn btn--on-primary" data-action="next" data-bind="summaryNext">查看体验记录</button>
-        <button type="button" class="btn btn--link btn--on-primary" data-action="restart">重新体验</button>
+  <!-- U11 四种结局共用一个版式，只替换文案、动势和道具状态。 -->
+  <section class="scene scene--ending" data-scene="u11" data-ending="1" aria-hidden="true">
+    <button type="button" class="btn btn--ghost ending-exit" data-action="exit">退出体验</button>
+    <div class="ending-copy">
+      <p class="ending-label" data-bind="endingLabel">泡泡飘向远方</p>
+      <h1 class="ending-title" data-bind="endingTitle"></h1>
+      <p class="ending-worry" data-bind="endingWorry"></p>
+      <p class="ending-insight" data-bind="endingInsight"></p>
+      <blockquote class="ending-doraemon-copy" data-bind="endingDoraemonCopy"></blockquote>
+      <div class="ending-actions">
+        <button type="button" class="btn ending-primary" data-action="next">查看体验总结 <span>›</span></button>
+        <button type="button" class="btn btn--link btn--on-primary" data-action="restart">重新体验 →</button>
       </div>
     </div>
-    <div class="split__visual">
-      <!-- 口袋里同样是一到三件，和 u05 一样三个位置全部静态在场。 -->
-      <div class="pocket">
-        <div class="pocket__stack" data-bind="pocketStack" data-count="1">
-          <img class="pocket__gadget" data-bind="pocketGadget" src="" alt="" width="200" height="200">
-          <img class="pocket__gadget" data-bind="pocketGadget2" src="" alt="" width="200" height="200" hidden>
-          <img class="pocket__gadget" data-bind="pocketGadget3" src="" alt="" width="200" height="200" hidden>
-        </div>
-        <span class="pocket__tag" data-bind="pocketTag"></span>
+    <div class="ending-art" aria-hidden="true">
+      <div class="ending-sack">
+        <span class="ending-bubble ending-bubble--a" data-bind="endingBubbleA"></span>
+        <span class="ending-bubble ending-bubble--b" data-bind="endingBubbleB"></span>
+        <span class="ending-bubble ending-bubble--c" data-bind="endingBubbleC"></span>
+        <img class="ending-button" src="assets/images/gadgets/dictator.webp" alt="" width="150" height="136">
+        <img class="ending-doraemon" src="assets/images/ui/doraemon-wave.png" alt="" width="390" height="520">
       </div>
     </div>
   </section>
 
-  <!-- U12 体验记录（原 ux-13 + ux-14 合一）：五节点时间线。
-       规格明令：不要排行榜、不要评分、不要心理诊断结果。 -->
+  <!-- U12 体验总结：记录真实路径和按钮历史，不做评分或心理诊断。 -->
   <section class="scene scene--split" data-scene="u12" aria-hidden="true">
     <p class="site-mark">22世纪未来道具体验馆</p>
     <div class="split__text">
-      <p class="scene__tag scene__tag--wide">EXPERIENCE LOG</p>
+      <p class="scene__tag scene__tag--wide">给你的体验回信</p>
       <h1 class="scene__title">
         <span class="theme-line">这一次，</span>
-        <span class="theme-line">你经历了什么？</span>
+        <span class="theme-line">你是怎样面对它们的？</span>
       </h1>
       <p class="scene__desc" data-bind="logSubtitle"></p>
       <div class="scene__actions">
-        <button type="button" class="btn btn--primary" data-action="save-log">保存记录</button>
+        <button type="button" class="btn btn--primary" data-action="restart">重新体验</button>
         <button type="button" class="btn btn--link" data-action="restart">返回体验馆</button>
       </div>
-      <p class="worry-hint" data-bind="logHint" role="status" aria-live="polite"></p>
     </div>
     <!-- 由 app.js 用 innerHTML 重建，不要写静态内容。 -->
     <ol class="log-timeline" data-bind="logNodes"></ol>
@@ -294,6 +359,27 @@
     <div class="scene__actions">
       <button type="button" class="btn" data-action="exit-cancel">取消</button>
       <button type="button" class="btn btn--danger btn--compact" data-action="exit-confirm">确认退出</button>
+    </div>
+  </div>
+</div>
+
+<!-- 第一、二关结果：成功只给“进入下一关”，失败给“再来一次 / 结束体验”。 -->
+<div class="modal modal--level-result" data-bind="levelResult" aria-hidden="true" role="dialog" aria-modal="true"
+     aria-labelledby="level-result-title">
+  <div class="level-result-card">
+    <img class="level-result-doraemon" src="assets/images/ui/doraemon-card-peek.png" alt="" width="300" height="225">
+    <div class="level-result-band">
+      <span data-bind="levelResultLabel">第一关</span>
+    </div>
+    <div class="level-result-body">
+      <h2 class="level-result-title" id="level-result-title" data-bind="levelResultTitle"></h2>
+      <p class="level-result-note" data-bind="levelResultNote"></p>
+      <div class="level-result-actions">
+        <button type="button" class="btn btn--primary" data-action="level-result-primary"
+                data-bind="levelResultPrimary">进入下一关</button>
+        <button type="button" class="btn btn--link" data-action="level-result-end"
+                data-bind="levelResultEnd">结束体验</button>
+      </div>
     </div>
   </div>
 </div>
@@ -319,11 +405,14 @@
 <script src="js/worry-data.js"></script>
 <script src="js/gadget-data.js"></script>
 <script src="js/bubble-game.js"></script>
+<script src="js/game-state.js"></script>
+<script src="js/level-game.js"></script>
 <script src="js/scene-manager.js"></script>
 <!-- 三个前半段模块必须排在 app.js 之前：app.js 的 init() 会直接调它们。 -->
 <script src="js/dialogue.js"></script>
 <script src="js/worry-picker.js"></script>
 <script src="js/gadget-match.js"></script>
+<script src="js/intro-tunnel.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

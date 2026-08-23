@@ -1,30 +1,24 @@
 /**
- * worry-picker.js —— U3 烦恼选择（粒子悬浮场 → 展开列表 → 确认 → 飞进四次元口袋）
+ * worry-picker.js —— U3 烦恼选择（可旋转球形场 → 叠层列表 → 确认 → 飞进四次元口袋）
  *
  * 规格（UI 指令第 3 页）逐条对应到下面的实现：
- *   1. 九个素材在画面里**微幅漂移**            → startDrift()，rAF 写 --dx/--dy
- *   2. 悬停 → 位移到中央 + 放大 + 白雾模糊     → setFocus() 加 is-active/is-preview
- *   3. 素材上方浮出 3 条代表烦恼               → renderSubs() 的 preview 分支
- *   4. 点击类别 → 展开完整列表（最多 15 条）    → renderSubs() 的 open 分支
- *   5. 点某条 → 高亮 + 出「确认这些烦恼」       → pickWorry() + sync()
- *   6. 自由输入 → 推测类别 + 确认/返回继续选    → classifyFree()
- *   7. 置信度不足 → 请玩家手选，**不得随机发道具** → classifyFree() 的 low / null 分支
- *   8. 确认后缩成米白标签，沿 #049DBF 弧线飞入口袋 → flyPicks()
+ *   1. 九个素材分布在可拖拽 / 滚轮旋转的球面    → updateSphere() 做 3D 投影
+ *   2. 悬停只放大素材，不模糊、不显示细分烦恼   → CSS :hover 独立状态
+ *   3. 点击类别才展开完整列表（最多 15 条）      → renderSubs() 叠在素材上
+ *   4. 点某条 → 高亮 + 出「确认这些烦恼」       → pickWorry() + sync()
+ *   5. 自由输入 → 推测类别 + 确认/返回继续选    → classifyFree()
+ *   6. 置信度不足 → 请玩家手选，**不得随机发道具** → classifyFree() 的 low / null 分支
+ *   7. 确认后缩成米白标签，沿 #049DBF 弧线飞入口袋 → flyPicks()
  *
  * 选择是**多选，1~3 条**（CONFIG.WORRY_MAX_PICK），不是单选：
  *   · 同一条再点一次 = 取消，不需要另设一颗删除键；
  *   · 换大类**不清空**已选——多选的全部意义就在于跨大类挑；
- *   · 展开列表里有一条「← 返回全部类别」，它是从展开态回到粒子场的唯一出口
- *     （setFocus 与 pointerleave 在 openId 非空时都提前返回，靠悬停回不去）。
+ *   · 展开列表里有一条「← 返回全部类别」，它是从叠层返回球形场的明确出口。
  *
  * 两个容易踩的坑，改之前先读：
  *
- * A. 粒子**只建一次**。之后所有状态变化都只切 class，绝不 innerHTML 重建——
- *    重建出来的是新节点，CSS 过渡没有起始值，"飞到中央"会变成瞬移。
- *
- * B. 漂移写的是 CSS 的 `translate` 属性，不是 `transform`。
- *    居中放大用的是 transform，两者必须分开：如果漂移每帧改 transform，
- *    transition: transform 会被无限重启，等于没有过渡。
+ * 粒子**只建一次**。之后所有状态变化都只更新 CSS 变量与 class，绝不 innerHTML 重建；
+ * 否则拖拽中的节点会被替换，指针捕获和深度过渡都会立即失效。
  */
 'use strict';
 
@@ -33,14 +27,25 @@ const WorryPicker = (function () {
   let callbacks = null;
   /** @type {boolean} 九个粒子是否已经建好（只建一次） */
   let built = false;
-  /** @type {string} 当前居中放大的大类 id；'' 表示没有 */
+  /** @type {string} 当前被点击 / 分类器聚焦的大类 id；'' 表示没有 */
   let focusId = '';
-  /** @type {string} 已点开完整列表的大类 id；'' 表示只是悬停预览 */
+  /** @type {string} 已点开完整列表的大类 id；'' 表示列表关闭 */
   let openId = '';
-  /** @type {number} 指针离开后的收起延时句柄 */
-  let leaveTimer = 0;
-  /** @type {number} 漂移循环的 rAF 句柄 */
-  let driftRaf = 0;
+  /** @type {number} 合并 resize / wheel 更新的 rAF 句柄 */
+  let sphereRaf = 0;
+  /** @type {{x:number,y:number,z:number}[]} 九个素材在单位球面上的固定坐标 */
+  let spherePoints = [];
+  /** @type {number} 球面横向 / 纵向旋转角度（弧度） */
+  let rotationX = -0.08;
+  let rotationY = 0.42;
+  /** @type {boolean} u03 当前是否正在显示 */
+  let entered = false;
+  /** @type {boolean} 球面交互监听是否已经绑定 */
+  let sphereBound = false;
+  /** @type {{pointerId:number,startX:number,startY:number,lastX:number,lastY:number,moved:boolean,captureTarget:Element}|null} */
+  let drag = null;
+  /** @type {boolean} 拖拽结束后的那次 click 必须被吃掉，避免误选类别 */
+  let suppressClick = false;
   /** @type {boolean} 飞入口袋动画进行中，此时禁止重复确认 */
   let flying = false;
   /** @type {number[]} 飞行动画的兜底定时器（每条烦恼一个，外加错峰出发的那批） */
@@ -96,7 +101,7 @@ const WorryPicker = (function () {
     if (!list.length) {
       setHint(openId
         ? '挑一条最贴近此刻的，最多可以选 ' + CONFIG.WORRY_MAX_PICK + ' 条。'
-        : '把指针移到任意一个上面，看看里面有什么。');
+        : '拖拽或滚轮浏览，悬停放大，点击查看细分烦恼。');
       return;
     }
     const rest = CONFIG.WORRY_MAX_PICK - list.length;
@@ -114,7 +119,24 @@ const WorryPicker = (function () {
 
   /* ---------------- 粒子场 ---------------- */
 
-  /** 九个大类只建一次。位置来自 CSS 的 nth-child 槽位，这里不管坐标。 */
+  /** 用 Fibonacci sphere 生成均匀且确定的球面坐标。 */
+  function createSpherePoints(count) {
+    const points = [];
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < count; i += 1) {
+      const y = 1 - ((i + 0.5) / count) * 2;
+      const ring = Math.sqrt(Math.max(0, 1 - y * y));
+      const angle = i * goldenAngle + 0.6;
+      points.push({
+        x: Math.cos(angle) * ring,
+        y: y,
+        z: Math.sin(angle) * ring
+      });
+    }
+    return points;
+  }
+
+  /** 九个大类只建一次；位置由 updateSphere() 每次投影到屏幕。 */
   function buildParticles() {
     const container = node('worryCategories');
     if (!container || built) return;
@@ -130,40 +152,172 @@ const WorryPicker = (function () {
       container.appendChild(button);
     });
     particles = Array.prototype.slice.call(container.children);
+    spherePoints = createSpherePoints(particles.length);
     built = true;
   }
 
   /**
-   * 微幅漂移。用两条不同周期的正弦错开，九个粒子各带相位，看起来才不像整排一起晃。
-   * reduced-motion 下整个循环不启动（CLAUDE.md 硬要求）。
+   * 把单位球上的点旋转后投影到 2D。z 越靠近玩家，尺寸和不透明度越大；
+   * 点击后的 active 素材会从球面抬到观察中心，完整细分列表叠在它上面。
    */
-  function startDrift() {
-    if (driftRaf || reducedMotion() || !particles.length) return;
-    const amp = CONFIG.WORRY_DRIFT_PX;
-    const period = CONFIG.WORRY_DRIFT_MS;
-    driftRaf = window.requestAnimationFrame(function step(now) {
-      const t = (now / period) * Math.PI * 2;
-      for (let i = 0; i < particles.length; i += 1) {
-        const p = particles[i];
-        // 居中放大的那个不参与漂移：它的位置正由 CSS 过渡接管，
-        // 每帧再叠一层位移会让停位一直抖。
-        if (p.classList.contains('is-active')) {
-          p.style.setProperty('--dx', '0px');
-          p.style.setProperty('--dy', '0px');
-          continue;
-        }
-        const phase = i * 0.7;
-        p.style.setProperty('--dx', (Math.sin(t + phase) * amp).toFixed(2) + 'px');
-        p.style.setProperty('--dy', (Math.cos(t * 0.83 + phase * 1.3) * amp).toFixed(2) + 'px');
-      }
-      driftRaf = window.requestAnimationFrame(step);
+  function updateSphere() {
+    sphereRaf = 0;
+    const container = node('worryCategories');
+    if (!container || !particles.length) return;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width < 2 || height < 2) return;
+
+    const centerX = width * 0.63;
+    const centerY = height * 0.39;
+    const radiusX = Math.min(width * 0.39, height * 0.68);
+    const radiusY = Math.min(height * 0.29, width * 0.23);
+    const sinX = Math.sin(rotationX);
+    const cosX = Math.cos(rotationX);
+    const sinY = Math.sin(rotationY);
+    const cosY = Math.cos(rotationY);
+
+    particles.forEach(function (particle, i) {
+      const point = spherePoints[i];
+      const x1 = point.x * cosY + point.z * sinY;
+      const z1 = -point.x * sinY + point.z * cosY;
+      const y2 = point.y * cosX - z1 * sinX;
+      const z2 = point.y * sinX + z1 * cosX;
+      const depth = (z2 + 1) / 2;
+      const perspective = 0.84 + depth * 0.22;
+      const active = particle.dataset.category === focusId;
+      const x = active ? centerX : centerX + x1 * radiusX * perspective;
+      const y = active ? centerY : centerY + y2 * radiusY * perspective;
+      const scale = active ? 1.12 : 0.52 + depth * 0.66;
+      const opacity = active ? 1 : 0.38 + depth * 0.62;
+
+      particle.style.setProperty('--sphere-x', x.toFixed(2) + 'px');
+      particle.style.setProperty('--sphere-y', y.toFixed(2) + 'px');
+      particle.style.setProperty('--sphere-scale', scale.toFixed(3));
+      particle.style.opacity = opacity.toFixed(3);
+      particle.style.zIndex = String(active ? 70 : 10 + Math.round(depth * 40));
+      particle.dataset.depth = depth.toFixed(3);
     });
+
+    const subs = node('worrySubs');
+    if (subs && openId) {
+      subs.style.left = centerX.toFixed(2) + 'px';
+      subs.style.top = centerY.toFixed(2) + 'px';
+    }
   }
 
-  function stopDrift() {
-    if (!driftRaf) return;
-    window.cancelAnimationFrame(driftRaf);
-    driftRaf = 0;
+  function requestSphereUpdate() {
+    if (sphereRaf) return;
+    sphereRaf = window.requestAnimationFrame(updateSphere);
+  }
+
+  function startSphere() {
+    entered = true;
+    requestSphereUpdate();
+  }
+
+  function stopSphere() {
+    entered = false;
+    drag = null;
+    const container = node('worryCategories');
+    if (container) container.classList.remove('is-dragging');
+    if (!sphereRaf) return;
+    window.cancelAnimationFrame(sphereRaf);
+    sphereRaf = 0;
+  }
+
+  function clampTilt(value) {
+    return Math.max(-1.12, Math.min(1.12, value));
+  }
+
+  /**
+   * 鼠标 / 触控拖拽旋转球面；滚轮沿另一方向浏览。
+   * 点击与拖拽通过移动阈值拆开，避免拖完球面顺手点开一个大类。
+   */
+  function bindSphere() {
+    const container = node('worryCategories');
+    if (!container || sphereBound) return;
+    sphereBound = true;
+
+    container.addEventListener('dragstart', function (event) { event.preventDefault(); });
+
+    container.addEventListener('pointerdown', function (event) {
+      if (!entered || openId || flying || event.button !== 0) return;
+      const captureTarget = (event.target && typeof event.target.setPointerCapture === 'function')
+        ? event.target
+        : container;
+      drag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        moved: false,
+        captureTarget: captureTarget
+      };
+      captureTarget.setPointerCapture(event.pointerId);
+      container.classList.add('is-dragging');
+    });
+
+    container.addEventListener('pointermove', function (event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const totalX = event.clientX - drag.startX;
+      const totalY = event.clientY - drag.startY;
+      if (!drag.moved && Math.hypot(totalX, totalY) >= CONFIG.WORRY_SPHERE_DRAG_THRESHOLD_PX) {
+        drag.moved = true;
+      }
+      if (!drag.moved) return;
+      const dx = event.clientX - drag.lastX;
+      const dy = event.clientY - drag.lastY;
+      drag.lastX = event.clientX;
+      drag.lastY = event.clientY;
+      rotationY += dx * CONFIG.WORRY_SPHERE_DRAG_RAD_PER_PX;
+      rotationX = clampTilt(rotationX - dy * CONFIG.WORRY_SPHERE_DRAG_RAD_PER_PX);
+      updateSphere();
+    });
+
+    function endDrag(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      suppressClick = drag.moved;
+      const captureTarget = drag.captureTarget;
+      if (captureTarget.hasPointerCapture(event.pointerId)) captureTarget.releasePointerCapture(event.pointerId);
+      drag = null;
+      container.classList.remove('is-dragging');
+      window.setTimeout(function () { suppressClick = false; }, 0);
+    }
+
+    container.addEventListener('pointerup', endDrag);
+    container.addEventListener('pointercancel', endDrag);
+    container.addEventListener('click', function (event) {
+      if (!suppressClick) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+
+    container.addEventListener('wheel', function (event) {
+      if (!entered || openId || flying) return;
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : (event.deltaMode === 2 ? container.clientHeight : 1);
+      rotationY += event.deltaY * unit * CONFIG.WORRY_SPHERE_WHEEL_RAD_PER_DELTA;
+      rotationX = clampTilt(rotationX - event.deltaX * unit * CONFIG.WORRY_SPHERE_WHEEL_RAD_PER_DELTA);
+      requestSphereUpdate();
+    }, { passive: false });
+
+    container.addEventListener('keydown', function (event) {
+      if (!entered || openId) return;
+      const step = CONFIG.WORRY_SPHERE_KEY_STEP_RAD;
+      if (event.key === 'ArrowLeft') rotationY -= step;
+      else if (event.key === 'ArrowRight') rotationY += step;
+      else if (event.key === 'ArrowUp') rotationX = clampTilt(rotationX + step);
+      else if (event.key === 'ArrowDown') rotationX = clampTilt(rotationX - step);
+      else return;
+      event.preventDefault();
+      requestSphereUpdate();
+    });
+
+    window.addEventListener('resize', function () {
+      if (entered) requestSphereUpdate();
+    });
   }
 
   /* ---------------- 状态同步（只切 class，不重建） ---------------- */
@@ -173,10 +327,8 @@ const WorryPicker = (function () {
     particles.forEach(function (p) {
       const isFocus = p.dataset.category === focusId;
       p.classList.toggle('is-active', isFocus);
-      // is-preview 只在"悬停预览"时加：加了才有白雾模糊。
-      // 已经点开的类别、以及自由输入刚推测出来的那个，都是玩家的当前选择，
-      // 必须看得清——尤其后者：面板正指着它说「更接近这一类」，蒙上白雾就白说了。
-      p.classList.toggle('is-preview', isFocus && !openId && !list.length);
+      p.classList.remove('is-preview');
+      p.setAttribute('aria-expanded', String(Boolean(openId && isFocus)));
       // 已经贡献了选择的大类留一枚记号。跨大类挑的时候，
       // 玩家从展开态退回粒子场，得一眼看出哪几类已经拿过了。
       p.classList.toggle('is-chosen', list.some(function (item) {
@@ -191,6 +343,7 @@ const WorryPicker = (function () {
       root.classList.toggle('is-picked', list.length > 0);
     }
     renderSubs();
+    requestSphereUpdate();
     const confirm = node('confirmWorry');
     if (confirm) {
       confirm.disabled = !list.length || flying;
@@ -202,8 +355,7 @@ const WorryPicker = (function () {
   }
 
   /**
-   * 上方的细分条目。悬停预览给 3 条（WORRY_SUB_COUNT），
-   * 点开后给完整列表（最多 WORRY_LIST_MAX 条，超过 4 条自动改紧凑分栏）。
+   * 细分条目只在点击后出现，完整列表叠在被点击素材上。
    * 这个容器由 innerHTML 重建，里面**不许**出现 data-bind 节点。
    */
   function renderSubs() {
@@ -211,18 +363,13 @@ const WorryPicker = (function () {
     if (!box) return;
     box.innerHTML = '';
     box.classList.remove('worry-subs--full');
-    if (!focusId) return;
+    box.setAttribute('aria-hidden', 'true');
+    if (!openId) return;
 
     const chosen = picks();
-    let list;
-    if (openId) {
-      list = (WorryData.byCategory(openId) || []).slice(0, CONFIG.WORRY_LIST_MAX);
-    } else {
-      const preview = WorryData.hoverPreview(focusId) || [];
-      list = (preview.length ? preview : WorryData.byCategory(focusId) || [])
-        .slice(0, CONFIG.WORRY_SUB_COUNT);
-    }
-    if (list.length > CONFIG.WORRY_LIST_COLUMN_AFTER) box.classList.add('worry-subs--full');
+    const list = (WorryData.byCategory(openId) || []).slice(0, CONFIG.WORRY_LIST_MAX);
+    box.classList.add('worry-subs--full');
+    box.setAttribute('aria-hidden', 'false');
 
     // 「← 返回全部类别」建在这个容器里，而不是场景上另摆一颗绝对定位的按钮：
     // u03 的版面已经被五块禁区排满，独立按钮在三档分辨率里总有一档要压到粒子。
@@ -250,47 +397,6 @@ const WorryPicker = (function () {
     });
   }
 
-  /* ---------------- 悬停预览 ---------------- */
-
-  /**
-   * 悬停切焦点。有一个反直觉的地方：粒子一旦飞到中央，指针就"离开"了它，
-   * 于是 pointerout 立刻触发 → 收起 → 飞回原位 → 指针又碰到它……来回抖。
-   * 所以这里的规则是：**预览不由自己的 pointerout 收起**，
-   * 只有指针碰到别的粒子、或整块离开 u03 时才换/收。
-   */
-  function setFocus(id) {
-    if (openId) return;               // 已经点开列表，悬停不再抢焦点
-    if (focusId === id) return;
-    focusId = id;
-    sync();
-  }
-
-  function bindHover() {
-    const container = node('worryCategories');
-    const root = scene();
-    if (!container || !root) return;
-
-    // pointerover / pointerout 会冒泡（pointerenter / leave 不会），
-    // 容器上的 pointer-events:none 只影响命中测试，不影响冒泡，所以委托是安全的。
-    container.addEventListener('pointerover', function (event) {
-      const particle = event.target.closest && event.target.closest('.worry-particle');
-      if (!particle) return;
-      window.clearTimeout(leaveTimer);
-      setFocus(particle.dataset.category);
-    });
-
-    // 指针移出整页才收预览。留一点缓冲，免得擦边划过就闪一下。
-    root.addEventListener('pointerleave', function () {
-      if (openId) return;
-      window.clearTimeout(leaveTimer);
-      leaveTimer = window.setTimeout(function () {
-        if (openId) return;
-        focusId = '';
-        sync();
-      }, CONFIG.WORRY_LEAVE_MS);
-    });
-  }
-
   /* ---------------- 选择 ---------------- */
 
   /**
@@ -299,7 +405,6 @@ const WorryPicker = (function () {
    */
   function pickCategory(categoryId) {
     if (!categoryId || flying) return;
-    window.clearTimeout(leaveTimer);
     focusId = categoryId;
     openId = categoryId;
     hidePanel();
@@ -315,7 +420,6 @@ const WorryPicker = (function () {
   /** 从展开的完整列表回到九宫粒子场。推测面板上的「返回继续选」也走这里。 */
   function backToCategories() {
     if (flying) return;
-    window.clearTimeout(leaveTimer);
     openId = '';
     focusId = '';
     hidePanel();
@@ -583,7 +687,6 @@ const WorryPicker = (function () {
     focusId = '';
     openId = '';
     flying = false;
-    window.clearTimeout(leaveTimer);
     clearFlyTimers();
     hidePanel();
     const field = document.getElementById('worry-text');
@@ -607,14 +710,13 @@ const WorryPicker = (function () {
     }
     flying = false;
     sync();
-    startDrift();
+    startSphere();
     if (list.length) syncHint();
-    else setHint('把指针移到任意一个上面，看看里面有什么。');
+    else setHint('拖拽或滚轮浏览，悬停放大，点击查看细分烦恼。');
   }
 
   function exit() {
-    stopDrift();
-    window.clearTimeout(leaveTimer);
+    stopSphere();
     clearFlyTimers();
     flying = false;
     const root = scene();
@@ -625,7 +727,7 @@ const WorryPicker = (function () {
   function mount(handlers) {
     callbacks = handlers || null;
     buildParticles();
-    bindHover();
+    bindSphere();
     sync();
   }
 

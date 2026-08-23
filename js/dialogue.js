@@ -1,195 +1,271 @@
 /**
- * dialogue.js —— U2 哆啦A梦引导对话（五轮，逐句推进）
+ * dialogue.js —— U02 烦恼分类前的连续引导分镜
  *
- * 规格（UI 指令第 2 页）三条硬要求，实现时都不要绕开：
- *   1. 每次只出现 1～2 句，上一句降低透明度，不许一屏堆满长文；
- *   2. 点「继续」或按空格推进，末句后主按钮改成「去选择烦恼」；
- *   3. 独裁者按钮此时只是剧情提示，玩家不允许提前按下。
+ * Word 新流程被收进一个 U02 场景内部，避免改动 U03 及后续场景编号：
+ *   1. 首页点击后，青色由中心扩满；右下白洞与无按钮哆啦A梦出现；
+ *   2. 点击切换两句欢迎对白；
+ *   3. 向下滚动进入 4×2 道具陈列，再滚动一次转为玩家提问；
+ *   4. 玩家提问后直接进入独裁者按钮说明，再查看体验流程；
+ *   5. 最后一次点击交还 app.js，由它进入原有 U03 烦恼分类。
  *
- * 页面上没有大型对话框——规格明写「不使用大型聊天框」「不要大型对话框」，
- * 所以台词直接落在左侧的标题槽里，靠 prev/title/note 三个固定节点轮换。
- * 三个节点首屏静态存在、此后只改 textContent，不重建（App.bind 是永不失效的正向缓存）。
+ * 所有文本都写入固定 DOM，不重建节点；字体完全继承 style.css 的 --ff。
  */
 'use strict';
 
 const Dialogue = (function () {
-  /**
-   * 台词逐字取自 UI 指令第 2 页的「对话」段落，一句不删。
-   * 规格是**五轮发言**（哆啦A梦 3 次 + 玩家 2 次），但同时要求「每次只出现 1～2 句」，
-   * 所以五轮按句切成 8 屏——轮数和屏数本来就不是一回事，不要为了凑 5 屏去砍句子。
-   * lead 是当前这句（大标题），note 是同一屏的第二句（下方补充说明）。
-   *
-   * 唯一的改写：原文「也可以在思考云朵中写下自己的烦恼」里的「思考云朵」
-   * 在 U3 上并不存在（那页的自由输入是一条下划线输入框），
-   * 照抄会让玩家在下一页找一个找不到的东西，所以改成与 U3 实际文案一致的说法。
-   *
-   * 改这里的任何一个字，都必须重跑 assets/dev/_build-fonts.py，否则新字掉回默认字形。
-   */
-  const ROUNDS = [
+  const STAGES = [
     {
-      speaker: '哆啦A梦',
-      lead: '嗨！欢迎来到「22世纪未来道具体验馆」。',
-      note: '在这里你可以体验各种各样的道具，并用它们解决不同的问题！'
+      id: 'welcome-a', panel: 'welcome', tone: 'primary', input: 'click',
+      welcome: '嗨！欢迎来到22世纪未来道具体验馆。',
+      announce: '哆啦A梦：嗨！欢迎来到22世纪未来道具体验馆。点击对话继续。'
     },
     {
-      speaker: '你',
-      lead: '哆啦A梦，我最近好烦啊。',
-      note: '有什么道具可以帮我消除烦恼的吗？'
+      id: 'welcome-b', panel: 'welcome', tone: 'primary', input: 'wheel',
+      welcome: '在这里你可以体验各种各样的道具，并用它们解决不同的问题！',
+      scroll: '滚轮向下浏览道具',
+      announce: '哆啦A梦：在这里你可以体验各种各样的道具，并用它们解决不同的问题。向下滚动继续。'
     },
     {
-      speaker: '哆啦A梦',
-      lead: '喏，这是独裁者按钮。',
-      note: '只要说出想让谁消失并按下它，对方就会从世界以及所有人的记忆中暂时消失。'
+      id: 'gallery', panel: 'gallery', tone: 'primary', input: 'wheel',
+      scroll: '继续滚动，向哆啦A梦提问',
+      announce: '未来道具陈列。继续向下滚动，向哆啦A梦提问。'
     },
     {
-      speaker: '哆啦A梦',
-      lead: '不过，消失不一定等于真正解决。',
-      note: '请谨慎使用，它可能会影响你接下来的每一步。'
+      id: 'question', panel: 'question', tone: 'paper', input: 'click',
+      announce: '你：哆啦A梦，我最近好烦啊。有什么道具可以帮我消除烦恼的吗？点击继续。'
     },
     {
-      speaker: '你',
-      lead: '这个道具还挺有意思的，',
-      note: '那体验流程是什么呢？'
+      id: 'info', panel: 'info', tone: 'paper', input: 'click',
+      announce: '独裁者按钮的功能与风险说明。点击继续。'
     },
     {
-      speaker: '哆啦A梦',
-      lead: '接下来，你需要先从不同类别中选择一个此刻最困扰你的烦恼；',
-      note: '如果没有合适的选项，也可以自己写下烦恼。'
-    },
-    {
-      speaker: '哆啦A梦',
-      lead: '我会根据你选择的内容，从四次元口袋里匹配相应的未来道具。',
-      note: '然后，你将会进入烦恼消除环节，这是最解压也是最刺激的一个体验环节啦！'
-    },
-    {
-      speaker: '哆啦A梦',
-      lead: '通过使用道具，你可以进行消除烦恼等其他操作。',
-      note: '准备好后，就去选出你现在最想摆脱的烦恼吧！'
+      id: 'guide', panel: 'guide', tone: 'paper', input: 'click',
+      announce: '烦恼选择与未来道具匹配流程说明。点击去选择烦恼。'
     }
   ];
 
-  /** @type {{onFinish: Function}|null} 末句后再点「继续」时回调，由 app.js 决定翻页。 */
+  /** @type {{onFinish: Function}|null} */
   let callbacks = null;
-  /** @type {number} 当前轮次下标 */
   let index = 0;
-  /** @type {number} 上一次推进的时间戳，用于 DIALOGUE_LINE_MS 防连点 */
+  let enteredAt = 0;
   let lastAdvanceAt = 0;
-  /** @type {boolean} 空格键监听只挂一次 */
+  let wheelTotal = 0;
+  let lastWheelAt = 0;
+  let wheelGestureUsed = false;
   let keyBound = false;
+  let wheelBound = false;
 
   function node(name) {
     return document.querySelector('[data-bind="' + name + '"]');
+  }
+
+  function scene() {
+    return document.querySelector('[data-scene="u02"]');
+  }
+
+  function currentStage() {
+    return STAGES[index] || STAGES[0];
   }
 
   function reducedMotion() {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
-  function pad(value) {
-    return (value < 10 ? '0' : '') + value;
+  function clock() {
+    return window.performance && typeof window.performance.now === 'function'
+      ? window.performance.now()
+      : Date.now();
   }
 
-  /** 把第 i 轮画到三个固定文本槽里。i-1 轮留在 prev 槽，靠 CSS 降透明度。 */
+  function setPanelInteractive(panel, active) {
+    panel.classList.toggle('is-active', active);
+    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+
+    // aria-hidden 不会自动移出键盘焦点序列。inert 是主路径，tabindex 是旧浏览器后备。
+    panel.inert = !active;
+    panel.querySelectorAll('button, a, input, textarea, select').forEach(function (control) {
+      if (active) control.removeAttribute('tabindex');
+      else control.setAttribute('tabindex', '-1');
+    });
+  }
+
+  function replayTextAnimation(textNode) {
+    if (!textNode || reducedMotion()) return;
+    textNode.classList.remove('is-fresh');
+    void textNode.offsetWidth;
+    textNode.classList.add('is-fresh');
+  }
+
   function render() {
-    const round = ROUNDS[index];
-    if (!round) return;
+    const root = scene();
+    const stage = currentStage();
+    if (!root || !stage) return;
 
-    const tag = node('dialogueTag');
-    const prev = node('dialoguePrev');
-    const lead = node('dialogueText');
-    const note = node('dialogueNote');
-    const page = node('dialoguePage');
-    const next = node('dialogueNext');
-    const cue = node('dialogueCue');
+    root.dataset.dialogueStage = stage.id;
+    root.dataset.dialogueTone = stage.tone;
+    document.body.dataset.u02Tone = stage.tone;
 
-    if (tag) tag.textContent = 'STEP 02 · ' + round.speaker;
-    if (prev) {
-      const before = ROUNDS[index - 1];
-      prev.textContent = before ? before.lead : '';
-      prev.classList.toggle('is-visible', Boolean(before));
-    }
-    if (lead) lead.textContent = round.lead;
-    if (note) note.textContent = round.note;
-    if (page) page.textContent = pad(index + 1) + ' / ' + pad(ROUNDS.length);
+    root.querySelectorAll('[data-u02-panel]').forEach(function (panel) {
+      setPanelInteractive(panel, panel.dataset.u02Panel === stage.panel);
+    });
 
-    // 末句才把主按钮换成出口文案；在此之前它只是翻句。
-    if (next) next.textContent = isLast() ? '去选择烦恼' : '继续';
-
-    // 独裁者按钮的剧情提示：从「喏，这是独裁者按钮」那一轮起浮出，之后不再收回。
-    if (cue) {
-      cue.classList.toggle('is-visible', index + 1 >= CONFIG.DIALOGUE_CUE_ROUND);
+    const welcomeText = node('dialogueWelcomeText');
+    const welcomeBubble = node('dialogueBubble');
+    if (stage.welcome && welcomeText) {
+      welcomeText.textContent = stage.welcome;
+      replayTextAnimation(welcomeText);
     }
 
-    // 换句时给标题一次极短的淡入，reduced-motion 下直接省略。
-    if (lead && !reducedMotion()) {
-      lead.classList.remove('is-fresh');
-      // 强制回流，否则同一帧内移除再添加，动画不会重放。
-      void lead.offsetWidth;
-      lead.classList.add('is-fresh');
+    // 第一轮对白按 Word 用点击推进；第二轮同一气泡保留，但必须滚轮推进。
+    if (welcomeBubble) {
+      const clickable = stage.id === 'welcome-a';
+      if (clickable) {
+        welcomeBubble.dataset.action = 'next';
+        welcomeBubble.removeAttribute('tabindex');
+        welcomeBubble.removeAttribute('aria-disabled');
+        welcomeBubble.setAttribute('aria-label', '哆啦A梦的对话，点击继续');
+      } else {
+        welcomeBubble.removeAttribute('data-action');
+        welcomeBubble.setAttribute('tabindex', '-1');
+        welcomeBubble.setAttribute('aria-disabled', 'true');
+        welcomeBubble.setAttribute('aria-label', '哆啦A梦的对话，向下滚动继续');
+      }
     }
+
+    const scrollCue = node('dialogueScrollCue');
+    const scrollText = node('dialogueScrollText');
+    const needsWheel = stage.input === 'wheel';
+    if (scrollCue) {
+      scrollCue.setAttribute('aria-hidden', needsWheel ? 'false' : 'true');
+      scrollCue.setAttribute('tabindex', needsWheel ? '0' : '-1');
+    }
+    if (scrollText && stage.scroll) scrollText.textContent = stage.scroll;
+
+    const status = node('dialogueStatus');
+    if (status) status.textContent = stage.announce || '';
   }
 
   function isLast() {
-    return index >= ROUNDS.length - 1;
+    return index >= STAGES.length - 1;
   }
 
   /**
-   * 推进一句。已经是末句时返回 false，由 app.js 接着翻页。
-   * DIALOGUE_LINE_MS 是最小停留：防止连点或长按空格一口气刷掉全部台词。
+   * 推进一个内部分镜。只有在最后一屏返回 false，让 app.js 进入 U03。
+   * 被最小停留拦住时返回 true：这次输入已被 U02 消费，不能顺势翻到下一场景。
    */
-  function advance() {
-    const now = performance.now();
-    if (now - lastAdvanceAt < CONFIG.DIALOGUE_LINE_MS) return true;
+  function advance(source) {
+    const now = clock();
+    if (index === 0 && now - enteredAt < Number(CONFIG.DIALOGUE_ENTRY_LOCK_MS)) return true;
+    const wait = source === 'wheel'
+      ? Number(CONFIG.DIALOGUE_WHEEL_LOCK_MS || CONFIG.DIALOGUE_LINE_MS)
+      : Number(CONFIG.DIALOGUE_LINE_MS);
+    if (now - lastAdvanceAt < wait) return true;
     if (isLast()) return false;
-    lastAdvanceAt = now;
+
     index += 1;
+    lastAdvanceAt = now;
+    wheelTotal = 0;
     render();
     return true;
   }
 
-  /** 场景进入：从第一轮重新讲起。 */
-  function enter() {
-    index = 0;
-    lastAdvanceAt = performance.now();
-    render();
+  function finishFromKeyboard() {
+    if (callbacks && typeof callbacks.onFinish === 'function') callbacks.onFinish();
   }
 
-  /**
-   * 空格键推进。只在 u02 生效，且输入框聚焦时让位给正常输入。
-   * 监听挂在 document 上一次，不随场景反复增删——避免退出重进后堆叠多份。
-   */
+  function normalizedWheelDelta(event) {
+    if (event.deltaMode === 1) return event.deltaY * 16;
+    if (event.deltaMode === 2) return event.deltaY * Math.max(window.innerHeight, 1);
+    return event.deltaY;
+  }
+
+  /** 一次触控板惯性序列最多推进一个分镜，停顿后下一次滚动才可再推进。 */
+  function handleWheel(event) {
+    if (document.body.dataset.currentScene !== 'u02') return;
+    if (currentStage().input !== 'wheel') return;
+
+    const delta = normalizedWheelDelta(event);
+    if (delta <= 0) return;
+    event.preventDefault();
+
+    const now = clock();
+    if (now - lastWheelAt > 240) {
+      wheelTotal = 0;
+      wheelGestureUsed = false;
+    }
+    lastWheelAt = now;
+    if (wheelGestureUsed) return;
+    if (now - lastAdvanceAt < Number(CONFIG.DIALOGUE_WHEEL_LOCK_MS)) return;
+
+    wheelTotal += delta;
+    if (wheelTotal < Number(CONFIG.DIALOGUE_WHEEL_THRESHOLD)) return;
+
+    wheelGestureUsed = true;
+    wheelTotal = 0;
+    advance('wheel');
+  }
+
+  function bindWheel() {
+    if (wheelBound) return;
+    wheelBound = true;
+    window.addEventListener('wheel', handleWheel, { passive: false });
+  }
+
+  /** 空格始终可作为后备推进；滚轮分镜另支持方向下键与 PageDown。 */
   function bindKeys() {
     if (keyBound) return;
     keyBound = true;
     document.addEventListener('keydown', function (event) {
-      if (event.key !== ' ' && event.key !== 'Spacebar') return;
       if (document.body.dataset.currentScene !== 'u02') return;
       const active = document.activeElement;
       if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
-      // 空格默认会滚动页面，也会"按下"当前聚焦的按钮——两者都要拦掉，
-      // 否则一次空格会翻两句。
+
+      const isSpace = event.key === ' ' || event.key === 'Spacebar';
+      const isWheelKey = currentStage().input === 'wheel'
+        && (event.key === 'ArrowDown' || event.key === 'PageDown');
+      if (!isSpace && !isWheelKey) return;
+
       event.preventDefault();
-      if (!advance() && callbacks && typeof callbacks.onFinish === 'function') {
-        callbacks.onFinish();
-      }
+      if (!advance('keyboard')) finishFromKeyboard();
     });
   }
 
   function mount(handlers) {
     callbacks = handlers || null;
     bindKeys();
+    bindWheel();
   }
 
-  /** 「继续」按钮：还有下一句就翻句，末句则交给 app.js 翻页。 */
+  /** 每次进入 U02 都从白洞出场重新开始，与原来对话模块的重入行为一致。 */
+  function enter() {
+    index = 0;
+    enteredAt = clock();
+    lastAdvanceAt = enteredAt;
+    wheelTotal = 0;
+    lastWheelAt = 0;
+    wheelGestureUsed = false;
+    render();
+  }
+
+  function exit() {
+    delete document.body.dataset.u02Tone;
+    wheelTotal = 0;
+    lastWheelAt = 0;
+    wheelGestureUsed = false;
+  }
+
+  /** data-action="next" 的统一入口；内部没讲完就消费，末屏才放行到 U03。 */
   function next() {
-    return advance();
+    return advance('click');
   }
 
   return {
     mount: mount,
     enter: enter,
+    exit: exit,
     next: next,
     isLast: isLast,
-    total: ROUNDS.length
+    stageId: function () { return currentStage().id; },
+    total: STAGES.length
   };
 })();

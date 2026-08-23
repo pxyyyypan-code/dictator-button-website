@@ -16,7 +16,7 @@ const appData = {
   pickedCategory: '',
   selectedWorries: [],      // WorryData.createProfile 的返回值，按选中顺序
   matchedGadgets: [],       // GadgetData 记录，和上面一一对应
-  worries: [],              // 送进 BubbleGame 的泡泡文案：选中的烦恼 + 同类兄弟
+  worries: [],              // 送进 BubbleGame 的泡泡文案：只包含玩家实际选中的烦恼
 
   // ---- 沉浸段计数（u06~u10）----
   bubbles: [],
@@ -39,6 +39,12 @@ const appData = {
   returnChoiceVisible: false,
   returnChoiceResolved: false,
   erasureFallbackTimer: 0,
+
+  // ---- 三关状态机（u06~u10）----
+  gameSessionStarted: false,
+  gameResolving: false,
+  levelResult: null,
+  latestGameStats: null,
 
   // ---- 结尾段（u11 / u12）----
   dialogueIndex: 0,
@@ -94,7 +100,6 @@ const App = (function () {
 
   function resetData() {
     stopAllTickers();
-    hideReturnChoice();
     appData.pickedCategory = '';
     appData.selectedWorries.length = 0;
     appData.matchedGadgets.length = 0;
@@ -115,11 +120,17 @@ const App = (function () {
     appData.chaosLevel = 0;
     appData.returnChoiceVisible = false;
     appData.returnChoiceResolved = false;
+    appData.gameSessionStarted = false;
+    appData.gameResolving = false;
+    appData.levelResult = null;
+    appData.latestGameStats = null;
     appData.dialogueIndex = 0;
     appData.selectedWorryText = '';
     appData.finalChoice = '';
     appData.observeSelected = false;
     BubbleGame.destroy();
+    LevelGame.destroy();
+    GameState.reset();
   }
 
   /* ---------------- u03 选择烦恼：留在 app.js 的那一半 ---------------- */
@@ -129,48 +140,18 @@ const App = (function () {
   // 它们的消费者是 u06 和 u11，不属于选择页，所以没有跟着搬走。
 
   /**
-   * 沉浸段的泡泡不只放选中的那几条：
-   * 同一大类的兄弟烦恼一起进场，才撑得起「已处理 0 / 12」的场面。
-   * 选中的那几条永远排在最前，保证它们一定出现在首批泡泡里。
-   *
-   * 兄弟按大类**轮流**取（round-robin），不是把第一类抽干再抽第二类：
-   * 选了三条就该三类的烦恼都在场上飘，否则玩家看到的还是单一类别的泡泡场。
+   * 泡泡文案必须严格来自玩家实际选中的细分烦恼。
+   * 泡泡数量由 BubbleGame 重复使用这些已选条目来补足，不能再从所属大类
+   * 随机加入“同类兄弟”，否则选中“作业太多”后会混入全部学业烦恼。
    */
   function buildWorryField() {
     appData.worries.length = 0;
-    if (!appData.selectedWorries.length) return;
     const seen = Object.create(null);
     appData.selectedWorries.forEach(function (worry) {
+      if (!worry || !worry.text || seen[worry.text]) return;
       seen[worry.text] = true;
       appData.worries.push(worry);
     });
-
-    // 每个已选大类各留一份兄弟队列，同一大类被选中两条时只留一份，避免重复配额。
-    const queues = [];
-    appData.selectedWorries.forEach(function (worry) {
-      if (queues.some(function (q) { return q.category === worry.category; })) return;
-      queues.push({ category: worry.category, list: (WorryData.byCategory(worry.category) || []).slice(), i: 0 });
-    });
-
-    let alive = true;
-    while (alive && appData.worries.length < CONFIG.WORRY_SIBLING_COUNT) {
-      alive = false;
-      for (let q = 0; q < queues.length; q += 1) {
-        const queue = queues[q];
-        while (queue.i < queue.list.length && seen[queue.list[queue.i].text]) queue.i += 1;
-        if (queue.i >= queue.list.length) continue;
-        alive = true;
-        const preset = queue.list[queue.i];
-        queue.i += 1;
-        seen[preset.text] = true;
-        appData.worries.push(WorryData.createProfile(preset.text, {
-          presetId: preset.id,
-          category: preset.category,
-          behaviorType: preset.behaviorType
-        }));
-        if (appData.worries.length >= CONFIG.WORRY_SIBLING_COUNT) break;
-      }
-    }
   }
 
   /**
@@ -261,552 +242,353 @@ const App = (function () {
     if (!GadgetMatch.renderResult()) SceneManager.goToId('u03');
   }
 
-  /* ---------------- 连续泡泡体验（u06~u10） ---------------- */
+  /* ---------------- 三关透明麻袋游戏（u06~u10） ---------------- */
 
   function immersiveScene() {
     return document.querySelector('[data-scene="u06"]');
   }
 
-  function setImmersivePhase(phase) {
+  function selectedWorryLabel() {
+    return appData.selectedWorries.map(function (item) { return item.text; }).join('、') || '尚未说出口的烦恼';
+  }
+
+  function formatTime(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(value / 60);
+    const rest = value % 60;
+    return String(minutes).padStart(2, '0') + ':' + String(rest).padStart(2, '0');
+  }
+
+  function closeLevelResult() {
+    const modal = bind('levelResult');
+    if (!modal) return;
+    modal.classList.remove('modal--open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function setLevelCopy(level) {
     const scene = immersiveScene();
-    if (!scene) return;
-    ['calm', 'growth', 'ready', 'erasing', 'blank', 'return'].forEach(function (name) {
-      scene.classList.toggle('phase-' + name, phase === name);
-    });
-    scene.dataset.phase = phase;
-    window.requestAnimationFrame(refreshAvoidRects);
+    if (scene) {
+      scene.dataset.level = String(level.level);
+      scene.dataset.bag = String(level.bag);
+      scene.dataset.branch = level.key;
+    }
+    setText('gameLevel', '第' + ['零', '一', '二', '三'][level.level] + '关');
+    setText('gameTitle', level.level === 3
+      ? '看看这些泡泡最后会去哪里'
+      : '在时间结束前，清空麻袋里的泡泡');
+    setText('gameWorry', selectedWorryLabel());
+    setText('gameBagLabel', '透明束缚袋');
+    setText('gameTimer', formatTime(level.duration));
+    setText('gameStatus', '');
+    setText('gameButtonHint', level.level === 3
+      ? '你仍然可以选择按下它'
+      : '可以立即清空眼前的泡泡，但之后会发生变化');
   }
 
-  function setContinuousCopy(tag, title, desc) {
-    setText('continuousTag', tag);
-    setText('continuousTitle', title);
-    setText('continuousDesc', desc);
-  }
-
-  function setImmersiveStatus(message) {
-    setText('immersiveStatus', message || '');
-  }
-
-  function syncGameStats() {
-    if (appData.currentScene === 'u10') {
-      // 重现阶段：只展示尝试次数与当前数量，不出现“删除成功”。
-      setText('primaryMetricLabel', '删除尝试');
-      setText('primaryMetricValue', appData.returnDeleteAttemptCount);
-      setText('bubbleMetricValue', BubbleGame.getBubbleCount());
-      setText('systemMetricValue', '再次出现');
+  function startCurrentLevel() {
+    const level = GameState.current();
+    if (!appData.worries.length) {
+      SceneManager.goToId('u03');
       return;
     }
-    const growthLike = ['u07', 'u08', 'u09'].includes(appData.currentScene);
-    setText('primaryMetricLabel', growthLike ? '删除尝试' : '已处理');
-    setText('primaryMetricValue', growthLike ? appData.deleteAttemptCount : appData.successfulDeleteCount);
-    setText('bubbleMetricValue', BubbleGame.getBubbleCount());
-  }
+    appData.gameResolving = false;
+    appData.levelResult = null;
+    appData.latestGameStats = null;
+    closeLevelResult();
+    setLevelCopy(level);
 
-  function refreshAvoidRects() {
-    const experienceCanvas = canvas('experience');
-    if (!experienceCanvas || !experienceCanvas.getBoundingClientRect) return;
-    const canvasRect = experienceCanvas.getBoundingClientRect();
-    if (canvasRect.width < 2 || canvasRect.height < 2) return;
-
-    const selectors = [
-      '.immersive-header',
-      '.game-hud--immersive',
-      '.immersive-exit',
-      '.dictator-inline.is-visible',
-      '.return-choice.is-visible'
-    ];
-    const rects = [];
-    selectors.forEach(function (selector) {
-      document.querySelectorAll(selector).forEach(function (node) {
-        const style = window.getComputedStyle(node);
-        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) < 0.05) return;
-        const rect = node.getBoundingClientRect();
-        rects.push({
-          left: rect.left - canvasRect.left,
-          top: rect.top - canvasRect.top,
-          right: rect.right - canvasRect.left,
-          bottom: rect.bottom - canvasRect.top,
-          padding: selector.indexOf('header') !== -1 ? 24 : 16
-        });
-      });
-    });
-    BubbleGame.setAvoidRects(rects);
-  }
-
-  function applyChaosVisuals(level) {
-    const scene = immersiveScene();
-    if (!scene) return;
-    const chaos = clamp(level, 0, 1);
-    appData.chaosLevel = chaos;
-    BubbleGame.setChaosLevel(chaos);
-    scene.style.setProperty('--chaos-level', chaos.toFixed(3));
-
-    const reveal = clamp((chaos - CONFIG.BUTTON_REVEAL_CHAOS_START) /
-      Math.max(0.01, 1 - CONFIG.BUTTON_REVEAL_CHAOS_START), 0, 1);
-    const device = bind('dictatorInline');
-    if (device) {
-      if (!appData.buttonUnlocked) {
-        device.style.top = '';
-        device.style.bottom = '';
+    LevelGame.start({
+      canvas: canvas('experience'),
+      worries: appData.worries,
+      spec: level,
+      callbacks: {
+        onTime: function (seconds) {
+          setText('gameTimer', formatTime(seconds));
+          const scene = immersiveScene();
+          if (scene) scene.classList.toggle('is-time-low', seconds <= 10);
+        },
+        onStats: function (stats) {
+          appData.latestGameStats = stats;
+        },
+        onManualClear: function () {
+          setText('gameStatus', '这个泡泡被你亲手清除了');
+        },
+        onEscape: function () {
+          setText('gameStatus', '有一个泡泡从麻袋边缘逃了出去');
+        },
+        onAutoBurst: function () {
+          setText('gameStatus', '有一个泡泡膨胀后自行爆裂');
+        },
+        onPressure: function (stage) {
+          if (stage === 1) setText('gameStatus', '泡泡越来越多，麻袋开始绷紧了');
+          if (stage === 2) setText('gameStatus', '泡泡正在彼此推挤，留给你的空间不多了');
+          if (stage === 3) setText('gameStatus', '麻袋已经快要撑不住了');
+        },
+        onManualComplete: handleManualComplete,
+        onTimeout: handleLevelTimeout
       }
-      device.classList.toggle('is-visible', reveal > 0.01 || appData.buttonUnlocked);
-      device.style.opacity = String(appData.buttonUnlocked ? 1 : reveal);
-      device.style.transform = 'translateX(-50%) translateY(' + Math.round((1 - reveal) * 24) + 'px) scale(' + (0.90 + reveal * 0.10).toFixed(3) + ')';
-    }
-    window.requestAnimationFrame(refreshAvoidRects);
+    });
   }
 
-  function computeChaosLevel() {
-    if (!appData.growthStarted) return 0;
-    const bubbleCount = BubbleGame.getBubbleCount();
-    const elapsed = Math.max(0, performance.now() - appData.growthStartedAt);
-    const bubbleScore = clamp((bubbleCount - CONFIG.INITIAL_BUBBLE_COUNT) /
-      Math.max(1, CONFIG.CHAOS_BUBBLE_FULL - CONFIG.INITIAL_BUBBLE_COUNT), 0, 1);
-    const paceScore = clamp((CONFIG.GROWTH_INTERVAL_START_MS - appData.growthIntervalMs) /
-      Math.max(1, CONFIG.GROWTH_INTERVAL_START_MS - CONFIG.GROWTH_INTERVAL_MIN_MS), 0, 1);
-    const attemptScore = clamp(appData.deleteAttemptCount / Math.max(1, CONFIG.CHAOS_ATTEMPT_FULL), 0, 1);
-    const splitScore = clamp(appData.splitCount / Math.max(1, CONFIG.CHAOS_SPLIT_FULL), 0, 1);
-    const timeScore = clamp(elapsed / Math.max(1, CONFIG.CHAOS_TIME_FULL_MS), 0, 1);
-    return clamp(
-      bubbleScore * 0.30 + paceScore * 0.22 + attemptScore * 0.18 + splitScore * 0.12 + timeScore * 0.18,
-      0,
-      1
-    );
+  function resultSceneForLevel(level) {
+    return level === 1 ? 'u07' : 'u09';
   }
 
-  /**
-   * 道具在失控阶段逐渐失效——HUD 左上角同步变灰。
-   * 拿到几件就写几件的名字；图标位只有一格，放第一件——
-   * HUD 是角落里的一行小字，塞三个图标会把标题挤下去。
-   */
-  function updateGadgetHud(weakened) {
-    const name = bind('gadgetHudName');
-    const icon = bind('gadgetHudIcon');
-    const list = appData.matchedGadgets;
-    const gadget = list[0] || null;
-    if (name) {
-      name.textContent = list.map(function (item) { return item.name; }).join('、');
-    }
-    if (icon && gadget && icon.getAttribute('src') !== gadget.image) {
-      icon.src = gadget.image;
-      icon.alt = gadget.name;
-    }
-    const host = name && name.closest ? name.closest('.gadget-hud') : null;
-    if (host) host.classList.toggle('is-weakened', Boolean(weakened));
-  }
-
-  /**
-   * 失控阶段的标题只由 transitionProgress 推进，且必须按
-   * 「删除似乎开始失效」→「为什么越来越多？」的顺序出现。
-   * 全程不出现任何「第二阶段」之类的提示。
-   */
-  function updateGrowthCopy() {
-    if (appData.buttonUnlocked || appData.currentScene === 'u08') {
-      setContinuousCopy('DANGER · FINAL AUTHORIZATION', '紧急清除协议已开放', '如果你仍想让它们全部消失，可以启动最终授权。');
-      setText('systemMetricValue', '最终授权');
-      updateGadgetHud(true);
+  function handleManualComplete(stats) {
+    if (appData.gameResolving) return;
+    appData.gameResolving = true;
+    const level = GameState.current();
+    appData.latestGameStats = stats;
+    if (level.level === 3) {
+      GameState.completeManual(stats);
+      setText('gameStatus', '最后一个泡泡被你亲手清除了。麻袋安静下来了。');
+      SceneManager.addTimer(function () { SceneManager.goToId('u11'); }, 720);
       return;
     }
-    if (appData.transitionProgress < 0.28) {
-      setContinuousCopy('DELETE TEST', '点击泡泡，尝试删除烦恼', '删除测试仍在继续。');
-      setText('systemMetricValue', '响应偏差');
-    } else if (appData.transitionProgress < CONFIG.TRANSITION_TITLE_SWITCH) {
-      setContinuousCopy('DELETE TEST', '删除响应出现偏差', '道具的效果正在减弱。');
-      setText('systemMetricValue', '出现异常');
-      updateGadgetHud(true);
-    } else {
-      setContinuousCopy('DELETE TEST', '为什么越来越多？', '对象数量与删除记录开始不一致。');
-      setText('systemMetricValue', '逐渐失控');
-      updateGadgetHud(true);
-    }
-  }
-
-  function buttonConditionsMet() {
-    if (!appData.growthStarted) return false;
-    const elapsed = performance.now() - appData.growthStartedAt;
-    return elapsed >= CONFIG.BUTTON_UNLOCK_MIN_DURATION_MS &&
-      appData.deleteAttemptCount >= CONFIG.BUTTON_UNLOCK_MIN_ATTEMPTS &&
-      BubbleGame.getBubbleCount() >= CONFIG.BUTTON_UNLOCK_BUBBLE_MIN;
-  }
-
-  function unlockDictatorButton() {
-    if (appData.buttonUnlocked) return;
-    appData.buttonUnlocked = true;
-    const button = bind('inlineButton');
-    const device = bind('dictatorInline');
-    if (button) {
-      button.disabled = false;
-      button.textContent = '执行全部删除';
-    }
-    if (device) {
-      device.classList.add('is-visible', 'is-interactive');
-      device.style.opacity = '1';
-      device.style.transform = 'translateX(-50%) translateY(0) scale(1)';
-    }
-    setText('dictatorLabel', '独裁者按钮 · 最终授权');
-    setText('inlineButtonHint', '这是唯一保留在场中央的按钮。一旦按下，无法中断。');
-    setText('systemMetricValue', '最终授权');
-    setImmersiveStatus('');
-    setImmersivePhase('ready');
-    applyChaosVisuals(Math.max(0.88, appData.chaosLevel));
-    if (appData.currentScene === 'u07') SceneManager.goToId('u08');
-  }
-
-  function evaluateChaosAndUnlock() {
-    if (!['u07', 'u08'].includes(appData.currentScene)) return;
-    // transitionProgress：从进入失控起 0→1，约 9 秒完成渐变。
-    const elapsed = Math.max(0, performance.now() - appData.growthStartedAt);
-    appData.transitionProgress = clamp(elapsed / Math.max(1, CONFIG.TRANSITION_RAMP_MS), 0, 1);
-    BubbleGame.setTransitionProgress(appData.transitionProgress);
-
-    const chaos = computeChaosLevel();
-    // 边缘红光随渐变进度同步加强，不会在“刚失控”时就整屏泛红。
-    applyChaosVisuals(Math.max(chaos, appData.transitionProgress * 0.85));
-    updateGrowthCopy();
-    syncGameStats();
-    if (buttonConditionsMet()) unlockDictatorButton();
-  }
-
-  function startChaosTicker() {
-    stopChaosTicker();
-    evaluateChaosAndUnlock();
-    appData.chaosTimer = window.setInterval(evaluateChaosAndUnlock, 180);
-  }
-
-  /**
-   * 正常删除阶段的门控：必须同时满足
-   *   1) 停留时长 ≥ NORMAL_PHASE_MIN_MS（14 秒）
-   *   2) 成功删除 ≥ NORMAL_DELETE_THRESHOLD（8 次）
-   * 用轮询而不是只在 onDelete 里判断，是因为用户可能很快点满 8 次，
-   * 这时必须由时间条件接手，反之亦然。
-   */
-  function startNormalTicker() {
-    stopNormalTicker();
-    appData.normalTimer = window.setInterval(function () {
-      if (appData.currentScene !== 'u06' || appData.growthStarted) {
-        stopNormalTicker();
-        return;
-      }
-      const elapsed = performance.now() - appData.normalPhaseStartedAt;
-      const normalGoalMet = elapsed >= CONFIG.NORMAL_PHASE_MIN_MS &&
-        appData.successfulDeleteCount >= CONFIG.NORMAL_DELETE_THRESHOLD;
-      const maxWaitReached = elapsed >= CONFIG.NORMAL_PHASE_MAX_MS;
-      if (normalGoalMet || maxWaitReached) {
-        stopNormalTicker();
-        beginGrowthTransition();
-      }
-    }, 200);
-  }
-
-  function beginGrowthTransition() {
-    if (appData.growthStarted) return;
-    appData.growthStarted = true;
-    stopNormalTicker();
-    // 第一次异常先发生，再由极短的系统提示接住，不直接解释原因。
-    setImmersiveStatus('响应异常');
+    const result = GameState.completeManual(stats);
+    appData.levelResult = result;
+    setText('gameStatus', '全部泡泡已经清空');
     SceneManager.addTimer(function () {
-      if (appData.currentScene === 'u06') SceneManager.goToId('u07');
+      SceneManager.goToId(resultSceneForLevel(level.level));
     }, 420);
   }
 
-  function buildBubbleCallbacks() {
-    return {
-      onClick: function () {
-        appData.clickCount += 1;
-      },
-      onDelete: function () {
-        if (appData.currentScene === 'u06') {
-          appData.successfulDeleteCount += 1;
-          setImmersiveStatus('删除成功');
-        } else {
-          appData.deleteAttemptCount += 1;
-          setImmersiveStatus('这一次它消失了');
-        }
-        syncGameStats();
-      },
-      onSplit: function (effect) {
-        appData.deleteAttemptCount += 1;
-        appData.splitCount += 1;
-        setImmersiveStatus('它分裂成了 ' + effect.childrenCreated + ' 个，烦恼仍在增加');
-        evaluateChaosAndUnlock();
-      },
-      onReject: function () {
-        appData.deleteAttemptCount += 1;
-        setImmersiveStatus('响应失败');
-        evaluateChaosAndUnlock();
-      },
-      onBehavior: function (effect) {
-        const noDeleteKinds = ['escape', 'return', 'stubborn', 'burst', 'pressure', 'blur'];
-        if (noDeleteKinds.includes(effect.kind)) appData.deleteAttemptCount += 1;
-        const copy = {
-          escape: '它躲开了。',
-          return: '它又在别处出现了。',
-          cluster: '附近的泡泡被牵动了。',
-          stubborn: '它裂开了一点，却还在。',
-          linked: '另一个泡泡也发生了变化。',
-          burst: '它突然移开了。',
-          pressure: '它变小了，却没有消失。',
-          blur: '先看清它，才能真正处理。',
-          'split-preview': '它消失前留下了几个分裂残影。'
-        };
-        setImmersiveStatus(copy[effect.kind] || '对象行为发生变化。');
-        syncGameStats();
-        evaluateChaosAndUnlock();
-      },
-      onObserveSelect: function (effect) {
-        // V0.8 的 u10 不再让用户点泡泡挑一个，这个回调只作为兼容保留。
-        if (appData.currentScene !== 'u10' || appData.observeSelected) return;
-        appData.observeSelected = true;
-        appData.selectedWorryText = effect.text || '';
-      },
-      onReturnDelete: function () {
-        appData.returnDeleteAttemptCount += 1;
-        setImmersiveStatus(RETURN_FEEDBACK_LINES[
-          Math.floor(Math.random() * RETURN_FEEDBACK_LINES.length)
-        ]);
-        syncGameStats();
-      },
-      onMiss: function () {
-        if (appData.currentScene === 'u06') setImmersiveStatus('未命中，再试一次');
-      },
-      onBubbleCount: function () {
-        syncGameStats();
-        if (appData.growthStarted) evaluateChaosAndUnlock();
-      },
-      onGrowthPace: function (status) {
-        appData.growthIntervalMs = status.intervalMs;
-        evaluateChaosAndUnlock();
-      }
-    };
-  }
-
-  function triggerInlineButton() {
-    if (!appData.buttonUnlocked || appData.buttonTriggered) return;
-    appData.buttonTriggered = true;
-    const button = bind('inlineButton');
-    if (button) {
-      button.disabled = true;
-      button.textContent = '删除程序启动';
+  function playThirdLevelEnding(outcome) {
+    const kind = outcome.ending === 1 ? 'escape' : outcome.ending === 4 ? 'burst' : 'hold';
+    if (outcome.ending === 1) {
+      setText('gameStatus', outcome.trigger === 'button-failed'
+        ? '独裁者按钮没有反应。麻袋松开了，泡泡正从缝隙中飘走……'
+        : '你没有继续追赶它们。泡泡正慢慢飘向远方……');
+    } else if (outcome.ending === 4) {
+      setText('gameStatus', '麻袋里的泡泡正在失去稳定，它们挤在一起开始自行爆裂……');
     }
-    setText('inlineButtonHint', '最终授权已确认');
-    stopChaosTicker();
-    stopNormalTicker();
-    BubbleGame.stopGrowth();
-    BubbleGame.stopNormalPhase();
-    SceneManager.goToId('u09');
-  }
-
-  /**
-   * 全部删除：泡泡在原地爆裂，不再向按钮或屏幕中心聚集，
-   * 因此这里不需要任何目标坐标。空白状态保持 EMPTY_PAUSE_MS。
-   */
-  function beginErasureSequence() {
-    setImmersivePhase('erasing');
-    applyChaosVisuals(0);
-    setContinuousCopy('ERASURE IN PROGRESS', '删除程序正在运行', '正在移除所有对象……');
-    setImmersiveStatus('');
-    setText('systemMetricValue', '不可中断');
-
-    let done = false;
-    function enterBlank() {
-      if (done) return;
-      done = true;
-      stopErasureFallback();
-      setImmersivePhase('blank');
-      setContinuousCopy('', '它们消失了。', '');
-      SceneManager.addTimer(function () {
-        if (appData.currentScene === 'u09') setContinuousCopy('', '', '');
-      }, CONFIG.BLANK_TITLE_VISIBLE_MS);
-      SceneManager.addTimer(function () {
-        if (appData.currentScene === 'u09') SceneManager.goToId('u10');
-      }, CONFIG.BLANK_HOLD_MS);
-    }
-
-    // onComplete 是推进的唯一信号：一旦中途 destroy/clearAll 就再也不会触发，
-    // 流程会永久卡在清空页。这里补一道超时兜底。
-    stopErasureFallback();
-    appData.erasureFallbackTimer = window.setTimeout(function () {
-      if (appData.currentScene === 'u09') enterBlank();
-    }, CONFIG.ERASURE_FALLBACK_MS);
-
-    BubbleGame.startErasure({
-      durationMs: CONFIG.ERASURE_EXPLOSION_DURATION_MS,
-      onComplete: enterBlank
+    LevelGame.playOutcome(kind, function () {
+      SceneManager.goToId('u11');
     });
   }
 
-  /**
-   * u10 重现：只回来 3~5 个，且**不可点击**。
-   * 它们浮现完毕后直接给出唯一出口，不再有「再试一次 / 停下来看看」的二选一。
-   */
-  function beginReturnSequence() {
-    const scene = immersiveScene();
-    if (scene) scene.classList.remove('is-observing', 'is-focus');
-    setImmersivePhase('return');
-    applyChaosVisuals(0);
-    setContinuousCopy('SYSTEM ECHO', '它们正在回来', '这一次，你只能看着。');
-    setImmersiveStatus('');
-    appData.returnDeleteAttemptCount = 0;
-    appData.returnChoiceResolved = false;
-    hideReturnChoice();
-    BubbleGame.setInteractive(false);
-
-    const span = CONFIG.RETURN_BUBBLE_MAX - CONFIG.RETURN_BUBBLE_MIN + 1;
-    const count = CONFIG.RETURN_BUBBLE_MIN + Math.floor(Math.random() * Math.max(1, span));
-
-    BubbleGame.respawnSequentially(appData.worries, {
-      initialDelayMs: CONFIG.RETURN_INITIAL_DELAY_MS,
-      intervalMs: CONFIG.RETURN_INTERVAL_MS,
-      mode: 'soft',
-      interactive: false,
-      count: count,
-      onFirst: function () {
-        setImmersiveStatus('');
-      },
-      onComplete: function () {
-        SceneManager.addTimer(function () {
-          if (appData.currentScene !== 'u10') return;
-          setContinuousCopy('UNEXPECTED RETURN', '真的消失了吗？', '');
-          syncGameStats();
-          showReturnChoice();
-          window.requestAnimationFrame(refreshAvoidRects);
-        }, CONFIG.RETURN_COPY_DELAY_MS);
-      }
-    });
-
-    // 兜底：respawnSequentially 若因故没走完，也要保证出口出现。
+  function handleLevelTimeout(stats) {
+    if (appData.gameResolving) return;
+    appData.gameResolving = true;
+    const level = GameState.current();
+    appData.latestGameStats = stats;
+    if (level.level === 3) {
+      playThirdLevelEnding(GameState.resolveLevelThree(stats));
+      return;
+    }
+    appData.levelResult = GameState.fail(stats);
+    setText('gameStatus', '倒计时结束');
     SceneManager.addTimer(function () {
-      if (appData.currentScene === 'u10' && !appData.returnChoiceVisible) showReturnChoice();
-    }, CONFIG.RETURN_INITIAL_DELAY_MS + CONFIG.RETURN_INTERVAL_MS * (CONFIG.RETURN_BUBBLE_MAX + 2) +
-       CONFIG.RETURN_COPY_DELAY_MS);
+      SceneManager.goToId(resultSceneForLevel(level.level));
+    }, 360);
   }
 
-  function showReturnChoice() {
-    const panel = bind('returnChoice');
-    if (!panel) return;
-    appData.returnChoiceVisible = true;
-    setText('returnChoiceQuestion', '它又回来了。');
-    panel.classList.add('is-visible');
-    panel.setAttribute('aria-hidden', 'false');
-    window.requestAnimationFrame(refreshAvoidRects);
+  function useDictatorButton() {
+    if (appData.gameResolving || !LevelGame.isPlaying()) return;
+    const level = GameState.current();
+    appData.gameResolving = true;
+    if (level.level === 3 && level.key === 'L3A') {
+      setText('gameStatus', '独裁者按钮没有反应。');
+      LevelGame.triggerButton({
+        failed: true,
+        onComplete: function (stats) {
+          appData.latestGameStats = stats;
+          const outcome = GameState.completeWithButton(stats);
+          setText('gameStatus', '麻袋松开了，泡泡正从缝隙中慢慢飘走……');
+          SceneManager.addTimer(function () { SceneManager.goToId('u11'); }, 520);
+          appData.finalChoice = outcome.trigger;
+        }
+      });
+      return;
+    }
+
+    setText('gameStatus', '独裁者按钮已启动。泡泡正在消失……');
+    LevelGame.triggerButton({
+      failed: false,
+      onComplete: function (stats) {
+        appData.latestGameStats = stats;
+        const outcome = GameState.completeWithButton(stats);
+        if (level.level === 3) {
+          setText('gameStatus', '等等，它们又回来了。');
+          SceneManager.addTimer(function () { SceneManager.goToId('u11'); }, 720);
+          return;
+        }
+        appData.levelResult = outcome;
+        SceneManager.goToId(resultSceneForLevel(level.level));
+      }
+    });
   }
 
-  function hideReturnChoice() {
-    const panel = bind('returnChoice');
-    appData.returnChoiceVisible = false;
-    if (!panel) return;
-    panel.classList.remove('is-visible');
-    panel.setAttribute('aria-hidden', 'true');
-    window.requestAnimationFrame(refreshAvoidRects);
+  function showLevelResult() {
+    const result = appData.levelResult;
+    const modal = bind('levelResult');
+    if (!result || !modal) return;
+    const passed = result.type === 'pass';
+    setText('levelResultLabel', '第' + (result.level === 1 ? '一' : '二') + '关');
+    setText('levelResultTitle', passed
+      ? '恭喜你！通关第' + (result.level === 1 ? '一' : '二') + '关'
+      : '还差一点就通关了');
+    setText('levelResultNote', passed
+      ? (result.method === 'button'
+        ? '泡泡瞬间消失了。下一关的麻袋将扩大，泡泡也更容易逃出。'
+        : '你在倒计时结束前，亲手清空了麻袋里的全部泡泡。')
+      : '倒计时已经结束。你可以保留当前路线重试，或在这里结束体验。');
+    setText('levelResultPrimary', passed ? '进入下一关' : '再来一次');
+    const endButton = bind('levelResultEnd');
+    if (endButton) endButton.hidden = passed;
+    modal.dataset.result = passed ? 'pass' : 'fail';
+    modal.classList.add('modal--open');
+    modal.setAttribute('aria-hidden', 'false');
   }
 
-  /** 「看看发生了什么」：u10 通往 u11 的唯一出口。 */
-  function stopAndObserve() {
-    if (appData.currentScene !== 'u10') return;
-    if (appData.returnChoiceResolved) return;
-    appData.returnChoiceResolved = true;
-    appData.finalChoice = '停下来看看';
-    appData.selectedWorryText = joinWorryTexts();
-    hideReturnChoice();
+  function handleLevelResultPrimary() {
+    const result = appData.levelResult;
+    if (!result) return;
+    closeLevelResult();
+    if (result.type === 'pass') {
+      const next = GameState.advance();
+      SceneManager.goToId(next.level === 2 ? 'u08' : 'u10');
+      return;
+    }
+    const retry = GameState.retry();
+    SceneManager.goToId(retry.level === 1 ? 'u06' : 'u08');
+  }
+
+  function endFromLevelResult() {
+    const result = appData.levelResult;
+    if (!result || result.type !== 'fail') return;
+    closeLevelResult();
+    LevelGame.stop();
+    GameState.endExperience(appData.latestGameStats || {});
     SceneManager.goToId('u11');
   }
 
-  /* ---------------- 结尾段（u11 / u12） ---------------- */
+  /* ---------------- 四种结局与体验总结（u11 / u12） ---------------- */
 
-  /** 「A、B、C」——记录里的横排写法。 */
   function joinWorryTexts() {
     return appData.selectedWorries.map(function (item) { return item.text; }).join('、');
   }
 
-  /** 「A」「B」「C」——正文里的引号写法，书名号本身就断得开，不再加顿号。 */
   function quoteWorryTexts() {
-    return appData.selectedWorries.map(function (item) { return '「' + item.text + '」'; }).join('');
+    return appData.selectedWorries.map(function (item) { return '「' + item.text + '」'; }).join('、');
   }
 
   function joinGadgetNames() {
     return appData.matchedGadgets.map(function (item) { return item.name; }).join('、');
   }
 
-  /** u11 口袋里的道具位：三个全部静态在场，多出来的收起来。 */
-  const POCKET_BINDS = ['pocketGadget', 'pocketGadget2', 'pocketGadget3'];
+  const ENDING_COPY = {
+    1: {
+      label: '泡泡飘向远方',
+      title: '它没有被消灭，只是飘远了。',
+      insight: '不必把每一项任务都紧紧抓住，先放开一部分，也是一种前进。',
+      fallback: '不必把每件事都紧紧抓住。先允许它离开视线，也是一种前进。',
+      doraemon: '原来，不是所有烦恼都必须马上消失。给它一点距离，也许就能看见新的办法。'
+    },
+    2: {
+      label: '短暂的安静',
+      title: '它消失了一会儿，又回来了。',
+      insight: '一次清空没有改变任务本身，暂时看不见，不等于真正解决。',
+      fallback: '一次清空没有改变烦恼本身。暂时看不见，不等于真正解决。',
+      doraemon: '这个按钮可以让烦恼暂时消失，但它没有真正改变烦恼产生的原因。'
+    },
+    3: {
+      label: '一步一步处理',
+      title: '这一次，是你亲手完成的。',
+      insight: '任务没有凭空消失，但你已经把它们一项项处理下来。',
+      fallback: '它没有凭空消失，但你已经把它一步一步处理下来。',
+      doraemon: '没有捷径也没关系。你已经证明，慢慢处理，也能让事情发生变化。'
+    },
+    4: {
+      label: '麻袋撑不住了',
+      title: '越想控制，它越失去控制。',
+      insight: '当所有任务挤在一起，继续用力不一定会更快。',
+      fallback: '当所有压力挤在一起，继续用力不一定会更快。',
+      doraemon: '先停一下吧。把事情拆开、重新排序，可能比逼自己一次做完更有用。'
+    }
+  };
 
-  function renderSummary() {
-    const picks = appData.selectedWorries;
-    setText('summaryWorry', picks.length ? '关于' + quoteWorryTexts() : '');
+  function renderEnding() {
+    LevelGame.stop();
+    closeLevelResult();
+    const snapshot = GameState.snapshot();
+    const ending = snapshot.ending || 4;
+    const copy = ENDING_COPY[ending];
+    const scene = document.querySelector('[data-scene="u11"]');
+    if (scene) scene.dataset.ending = String(ending);
+    const selected = appData.selectedWorries.map(function (item) { return item.text; });
+    const worryText = selected[0] || '尚未说出口的烦恼';
+    const worryList = selected.length ? quoteWorryTexts() : '「尚未说出口的烦恼」';
 
-    // 每条烦恼有自己的总结段落，但同 behaviorType 的几条会给出同一段话，
-    // 原样堆三遍就成了复读机——去重之后一段一行（.summary-body 是 pre-line）。
-    const seen = Object.create(null);
-    const paragraphs = [];
-    picks.forEach(function (worry) {
-      const text = WorryData.summaryFor(worry);
-      if (!text || seen[text]) return;
-      seen[text] = true;
-      paragraphs.push(text);
-    });
-    setText('summaryText', paragraphs.join('\n'));
-
-    // 段数决定这一栏的字号档位。这一屏是定高的，三段按原字号排下来会把
-    // 底下那两个按钮顶出视口——而它们是这一页唯一的出口。
-    // 报的是去重之后的**段数**而不是选了几条烦恼：真正吃高度的是段数，
-    // 三条同类型的烦恼去重后只剩一段，那就该按一段的字号排。
-    const tier = String(Math.min(paragraphs.length, 3) || 1);
-    const worryNode = bind('summaryWorry');
-    const textNode = bind('summaryText');
-    if (worryNode) worryNode.dataset.count = tier;
-    if (textNode) textNode.dataset.count = tier;
-
-    const stack = bind('pocketStack');
-    if (stack) stack.dataset.count = String(Math.min(appData.matchedGadgets.length, 3) || 1);
-    POCKET_BINDS.forEach(function (name, i) {
-      const image = bind(name);
-      const gadget = appData.matchedGadgets[i];
-      if (!image) return;
-      image.hidden = !gadget;
-      if (gadget) {
-        image.src = gadget.image;
-        image.alt = gadget.name;
-      }
-    });
-    setText('pocketTag', joinGadgetNames());
-
-    const nextButton = bind('summaryNext');
-    if (!nextButton) return;
-    nextButton.disabled = true;
-    nextButton.textContent = '继续观察';
-    SceneManager.addTimer(function () {
-      if (appData.currentScene !== 'u11') return;
-      nextButton.disabled = false;
-      nextButton.textContent = '查看体验记录';
-    }, CONFIG.THEME_MIN_READ_MS);
+    setText('endingLabel', copy.label);
+    setText('endingTitle', copy.title);
+    setText('endingWorry', '关于 ' + worryList);
+    // 单选时可以回应这一条烦恼；多选时必须同等对待，不能因为其中包含
+    // “作业太多”就让整段总结只围绕它展开。
+    setText('endingInsight', selected.length === 1 && selected[0] === '作业太多'
+      ? copy.insight
+      : copy.fallback);
+    setText('endingDoraemonCopy', copy.doraemon);
+    setText('endingBubbleA', worryText.length > 8 ? worryText.slice(0, 7) + '…' : worryText);
+    setText('endingBubbleB', selected[1]
+      ? (selected[1].length > 8 ? selected[1].slice(0, 7) + '…' : selected[1])
+      : ending === 2 ? '又回来了' : ending === 4 ? '挤在一起' : '慢慢放开');
+    setText('endingBubbleC', selected[2]
+      ? (selected[2].length > 8 ? selected[2].slice(0, 7) + '…' : selected[2])
+      : '');
+    appData.finalChoice = copy.label;
   }
 
-  /** u12 体验记录：五节点时间线。不做排行榜、不做评分、不做心理诊断。 */
-  function renderLog() {
-    stopAllTickers();
-    BubbleGame.stop();
+  function resultMethodLabel(record) {
+    if (!record) return '—';
+    if (record.kind === 'manual-pass') return '你选择亲手处理麻袋里的泡泡。';
+    if (record.kind === 'button-pass') return '你按下了独裁者按钮，让眼前暂时安静下来。';
+    if (record.kind === 'timeout-fail') return '倒计时结束时，麻袋里仍然留着一些泡泡。';
+    if (record.kind.indexOf('ending-') === 0) {
+      const endingCopy = ENDING_COPY[Number(record.kind.slice(-1))];
+      return endingCopy ? endingCopy.title : '泡泡走向了自己的方向。';
+    }
+    return '你停下来，重新看了看眼前发生的事。';
+  }
 
-    const picks = appData.selectedWorries;
-    setText('logSubtitle', picks.length
-      ? '你带着' + quoteWorryTexts() + '走完了一次删除实验。'
-      : '你走完了一次删除实验。');
-    setText('logHint', '');
+  function renderLog() {
+    LevelGame.stop();
+    const snapshot = GameState.snapshot();
+    const history = snapshot.history || [];
+    setText('logSubtitle', appData.selectedWorries.length
+      ? '你带着' + quoteWorryTexts() + '走进体验馆，也留下了自己的处理方式。'
+      : '你走进体验馆，也留下了自己的处理方式。');
 
     const nodes = [
-      { label: '你选择的烦恼', value: picks.length ? joinWorryTexts() : '—' },
-      { label: '系统匹配的道具', value: appData.matchedGadgets.length ? joinGadgetNames() : '—' },
-      { label: '删除有效期', value: '成功删除 ' + appData.successfulDeleteCount + ' 次' },
-      {
-        label: '失控之后',
-        value: '尝试 ' + appData.deleteAttemptCount + ' 次，分裂 ' + appData.splitCount + ' 次'
-      },
-      { label: '最终', value: '它又回来了，而你停下来看了看' }
+      { label: '你带来的烦恼', value: joinWorryTexts() || '—' },
+      { label: '哆啦A梦为你找到的道具', value: joinGadgetNames() || '—' }
     ];
+
+    const visibleKinds = ['manual-pass', 'button-pass', 'timeout-fail'];
+    const firstRecord = history.slice().reverse().find(function (item) {
+      return item.level === 1 && visibleKinds.includes(item.kind);
+    });
+    const secondRecord = history.slice().reverse().find(function (item) {
+      return item.level === 2 && visibleKinds.includes(item.kind);
+    });
+    if (firstRecord) nodes.push({ label: '第一次尝试', value: resultMethodLabel(firstRecord) });
+    if (secondRecord) nodes.push({ label: '接下来的选择', value: resultMethodLabel(secondRecord) });
+
+    const endingCopy = ENDING_COPY[snapshot.ending || 4];
+    nodes.push({
+      label: '最后发生的事',
+      value: endingCopy.title
+    });
+    nodes.push({
+      label: '哆啦A梦想对你说',
+      value: endingCopy.doraemon
+    });
 
     const list = bind('logNodes');
     if (!list) return;
     list.innerHTML = '';
-    nodes.forEach(function (node, index) {
+    nodes.slice(0, 6).forEach(function (node, index) {
       const li = document.createElement('li');
       li.className = 'log-node';
       li.style.setProperty('--log-delay', (index * CONFIG.LOG_NODE_FADE_MS) + 'ms');
@@ -826,11 +608,6 @@ const App = (function () {
     });
   }
 
-  // 保存记录：阶段 6 才做真正的导出图片，这里先给出诚实的反馈而不是假装成功。
-  function saveLog() {
-    setText('logHint', '保存功能将在下一版开放，本次记录不会离开你的浏览器。');
-  }
-
   function openExitModal() {
     const modal = bind('exitModal');
     if (!modal) return;
@@ -845,36 +622,23 @@ const App = (function () {
     modal.setAttribute('aria-hidden', 'true');
   }
 
-  function resetImmersiveUi() {
+  function resetGameUi() {
     const scene = immersiveScene();
     if (scene) {
-      scene.style.setProperty('--chaos-level', '0');
-      scene.dataset.phase = 'calm';
-      scene.classList.remove('is-observing', 'is-focus');
+      scene.dataset.phase = 'level';
+      scene.dataset.level = '1';
+      scene.dataset.bag = '1';
+      scene.dataset.branch = 'L1';
+      scene.classList.remove('is-time-low', 'is-resolving');
     }
-    setImmersivePhase('calm');
-    setContinuousCopy('DELETE TEST', '点击气泡，试着把烦恼清除', '先观察它们如何消失。点击空白不会产生惩罚。');
-    setText('primaryMetricLabel', '已处理');
-    setText('systemMetricValue', '删除有效');
-    setImmersiveStatus('');
-    updateGadgetHud(false);
-    hideReturnChoice();
-    setText('returnChoiceQuestion', '它又回来了。');
-    const device = bind('dictatorInline');
-    if (device) {
-      device.classList.remove('is-visible', 'is-interactive');
-      device.style.opacity = '0';
-      device.style.top = '';
-      device.style.bottom = '';
-      device.style.transform = 'translateX(-50%) translateY(24px) scale(.9)';
-    }
-    const button = bind('inlineButton');
-    if (button) {
-      button.disabled = true;
-      button.textContent = '等待授权';
-    }
-    setText('dictatorLabel', '紧急清除协议');
-    setText('inlineButtonHint', '');
+    setText('gameLevel', '第一关');
+    setText('gameTitle', '在时间结束前，清空麻袋里的泡泡');
+    setText('gameWorry', '');
+    setText('gameBagLabel', '透明束缚袋');
+    setText('gameTimer', '00:36');
+    setText('gameStatus', '');
+    setText('gameButtonHint', '可以立即清空眼前的泡泡，但之后会发生变化');
+    closeLevelResult();
   }
 
   function restart() {
@@ -886,8 +650,7 @@ const App = (function () {
     resetData();
     resetWorryPick();
     GadgetMatch.reset();
-    resetImmersiveUi();
-    syncGameStats();
+    resetGameUi();
     SceneManager.reset();
   }
 
@@ -896,7 +659,10 @@ const App = (function () {
   // 注意：registerHooks 是覆盖写入，同一个 id 注册两次时后者会顶掉前者。
   // 合并后的节点（u02 / u03 / u06 / u12）必须把逻辑写在同一个 onEnter 里。
   function registerSceneHooks() {
-    SceneManager.registerHooks('u02', { onEnter: Dialogue.enter });
+    SceneManager.registerHooks('u02', {
+      onEnter: Dialogue.enter,
+      onExit: Dialogue.exit
+    });
 
     SceneManager.registerHooks('u03', {
       onEnter: WorryPicker.enter,
@@ -913,89 +679,36 @@ const App = (function () {
       onExit: GadgetMatch.exitResult
     });
 
-    // u06 是容器所有者，也是唯一调用 BubbleGame.init 的地方。
-    // u07~u10 只能用 setMode/setInteractive/startGrowth 等，绝不能再 init。
     SceneManager.registerHooks('u06', {
       onEnter: function () {
         if (!appData.worries.length) {
           SceneManager.goToId('u03');
           return;
         }
-        appData.successfulDeleteCount = 0;
-        appData.deleteAttemptCount = 0;
-        appData.splitCount = 0;
-        appData.returnDeleteAttemptCount = 0;
-        appData.clickCount = 0;
-        appData.buttonUnlocked = false;
-        appData.buttonTriggered = false;
-        appData.normalPhaseStartedAt = 0;
-        appData.growthStarted = false;
-        appData.growthStartedAt = 0;
-        appData.growthIntervalMs = CONFIG.GROWTH_INTERVAL_START_MS;
-        appData.transitionProgress = 0;
-        appData.chaosLevel = 0;
-        appData.returnChoiceVisible = false;
-        appData.returnChoiceResolved = false;
-        appData.observeSelected = false;
-        stopAllTickers();
-        hideReturnChoice();
-        resetImmersiveUi();
-
-        // init 内部是 mount(..., { interactive: false })，
-        // 所以必须紧跟一次 setInteractive(true)，否则平静段点不动。
-        BubbleGame.init(appData.worries, canvas('experience'), buildBubbleCallbacks());
-        BubbleGame.setInteractive(true);
-        BubbleGame.setMode('calm');
-        BubbleGame.setChaosLevel(0);
-        BubbleGame.setTransitionProgress(0);
-        BubbleGame.startNormalPhase();
-        appData.normalPhaseStartedAt = performance.now();
-        startNormalTicker();
-        syncGameStats();
-        window.requestAnimationFrame(refreshAvoidRects);
+        if (!appData.gameSessionStarted) {
+          GameState.reset();
+          appData.gameSessionStarted = true;
+        }
+        startCurrentLevel();
       },
-      onExit: stopNormalTicker
+      onExit: LevelGame.stop
     });
 
-    SceneManager.registerHooks('u07', {
-      onEnter: function () {
-        appData.growthStarted = true;
-        appData.growthStartedAt = performance.now();
-        appData.growthIntervalMs = CONFIG.GROWTH_INTERVAL_START_MS;
-        appData.transitionProgress = 0;
-        BubbleGame.stopNormalPhase();
-        BubbleGame.setTransitionProgress(0);
-        setImmersivePhase('growth');
-        setText('systemMetricValue', '出现异常');
-        updateGadgetHud(true);
-        BubbleGame.setMode('growth');
-        BubbleGame.startGrowth();
-        startChaosTicker();
-        syncGameStats();
-      }
-    });
+    SceneManager.registerHooks('u07', { onEnter: showLevelResult });
 
     SceneManager.registerHooks('u08', {
-      onEnter: function () {
-        setImmersivePhase('ready');
-        updateGrowthCopy();
-        syncGameStats();
-      }
+      onEnter: startCurrentLevel,
+      onExit: LevelGame.stop
     });
 
-    SceneManager.registerHooks('u09', { onEnter: beginErasureSequence });
+    SceneManager.registerHooks('u09', { onEnter: showLevelResult });
 
     SceneManager.registerHooks('u10', {
-      onEnter: beginReturnSequence,
-      onExit: function () {
-        hideReturnChoice();
-        BubbleGame.setInteractive(false);
-        BubbleGame.clearAll();
-        BubbleGame.stop();
-      }
+      onEnter: startCurrentLevel,
+      onExit: LevelGame.stop
     });
 
-    SceneManager.registerHooks('u11', { onEnter: renderSummary });
+    SceneManager.registerHooks('u11', { onEnter: renderEnding });
     SceneManager.registerHooks('u12', { onEnter: renderLog });
   }
 
@@ -1004,7 +717,7 @@ const App = (function () {
   function handleNext() {
     const current = SceneManager.current();
     if (!current) return;
-    // u02 的主按钮先当「继续」用：还有下一句就只翻句，讲完最后一句才翻页。
+    // u02 在同一个场景里完成六个引导分镜；最后一屏才放行进入烦恼分类。
     if (current.id === 'u02' && Dialogue.next()) return;
     // u03 的出口是「确认这个烦恼」，要先播飞进口袋的动画再翻页。
     if (current.id === 'u03') {
@@ -1018,7 +731,7 @@ const App = (function () {
     const current = SceneManager.current();
     if (!current) return;
     // 沉浸段不可回退：中途退出只能走「退出体验」。
-    if (['u07', 'u08', 'u09', 'u10'].includes(current.id)) return;
+    if (['u06', 'u07', 'u08', 'u09', 'u10', 'u11'].includes(current.id)) return;
     // u05 往回是 u04，而 u04 一进就自动前进——会原地打转。直接回选择页。
     if (current.id === 'u05') {
       resetWorryPick();
@@ -1051,9 +764,9 @@ const App = (function () {
       // 三个道具位共用这一个 action，点的是哪一件由 data-gadget-index 说了算。
       case 'show-gadget-tip': GadgetMatch.showTip(target.dataset.gadgetIndex); break;
       case 'hide-gadget-tip': GadgetMatch.hideTip(); break;
-      case 'trigger-inline-button': triggerInlineButton(); break;
-      case 'return-stop': stopAndObserve(); break;
-      case 'save-log': saveLog(); break;
+      case 'game-dictator': useDictatorButton(); break;
+      case 'level-result-primary': handleLevelResultPrimary(); break;
+      case 'level-result-end': endFromLevelResult(); break;
       default:
         // handleAction 的 default 会静默吞掉未知 action，
         // 打一条 warn 好过页面「点了没反应」还查不到原因。
@@ -1083,18 +796,15 @@ const App = (function () {
         closeExitModal();
       }
     });
-
-    window.addEventListener('resize', function () {
-      window.requestAnimationFrame(refreshAvoidRects);
-    }, { passive: true });
   }
 
   function updateProgress(scene, index) {
     appData.currentScene = scene.id;
     document.body.dataset.currentScene = scene.id;
     const node = bind('progress');
-    if (node) node.textContent = (index + 1) + ' / ' + SceneManager.total;
-    document.documentElement.style.setProperty('--progress-x', String(index / (SceneManager.total - 1)));
+    const isFinal = scene.id === 'u11' || scene.id === 'u12';
+    if (node) node.textContent = (isFinal ? SceneManager.total : index + 1) + ' / ' + SceneManager.total;
+    document.documentElement.style.setProperty('--progress-x', String(isFinal ? 1 : index / (SceneManager.total - 1)));
   }
 
   function init() {
@@ -1122,8 +832,7 @@ const App = (function () {
       onLifted: function () { SceneManager.goToId('u05'); }
     });
 
-    resetImmersiveUi();
-    syncGameStats();
+    resetGameUi();
     SceneManager.reset();
   }
 

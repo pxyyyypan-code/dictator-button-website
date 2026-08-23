@@ -130,8 +130,14 @@ const CONFIG = {
   // ================= V0.8 新增 =================
   // 全部为新增键，不覆盖上面任何一项。上面的键仍被 bubble-game.js 裸取，不可删。
 
-  // u02 对话：逐句推进的最小停留，防止连点跳过全部台词。
+  // u02 分类前引导：各分镜的最小停留，防止连点跳过全部内容。
   DIALOGUE_LINE_MS: 600,
+  // 首屏要等青色扩满、白洞和哆啦A梦出场后才接受推进输入。
+  DIALOGUE_ENTRY_LOCK_MS: 1350,
+  // Word 指定的两段滚轮过渡要累积到这个 delta 才推进；锁定时间用于吃掉触控板惯性，
+  // 避免一次滚动同时跨过「欢迎 → 道具墙 → 玩家提问」两层。
+  DIALOGUE_WHEEL_THRESHOLD: 56,
+  DIALOGUE_WHEEL_LOCK_MS: 900,
 
   // u03 选择烦恼：悬停多久展开细分条目；一个大类展开几条。
   WORRY_HOVER_MS: 260,
@@ -141,7 +147,7 @@ const CONFIG = {
   //   1 条 → 三列都是同一个道具；2 条 → 前两列 A、第三列 B；3 条 → 三列各一个。
   // 改这个数就得同时改 gadget-match.js 的 planAssignment()（那里按 1/2/3 写死了三种排法）。
   WORRY_MAX_PICK: 3,
-  // 沉浸段的泡泡取自同一大类的兄弟烦恼，凑够这么多条。
+  // 兼容旧版本保留；当前沉浸段只重复玩家实际选中的细分烦恼，不再加入同类条目。
   WORRY_SIBLING_COUNT: 12,
 
   // u04 老虎机：三列，每列 20 个道具 + 1 个空位。
@@ -174,21 +180,63 @@ const CONFIG = {
   SUMMARY_LINE_FADE_MS: 520,
   LOG_NODE_FADE_MS: 260,
 
+  // ================= 三关透明麻袋游戏：可玩性与物理系统 =================
+  // 关卡节奏。第一关让玩家理解规则，第二关形成明显压力，第三关直接形成结局。
+  // 麻袋大小仍由 game-state.js 的按钮使用历史决定，不在这里跟随关卡写死。
+  LEVEL_GAME_DURATION: Object.freeze({ 1: 36, 2: 30, 3: 26 }),
+  LEVEL_GAME_TARGET: Object.freeze({ 1: 36, 2: 48, 3: 60 }),
+  LEVEL_GAME_INITIAL_COUNT: Object.freeze({ 1: 6, 2: 8, 3: 12 }),
+
+  // 1.0 / 2.0 / 3.0 三档实际强度。生成间隔越小，强度越高。
+  LEVEL_GAME_SPAWN_INTERVAL_MS: Object.freeze({ 1: 700, 2: 380, 3: 210 }),
+  LEVEL_GAME_GROWTH_PX_PER_SEC: Object.freeze({ 1: 8, 2: 15, 3: 25 }),
+  LEVEL_GAME_SPEED_RANGE: Object.freeze({
+    1: Object.freeze([65, 95]),
+    2: Object.freeze([115, 165]),
+    3: Object.freeze([185, 255])
+  }),
+  LEVEL_GAME_ESCAPE_MIN_AGE_SEC: Object.freeze({ 1: 5.2, 2: 3.2, 3: 1.6 }),
+
+  // 泡泡放大并允许三行文字；物理半径始终使用完整半径，不随入场缩放缩小。
+  LEVEL_GAME_RADIUS_MIN: 42,
+  LEVEL_GAME_RADIUS_MAX: 56,
+  LEVEL_GAME_RADIUS_CAP: 82,
+  LEVEL_GAME_FONT_MIN_PX: 16,
+  LEVEL_GAME_FONT_MAX_PX: 24,
+  LEVEL_GAME_TEXT_MAX_LINES: 3,
+
+  // 圆形刚体：视觉上允许接触，但不允许彼此穿透。
+  LEVEL_GAME_COLLISION_GAP_PX: 1.5,
+  LEVEL_GAME_COLLISION_ITERATIONS: 8,
+  LEVEL_GAME_COLLISION_RESTITUTION: 0.82,
+  LEVEL_GAME_BOUNDARY_RESTITUTION: 0.88,
+  LEVEL_GAME_SPAWN_SEARCH_ATTEMPTS: 96,
+
+  // 隐藏的拥挤压力只驱动画面与结局，不向玩家展示数值。
+  LEVEL_GAME_PRESSURE_WARN: 0.65,
+  LEVEL_GAME_PRESSURE_DANGER: 0.75,
+  LEVEL_GAME_PRESSURE_CRITICAL: 0.82,
+  LEVEL_GAME_BAG_VISUAL_STRETCH: 0.055,
+
   // ================= 阶段 4：前半段交互 =================
   // dialogue.js / worry-picker.js / gadget-match.js 三个模块共用，
   // 三者都不许自己写魔数（CLAUDE.md：阈值与时长统一放这里）。
 
-  // u02 对话：上一句降透明度那条过渡归 CSS（.dialogue-prev 走 --t-mid），
-  // 这里不再存第二份时长——两个来源迟早会对不上。
-  // 独裁者按钮的剧情提示从第几轮浮出（1 起数，对应"拿出独裁者按钮"那句）。
-  DIALOGUE_CUE_ROUND: 3,
+  // u01 首页：独立、不重复的不规则 SVG 圆环连续向外推进；完整道具沿弧线穿行。
+  // 描边使用 non-scaling-stroke，放大时不会变成覆盖整屏的米白色块。
+  INTRO_TUNNEL_RING_COUNT: 18,
+  INTRO_TUNNEL_RING_CYCLE_MS: 7200,
+  INTRO_TUNNEL_GADGET_COUNT: 12,
+  INTRO_TUNNEL_GADGET_CYCLE_MS: 13200,
 
-  // u03 粒子悬浮场：rAF 微幅漂移的振幅与周期。reduced-motion 下整个循环不启动。
-  WORRY_DRIFT_PX: 9,
-  WORRY_DRIFT_MS: 5200,
-  // 指针离开粒子后多久收起预览。给一点缓冲，
-  // 否则粒子飞到中央的瞬间指针就"离开"了，会立刻弹回去来回抖。
-  WORRY_LEAVE_MS: 180,
+  // u03 球形烦恼场：拖拽、滚轮与误触判定全部集中配置。
+  // 拖拽灵敏度使用「弧度 / 像素」，滚轮灵敏度使用「弧度 / delta」。
+  WORRY_SPHERE_DRAG_RAD_PER_PX: 0.0075,
+  WORRY_SPHERE_WHEEL_RAD_PER_DELTA: 0.00135,
+  // 移动不足这个距离仍视为点击；超过则只旋转球面，不触发类别选择。
+  WORRY_SPHERE_DRAG_THRESHOLD_PX: 7,
+  // 键盘方向键每次旋转的角度，给无法拖拽的玩家保留同等浏览能力。
+  WORRY_SPHERE_KEY_STEP_RAD: 0.18,
   // 点击大类后展开的完整列表最多几条（规格上限 15，最大的三个类正好 15 条）。
   WORRY_LIST_MAX: 15,
   // 超过这个条数就从一行改成紧凑分栏。
@@ -219,31 +267,28 @@ const RETURN_FEEDBACK_LINES = [
   '它只是暂时离开了视线。'
 ];
 
+if (typeof module !== 'undefined' && module.exports) module.exports = CONFIG;
+
 const APP_STATE = {
   INTRO: 'INTRO',
   DIALOGUE: 'DIALOGUE',
   WORRY_PICK: 'WORRY_PICK',
   GADGET_MATCH: 'GADGET_MATCH',
   GADGET_RESULT: 'GADGET_RESULT',
-  ERASE_CALM: 'ERASE_CALM',
-  ERASE_CHAOS: 'ERASE_CHAOS',
-  DICTATOR_CHOICE: 'DICTATOR_CHOICE',
-  BLANK: 'BLANK',
-  WORRIES_RETURN: 'WORRIES_RETURN',
-  SUMMARY: 'SUMMARY',
+  LEVEL_ONE: 'LEVEL_ONE',
+  LEVEL_ONE_RESULT: 'LEVEL_ONE_RESULT',
+  LEVEL_TWO: 'LEVEL_TWO',
+  LEVEL_TWO_RESULT: 'LEVEL_TWO_RESULT',
+  LEVEL_THREE: 'LEVEL_THREE',
+  ENDING: 'ENDING',
   LOG: 'LOG'
 };
 
 /**
- * u06~u10 是五个独立的后台节点，但 viewId 全部指向 u06——
- * scene-manager 的 renderVisibility 用的正是 viewId，
- * 所以画面自始至终是同一个 section、同一个 canvas，用户不会感到"翻页"。
- * 逻辑 id 仍写进 body[data-current-scene]，CSS 和测试可以照常区分五个阶段。
- *
- * 与 V0.7 的对照（改名不是整体平移，u07 起错开一位，不能用正则批量替换）：
- *   ux-01→u01  ux-02+ux-03→u02  ux-04+ux-05→u03  （u04/u05 全新）
- *   ux-06+ux-07→u06  ux-08→u07  ux-09→u08  ux-10→u09  ux-11→u10
- *   ux-12→u11  ux-13+ux-14→u12
+ * u06~u10 现在承载三关游戏与第一、二关结果节点。它们仍共享 u06 的
+ * Canvas 与透明麻袋容器，因此换关和弹出结果卡时不会出现整页闪烁：
+ *   u06 第一关 · u07 第一关结果 · u08 第二关 · u09 第二关结果 · u10 第三关。
+ * u11 是四种结局的共用模板，u12 是体验总结。
  */
 const SCENE_FLOW = [
   { id: 'u01', state: APP_STATE.INTRO },
@@ -251,11 +296,11 @@ const SCENE_FLOW = [
   { id: 'u03', state: APP_STATE.WORRY_PICK },
   { id: 'u04', state: APP_STATE.GADGET_MATCH },
   { id: 'u05', state: APP_STATE.GADGET_RESULT },
-  { id: 'u06', state: APP_STATE.ERASE_CALM, viewId: 'u06' },
-  { id: 'u07', state: APP_STATE.ERASE_CHAOS, viewId: 'u06' },
-  { id: 'u08', state: APP_STATE.DICTATOR_CHOICE, viewId: 'u06' },
-  { id: 'u09', state: APP_STATE.BLANK, viewId: 'u06' },
-  { id: 'u10', state: APP_STATE.WORRIES_RETURN, viewId: 'u06' },
-  { id: 'u11', state: APP_STATE.SUMMARY },
+  { id: 'u06', state: APP_STATE.LEVEL_ONE, viewId: 'u06' },
+  { id: 'u07', state: APP_STATE.LEVEL_ONE_RESULT, viewId: 'u06' },
+  { id: 'u08', state: APP_STATE.LEVEL_TWO, viewId: 'u06' },
+  { id: 'u09', state: APP_STATE.LEVEL_TWO_RESULT, viewId: 'u06' },
+  { id: 'u10', state: APP_STATE.LEVEL_THREE, viewId: 'u06' },
+  { id: 'u11', state: APP_STATE.ENDING },
   { id: 'u12', state: APP_STATE.LOG }
 ];
