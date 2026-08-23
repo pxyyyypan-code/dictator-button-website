@@ -133,9 +133,12 @@ const GadgetMatch = (function () {
   /**
    * 建一列：窗口里塞一条重复 STRIP_REPEATS 遍的长条，并返回停止位所需的信息。
    * pool 里的 null 就是规格要求的那个「空位」，照样占一格。
+   *
+   * 第一个参数既收 data-bind 名（u04 的三列），也直接收元素——
+   * 奖励老虎机的三列在文档级弹层里，没有 data-bind，走后一条路。
    */
-  function buildReel(bindName, pool, winnerIndex) {
-    const reel = node(bindName);
+  function buildReel(reelRef, pool, winnerIndex) {
+    const reel = typeof reelRef === 'string' ? node(reelRef) : reelRef;
     if (!reel) return null;
     reel.innerHTML = '';
     const strip = document.createElement('div');
@@ -254,6 +257,94 @@ const GadgetMatch = (function () {
     });
     spins = [];
     onAllSettled();
+  }
+
+  /* ---------------- 奖励抽卡：复用同一套滚轮 ---------------- */
+
+  // 星级结算给的那一次抽卡，用的就是上面这台老虎机——同样的 makeCell / buildReel /
+  // cellHeight，同样的 SLOT_SPIN_MS + SLOT_REEL_STAGGER_MS 停列节奏。
+  // 不能直接调 startSpin() 的原因只有两条，都不涉及动画本身：
+  //   1. startSpin 的三列写死在 [data-bind="reelA/B/C"]，那是 u04 场景里的节点；
+  //   2. 它的中奖道具来自 planAssignment(玩家选的烦恼)，而抽卡的中奖道具是外面随机挑的。
+  // 所以这里只换「哪三列」和「停在谁身上」，其余原样。
+  /** @type {Animation[]} */
+  let rewardSpins = [];
+  /** @type {number[]} */
+  let rewardTimers = [];
+  let rewardSettled = true;
+
+  function clearRewardTimers() {
+    rewardTimers.forEach(function (id) { window.clearTimeout(id); });
+    rewardTimers = [];
+  }
+
+  /**
+   * 三列一起停在同一件道具上（一次只抽一件，等同于 u04 里"只选了一条烦恼"那种排法）。
+   * @param {{reels:HTMLElement[], winner:Object, onSettle:Function}} options
+   */
+  function spinReward(options) {
+    const opts = options || {};
+    const reels = (opts.reels || []).filter(Boolean);
+    const winner = opts.winner;
+    const done = typeof opts.onSettle === 'function' ? opts.onSettle : function () {};
+    cancelReward();
+    if (!reels.length || !winner) { done(); return; }
+    rewardSettled = false;
+
+    function finish() {
+      if (rewardSettled) return;
+      rewardSettled = true;
+      done();
+    }
+
+    const plans = reels.map(function (reel, i) {
+      const pool = GadgetData.reelPool(i + 1);
+      let index = pool.findIndex(function (item) { return item && item.id === winner.id; });
+      if (index < 0) index = 0;
+      return buildReel(reel, pool, index);
+    }).filter(Boolean);
+    if (!plans.length) { finish(); return; }
+
+    plans.forEach(function (plan) {
+      const cell = plan.strip.children[plan.cellIndex];
+      if (cell) cell.classList.add('is-winner');
+    });
+
+    const unit = cellHeight(plans[0].reel);
+    if (!unit || reducedMotion()) {
+      plans.forEach(function (plan) {
+        plan.strip.style.transform = 'translateY(' + (-plan.offset * (unit || 0)) + 'px)';
+      });
+      finish();
+      return;
+    }
+
+    plans.forEach(function (plan, i) {
+      const duration = CONFIG.SLOT_SPIN_MS - (plans.length - 1 - i) * CONFIG.SLOT_REEL_STAGGER_MS;
+      const anim = plan.strip.animate([
+        { transform: 'translateY(0px)' },
+        { transform: 'translateY(' + (-plan.offset * unit) + 'px)' }
+      ], {
+        duration: Math.max(duration, 400),
+        easing: 'cubic-bezier(.12,.62,.16,1)',
+        fill: 'forwards'
+      });
+      rewardSpins.push(anim);
+      if (i === plans.length - 1) anim.onfinish = finish;
+    });
+    // 和 startSpin 一样补一个兜底：标签页切走时 onfinish 会拖后。
+    // 这里用 window.setTimeout 而不是 SceneManager.addTimer——抽卡弹层是文档级的，
+    // 不该被场景切换连带清掉。
+    rewardTimers.push(window.setTimeout(finish, CONFIG.SLOT_SPIN_MS + 240));
+  }
+
+  function cancelReward() {
+    clearRewardTimers();
+    rewardSpins.forEach(function (anim) {
+      try { anim.cancel(); } catch (err) { /* 忽略 */ }
+    });
+    rewardSpins = [];
+    rewardSettled = true;
   }
 
   /* ---------------- 拨杆 → 蓝色区上移 → 交给 U5 ---------------- */
@@ -460,6 +551,7 @@ const GadgetMatch = (function () {
   function reset() {
     exitSlot();
     exitResult();
+    cancelReward();
     settled = false;
     pulled = false;
     winnerCells = [];
@@ -483,6 +575,8 @@ const GadgetMatch = (function () {
     startSpin: startSpin,
     skipSpin: skipSpin,
     pullLever: pullLever,
+    spinReward: spinReward,
+    cancelReward: cancelReward,
     renderResult: renderResult,
     showTip: showTip,
     hideTip: hideTip,

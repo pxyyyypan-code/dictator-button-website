@@ -7,3 +7,6 @@ assets/dev/_shots-proto/
 
 # u06 材质验收截图，同理：跑 _level-look-shot.js 重生成。
 assets/dev/_shots-level/
+
+# 星级结算与收藏册验收截图，同理：跑 _rating-shots.js 重生成（4 档 × 12 张）。
+assets/dev/_shots-rating/

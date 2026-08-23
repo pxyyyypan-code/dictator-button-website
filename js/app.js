@@ -45,6 +45,7 @@ const appData = {
   gameResolving: false,
   levelResult: null,
   latestGameStats: null,
+  levelStars: 0,           // 最近一次结算的星数（0~3），只给结算卡自己看，不参与玩法
 
   // ---- 结尾段（u11 / u12）----
   dialogueIndex: 0,
@@ -124,6 +125,7 @@ const App = (function () {
     appData.gameResolving = false;
     appData.levelResult = null;
     appData.latestGameStats = null;
+    appData.levelStars = 0;
     appData.dialogueIndex = 0;
     appData.selectedWorryText = '';
     appData.finalChoice = '';
@@ -261,6 +263,8 @@ const App = (function () {
 
   function closeLevelResult() {
     const modal = bind('levelResult');
+    LevelRating.reset();
+    Collection.close();
     if (!modal) return;
     modal.classList.remove('modal--open');
     modal.setAttribute('aria-hidden', 'true');
@@ -420,20 +424,34 @@ const App = (function () {
     });
   }
 
+  /**
+   * 第一、二关的结算卡。星级评定就插在这里：通关/失败已经判完（result 是
+   * GameState 给的），进入下一关 / 重试 / 结束体验还没发生。
+   *
+   * 三档出口和原来的两条分支是对齐的，没有新增流程节点：
+   *   0 星 = 原来的失败分支（再来一次 / 结束体验）
+   *   1 星 = 原来的通关分支（进入下一关）
+   *   2、3 星 = 通关分支再多一颗「抽取未来道具」，一次机会
+   * 第三关不走这里：它不判通关与否，三条路径在上面直接跳 u11。
+   */
   function showLevelResult() {
     const result = appData.levelResult;
     const modal = bind('levelResult');
     if (!result || !modal) return;
     const passed = result.type === 'pass';
-    setText('levelResultLabel', '第' + (result.level === 1 ? '一' : '二') + '关');
+    const rating = LevelRating.render(result, appData.latestGameStats);
+    appData.levelStars = rating.stars;
+
     setText('levelResultTitle', passed
       ? '恭喜你！通关第' + (result.level === 1 ? '一' : '二') + '关'
       : '还差一点就通关了');
-    setText('levelResultNote', passed
-      ? (result.method === 'button'
-        ? '泡泡瞬间消失了。下一关的麻袋将扩大，泡泡也更容易逃出。'
-        : '你在倒计时结束前，亲手清空了麻袋里的全部泡泡。')
-      : '倒计时已经结束。你可以保留当前路线重试，或在这里结束体验。');
+    setText('levelResultNote', !passed
+      ? '倒计时已经结束。你可以保留当前路线重试，或在这里结束体验。'
+      : rating.stars >= 2
+        ? '够快了。这一关额外解锁了一次未来道具抽取——抽到的道具只进收藏册，不影响下一关。'
+        : (result.method === 'button'
+          ? '泡泡瞬间消失了。下一关的麻袋将扩大，泡泡也更容易逃出。'
+          : '你在倒计时结束前，亲手清空了麻袋里的全部泡泡。'));
     setText('levelResultPrimary', passed ? '进入下一关' : '再来一次');
     const endButton = bind('levelResultEnd');
     if (endButton) endButton.hidden = passed;
@@ -650,6 +668,9 @@ const App = (function () {
     resetData();
     resetWorryPick();
     GadgetMatch.reset();
+    // 收藏只活在本次体验里：重新开始就清空 20 格并收起右下角入口。
+    LevelRating.reset();
+    Collection.reset();
     resetGameUi();
     SceneManager.reset();
   }
@@ -767,6 +788,11 @@ const App = (function () {
       case 'game-dictator': useDictatorButton(); break;
       case 'level-result-primary': handleLevelResultPrimary(); break;
       case 'level-result-end': endFromLevelResult(); break;
+      // 2、3 星解锁的那一次抽卡。老虎机本身是 u04 那台（GadgetMatch.spinReward）。
+      case 'level-result-draw': LevelRating.startDraw(); break;
+      case 'reward-store': LevelRating.storeReward(); break;
+      case 'collection-toggle': Collection.toggle(); break;
+      case 'collection-close': Collection.close(); break;
       default:
         // handleAction 的 default 会静默吞掉未知 action，
         // 打一条 warn 好过页面「点了没反应」还查不到原因。
@@ -831,6 +857,9 @@ const App = (function () {
       getWorry: function () { return appData.selectedWorries; },
       onLifted: function () { SceneManager.goToId('u05'); }
     });
+    // 收藏册的 20 个格子只在这里建一次。飞入动画要量目标格的位置，
+    // 格子被重建就量不到了，所以此后只改 class，不动 DOM。
+    Collection.mount();
 
     resetGameUi();
     SceneManager.reset();

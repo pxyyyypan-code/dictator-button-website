@@ -169,6 +169,10 @@ const LevelGame = (function () {
       totalSpawned: 0,
       remaining: 0,
       secondsLeft: 0,
+      // 星级评定要的是含小数的真实用时。secondsLeft 是 Math.ceil 的整秒，
+      // 拿它反推会把 21.2 秒和 21.9 秒算成同一档。这里只在 gameplay 期间累加，
+      // 所以独裁者按钮把 gameplay 置 false 的那一刻，用时就跟着冻结了。
+      elapsedMs: 0,
       packing: 0,
       pressure: 0,
       peakPressure: 0,
@@ -873,6 +877,7 @@ const LevelGame = (function () {
     if (!bag) return;
     if (gameplay) {
       timeLeftMs = Math.max(0, timeLeftMs - dt * 1000);
+      stats.elapsedMs += dt * 1000;
       spawnElapsed += dt * 1000;
       const interval = SPAWN_INTERVAL[clamp(Math.round(spec.spawn || 1), 1, 3)];
       const finalStop = spec.level === 3 && timeLeftMs <= 4200;

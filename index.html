@@ -370,18 +370,44 @@
   </div>
 </div>
 
-<!-- 第一、二关结果：成功只给“进入下一关”，失败给“再来一次 / 结束体验”。 -->
+<!-- 第一、二关结果：先亮星级评定，再按星数给出口。
+     0 星 → 再来一次 / 结束体验；1 星 → 进入下一关；2、3 星 → 多一颗「抽取未来道具」。
+     锦旗素材在 _import-rating-art.py 里就已经转成横版了，CSS 不再做旋转。
+     三颗星是静态节点、由 level-rating.js 逐颗加 .is-lit，不要改成按需 createElement。 -->
 <div class="modal modal--level-result" data-bind="levelResult" aria-hidden="true" role="dialog" aria-modal="true"
      aria-labelledby="level-result-title">
   <div class="level-result-card">
     <img class="level-result-doraemon" src="assets/images/ui/doraemon-card-peek.png" alt="" width="300" height="225">
     <div class="level-result-band">
-      <span data-bind="levelResultLabel">第一关</span>
+      <span data-bind="levelResultLabel">第一关 · 结算</span>
     </div>
     <div class="level-result-body">
+      <div class="level-stars" data-bind="levelStars" role="img" aria-label="星级评定">
+        <img class="level-stars__ribbon" src="assets/images/ui/ribbon.webp" alt="" width="1417" height="889">
+        <div class="level-stars__row">
+          <span class="star-slot">
+            <img class="star star--gray" src="assets/images/ui/star-gray.webp" alt="" width="82" height="82">
+            <img class="star star--lit" src="assets/images/ui/star-yellow.webp" alt="" width="82" height="82">
+          </span>
+          <span class="star-slot">
+            <img class="star star--gray" src="assets/images/ui/star-gray.webp" alt="" width="82" height="82">
+            <img class="star star--lit" src="assets/images/ui/star-yellow.webp" alt="" width="82" height="82">
+          </span>
+          <span class="star-slot">
+            <img class="star star--gray" src="assets/images/ui/star-gray.webp" alt="" width="82" height="82">
+            <img class="star star--lit" src="assets/images/ui/star-yellow.webp" alt="" width="82" height="82">
+          </span>
+        </div>
+      </div>
       <h2 class="level-result-title" id="level-result-title" data-bind="levelResultTitle"></h2>
       <p class="level-result-note" data-bind="levelResultNote"></p>
+      <dl class="level-result-meta">
+        <div><dt>本关用时</dt><dd data-bind="levelResultTime">—</dd></div>
+        <div><dt>本关评价</dt><dd data-bind="levelResultRating">—</dd></div>
+      </dl>
       <div class="level-result-actions">
+        <button type="button" class="btn btn--primary" data-action="level-result-draw"
+                data-bind="levelResultDraw" hidden>抽取未来道具</button>
         <button type="button" class="btn btn--primary" data-action="level-result-primary"
                 data-bind="levelResultPrimary">进入下一关</button>
         <button type="button" class="btn btn--link" data-action="level-result-end"
@@ -390,6 +416,68 @@
     </div>
   </div>
 </div>
+
+<!-- 星级奖励抽卡：三列滚轮直接复用 u04 那台老虎机（GadgetMatch.spinReward），
+     不是另做一套动画。三列一起停在同一件道具上——一次只抽一件。 -->
+<div class="modal modal--reward" data-bind="rewardDraw" aria-hidden="true" role="dialog" aria-modal="true"
+     aria-labelledby="reward-draw-title">
+  <div class="reward-panel">
+    <p class="reward-panel__kicker">2 星以上奖励 · 四次元口袋</p>
+    <h2 class="reward-panel__title" id="reward-draw-title">抽取一件新的未来道具</h2>
+    <div class="slot slot--reward" role="img" aria-label="道具抽取中">
+      <!-- 三列由 gadget-match.js 用 innerHTML 重建，里面不要放任何 data-bind 子节点。 -->
+      <div class="slot__reel" data-bind="rewardReelA"></div>
+      <div class="slot__reel" data-bind="rewardReelB"></div>
+      <div class="slot__reel" data-bind="rewardReelC"></div>
+      <span class="slot__payline" aria-hidden="true"></span>
+    </div>
+    <p class="reward-panel__note" data-bind="rewardNote">已经收藏过的道具不会再次进入抽取池。</p>
+  </div>
+</div>
+
+<!-- 抽中的道具先单独亮出来，再飞进收藏册。 -->
+<div class="modal modal--reveal" data-bind="rewardReveal" aria-hidden="true" role="dialog" aria-modal="true"
+     aria-labelledby="reward-reveal-title">
+  <div class="reveal-card">
+    <p class="reveal-card__kicker">NEW GADGET</p>
+    <div class="reveal-card__art">
+      <img data-bind="rewardRevealImage" src="" alt="" width="200" height="200">
+    </div>
+    <h2 class="reveal-card__title" id="reward-reveal-title" data-bind="rewardRevealName"></h2>
+    <p class="reveal-card__desc" data-bind="rewardRevealDesc"></p>
+    <button type="button" class="btn btn--primary" data-action="reward-store">放进收藏夹</button>
+  </div>
+</div>
+
+<!-- 20 件辅助道具收藏册：4 列 × 5 行，视窗一次只露 2 行，其余靠滚轮看。
+     独裁者按钮不在这 20 件里（gadget-data.js 里它是单独的 DICTATOR_BUTTON，不在 GADGETS）。
+     格子由 collection.js 建一次后不再重建，里面没有 data-bind 节点。 -->
+<section class="collection" data-bind="collectionPanel" aria-hidden="true" aria-labelledby="collection-title">
+  <div class="collection__panel" data-bind="collectionBox">
+    <header class="collection__head">
+      <div>
+        <p class="collection__kicker">22ND CENTURY COLLECTION</p>
+        <h2 class="collection__title" id="collection-title">未来道具收藏</h2>
+      </div>
+      <p class="collection__count"><strong data-bind="collectionCount">0</strong><span>/ 20</span></p>
+    </header>
+    <div class="collection__viewport" data-bind="collectionViewport" tabindex="0"
+         aria-label="未来道具收藏列表，可用鼠标滚轮上下查看">
+      <div class="collection__grid" data-bind="collectionGrid"></div>
+    </div>
+    <p class="collection__hint" data-bind="collectionHint"><span>滚动查看</span><i aria-hidden="true"></i></p>
+    <p class="collection__tip">彩色为已解锁道具；灰色剪影仍等待发现。把鼠标移到道具上可以看到名称。</p>
+    <button type="button" class="btn btn--primary collection__close" data-action="collection-close">收回收藏夹</button>
+  </div>
+</section>
+
+<!-- 右下角常驻入口：第一次收进道具后出现，本次体验内随时可以点开。 -->
+<button type="button" class="collection-fab" data-bind="collectionFab" data-action="collection-toggle"
+        aria-label="打开未来道具收藏" hidden>
+  <img src="assets/images/ui/collection.webp" alt="" width="72" height="72">
+  <span class="collection-fab__badge" data-bind="collectionBadge">0</span>
+</button>
+
 
 <!-- U05 道具说明：外形整个交给 tip-frame.webp，
      里面只叠真实的可点区域（关闭 × 与「知道了」），位置对齐素材上画好的框。 -->
@@ -419,6 +507,9 @@
 <script src="js/dialogue.js"></script>
 <script src="js/worry-picker.js"></script>
 <script src="js/gadget-match.js"></script>
+<!-- 星级评定与收藏册排在 gadget-match.js 之后：level-rating.js 要调它的 spinReward()。 -->
+<script src="js/collection.js"></script>
+<script src="js/level-rating.js"></script>
 <script src="js/intro-tunnel.js"></script>
 <script src="js/app.js"></script>
 </body>

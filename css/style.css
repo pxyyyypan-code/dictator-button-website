@@ -3424,7 +3424,9 @@ body[data-current-scene="u03"] .stage {
   .scene--pick .scene__actions--center,
   .scene--pick.is-picked .scene__actions--center,
   .u02-panel,
-  .u02-panel.is-active {
+  .u02-panel.is-active,
+  .collection,
+  .collection.is-open {
     transition-delay: 0s !important;
   }
   .u02-entry-wash,
@@ -3660,11 +3662,25 @@ body[data-current-scene="u03"] .stage {
 }
 
 /* 第一、二关结果卡：哆啦A梦的手直接压住蓝色上沿，不留悬空间隙。 */
-.modal--level-result { z-index: 112; background: rgba(20, 71, 93, 0.66); }
+/* --dora-w / --dora-lift 是给下面 margin-top 算式用的，改素材尺寸要一起改：
+   素材是 4:3（300×225），所以探出卡片外的高度 = 宽 × 0.75 − 压进去的那一截。
+   这两个值别再往下调：他压得越深，下沿就越往顶栏里伸，
+   而「第一关 · 结算」正好在顶栏正中——压过 45px 就会被他整个盖住。
+   卡片装不下的时候，让锦旗（--ribbon-w）让步，不要动这里。 */
+.modal--level-result {
+  --dora-w: clamp(230px, 19vw, 300px);
+  --dora-lift: clamp(34px, 3.2vw, 45px);
+  z-index: 112;
+  background: rgba(20, 71, 93, 0.66);
+}
 
 .level-result-card {
   position: relative;
   width: min(900px, 86vw);
+  /* 弹层是 flex 居中，居中的是**卡片**，探出去的哆啦A梦不算在内，
+     1366×768 下它的头会被视口上沿切掉。补一条等于探出高度的上外边距，
+     flex 居中会把外边距一起算进去，等于把「卡片 + 哆啦A梦」整体居中。 */
+  margin-top: calc(var(--dora-w) * 0.75 - var(--dora-lift));
   color: var(--c-ink);
   background: var(--c-paper-3);
   border: 1px solid rgba(247, 238, 225, 0.62);
@@ -3679,8 +3695,8 @@ body[data-current-scene="u03"] .stage {
   left: 50%;
   top: auto;
   /* 素材底部自带透明留白；向卡片内补偿，让两只手真正压住蓝色上沿。 */
-  bottom: calc(100% - clamp(34px, 3.2vw, 45px));
-  width: clamp(260px, 22vw, 330px);
+  bottom: calc(100% - var(--dora-lift));
+  width: var(--dora-w);
   height: auto;
   transform: translateX(-50%);
   object-fit: contain;
@@ -3695,7 +3711,11 @@ body[data-current-scene="u03"] .stage {
   min-height: 76px;
   padding-top: 8px;
   color: var(--c-paper);
-  background: var(--c-teal-soft);
+  /* 原来写的是 --c-teal-soft，这个令牌全站从来没定义过：
+     变量解析不出来时 background 会退成透明，米白卡上再写米白字，
+     未通关那张卡的「第一关 · 结算」就整条看不见了。
+     未通关用深青、通关用主青，两张卡的顶栏刚好拉开一档。 */
+  background: var(--c-teal-deep);
   border-radius: var(--r-m) var(--r-m) 0 0;
 }
 
@@ -3705,23 +3725,27 @@ body[data-current-scene="u03"] .stage {
   letter-spacing: 0.13em;
 }
 
+/* 卡片正文原本只有标题 + 一段话 + 按钮，现在中间插了锦旗和三颗星（约 150px），
+   所以上下留白和标题字号一起收一档，1366×768 下整张卡才不顶出视口。
+   实测堆叠高度：band 76 + 星区 ~150 + 标题 ~52 + 说明两行 ~85 + 用时行 ~52
+   + 按钮 56 + 上下留白 ≈ 570，离 768 还有余量给哆啦A梦那截探头。 */
 .level-result-body {
-  padding: clamp(46px, 6vh, 70px) clamp(44px, 6vw, 88px) clamp(42px, 5vh, 62px);
+  padding: clamp(22px, 2.6vh, 34px) clamp(44px, 6vw, 88px) clamp(30px, 4vh, 48px);
   text-align: center;
 }
 
 .level-result-title {
   margin: 0 0 var(--sp-2);
-  font-size: clamp(38px, 4.1vw, 64px);
+  font-size: clamp(30px, 3.2vw, 46px);
   font-weight: 600;
-  line-height: 1.24;
+  line-height: 1.22;
   color: var(--c-teal-deep);
 }
 
 .level-result-note {
   max-width: 650px;
-  margin: 0 auto var(--sp-4);
-  font-size: var(--fs-body);
+  margin: 0 auto var(--sp-3);
+  font-size: var(--fs-note);
   font-weight: 300;
   line-height: 1.7;
   color: var(--c-ink-2);
@@ -3956,6 +3980,532 @@ body[data-current-scene="u03"] .stage {
   .ending-copy { max-width: 78vw; }
   .ending-art { position: absolute; right: -18%; bottom: -6%; width: 62vw; height: 50vh; opacity: 0.42; }
   .ending-insight { max-width: 70vw; }
-  .level-result-doraemon { width: 250px; }
+  /* 走 --dora-w 而不是直接写 width，否则上面那条 margin-top 算式会跟着失准。 */
+  .modal--level-result { --dora-w: 210px; }
   .level-result-actions { flex-direction: column; }
 }
+
+/* =====================================================================
+   13. 星级评定与 20 件道具收藏
+   只作用于第一、二关的结算卡（第三关不判通关与否，不经过这里）。
+   四层文档级弹层的叠放次序，改之前先看清楚：
+     .modal--level-result 112 → .modal--reward 118 → .modal--reveal 122
+     → .collection 126 → .collection-fab 130 → .collection-flyer 140
+   飞入动画的替身必须压在收藏册之上，否则它会钻到面板底下消失。
+   ===================================================================== */
+
+/* 星星与徽标用的暖黄。这套配色里原本没有黄，只在这一段出现，
+   所以就近定义，不进 :root 污染全站语义令牌。 */
+.modal--level-result,
+.modal--reward,
+.modal--reveal,
+.collection,
+.collection-fab { --c-star: #F2C94C; }
+
+/* ---------- 结算卡上的锦旗与三颗星 ---------- */
+/* 锦旗已经在 _import-rating-art.py 里转成横版并裁掉四周透明边（1417×889），
+   CSS 这边不再做 rotate()。外框的高必须按 --ribbon-ar 算出来：
+   一旦框的比例和图不一致，object-fit:contain 就会重新留出上下空白，
+   锦旗被缩到框宽的一半，三颗星立刻挂到它外面去。换素材要同步这个比例。 */
+.level-stars {
+  /* 锦旗是这张卡里唯一可以让步的一段：哆啦A梦的探头高度和下面四段文字
+     都是既定的，1366×768 减完只剩 190 左右给它。宽度由此反推（× 比例），
+     再往上调就会把卡片顶出视口——验收脚本 _rating-shots.js 会当场报出来。 */
+  --ribbon-w: clamp(276px, 22.2vw, 400px);
+  --ribbon-ar: 1.594;
+  --star-size: calc(var(--ribbon-w) * 0.152);
+  position: relative;
+  width: var(--ribbon-w);
+  height: calc(var(--ribbon-w) / var(--ribbon-ar));
+  margin: 0 auto var(--sp-1);
+}
+
+.level-stars__ribbon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: saturate(0.84);
+  opacity: 0.96;
+  pointer-events: none;
+}
+
+/* 锦旗上本来就印着三个星槽，而且不在图片正中——中心偏右约 5%、偏下约 10%。
+   这三个数是从素材上量的，是黄星能正好压在星槽上的唯一原因，
+   不要图省事换回 place-items:center。 */
+.level-stars__row {
+  position: absolute;
+  left: 54.9%;
+  top: 59.9%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  /* 星槽的中心距是锦旗宽的 16.5%，减掉星本身的宽就是该留的缝。 */
+  gap: calc(var(--ribbon-w) * 0.165 - var(--star-size));
+  transform: translate(-50%, -50%);
+}
+
+.star-slot {
+  position: relative;
+  display: block;
+  width: var(--star-size);
+  height: var(--star-size);
+}
+
+.star {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 灰星常驻、黄星藏着，由 level-rating.js 逐颗加 .is-lit——一次只亮一颗，
+   不要改成一次性全亮。两个 animation 都是 fill:forwards，
+   所以 prefers-reduced-motion 把时长压到 0.01ms 之后，结果状态照样正确。 */
+.star--gray { opacity: 0.72; filter: saturate(0.58) brightness(0.98); }
+.star--lit { opacity: 0; transform: scale(0.58) rotate(-12deg); filter: saturate(0.92); }
+.star-slot.is-lit .star--lit { animation: star-pop 520ms var(--ease-out) forwards; }
+.star-slot.is-lit .star--gray { animation: gray-out 300ms ease forwards; }
+
+@keyframes star-pop {
+  0% { opacity: 0; transform: scale(0.55) rotate(-12deg); }
+  65% { opacity: 1; transform: scale(1.12) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes gray-out {
+  to { opacity: 0; transform: scale(0.8); }
+}
+
+/* ---------- 用时 / 评价 ---------- */
+/* 用时和评价原来是两个上下堆叠的小块（标签在上、数值在下），一共要 60px 高。
+   1366×768 下这张卡的上下余量总共只有 23px，锦旗横过来又比竖版占高，
+   所以改成一行内联：标签和数值并排，60px 压到 28px。
+   「本关评价」和上面三颗星说的是同一件事，留着是给读屏和截图看的，
+   别再把它拉回两行去抢高度。 */
+.level-result-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: clamp(22px, 3vw, 44px);
+  margin: 0 0 var(--sp-2);
+}
+
+.level-result-meta > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.level-result-meta dt {
+  font-size: clamp(12px, 1vw, 14px);
+  letter-spacing: 0.10em;
+  color: var(--c-ink-3);
+}
+
+.level-result-meta dd {
+  margin: 0;
+  font-size: clamp(17px, 1.45vw, 22px);
+  font-weight: 500;
+  color: var(--c-ink);
+}
+
+/* 2、3 星时「抽取未来道具」是这一屏的主动作，用满色；抽完置灰。 */
+.level-result-actions .btn[disabled] {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+/* ---------- 奖励抽卡：复用 u04 的三列滚轮 ---------- */
+/* 机身样式全部来自上面的 .slot / .slot__reel / .slot__strip / .slot__cell /
+   .slot__payline，这里只把格子调小一档并换个宽度，别在这段里再写一套滚轮。 */
+.modal--reward {
+  z-index: 118;
+  /* 底色必须不透明：老虎机整个盖在结算卡上方，留一点透明度就会把下面的
+     「已抽取 / 进入下一关」透出来压在转轮上。u04 那台机器本身也是满屏实色。 */
+  background: var(--c-teal);
+  backdrop-filter: none;
+}
+
+.reward-panel { width: min(960px, 90vw); text-align: center; }
+
+.reward-panel__kicker {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: var(--ls-tag);
+  color: rgba(247, 238, 225, 0.72);
+}
+
+.reward-panel__title {
+  margin: 0 0 var(--sp-3);
+  font-size: clamp(28px, 2.9vw, 44px);
+  font-weight: 600;
+  color: var(--c-paper);
+}
+
+.slot--reward {
+  --slot-cell: clamp(70px, 7.2vw, 100px);
+  width: min(640px, 76vw);
+  margin: 0 auto;
+  box-shadow: 0 22px 54px rgba(4, 86, 108, 0.30);
+}
+
+.reward-panel__note {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  color: rgba(247, 238, 225, 0.82);
+}
+
+/* ---------- 抽中的新道具 ---------- */
+.modal--reveal { z-index: 122; background: rgba(20, 71, 93, 0.72); }
+
+.reveal-card {
+  width: min(560px, 84vw);
+  padding: clamp(30px, 4vh, 46px) clamp(38px, 5vw, 64px) clamp(32px, 4vh, 48px);
+  text-align: center;
+  color: var(--c-ink);
+  background: var(--c-paper-3);
+  border-radius: var(--r-m);
+  box-shadow: 0 30px 70px rgba(16, 52, 68, 0.30);
+  animation: modal-in var(--t-mid) var(--ease-out) both;
+}
+
+.reveal-card__kicker {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-note);
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  color: var(--c-teal);
+}
+
+/* 这张图是飞入动画的起点：collection.js 在隐藏本层之前先量它的位置，
+   所以它必须是实打实的 <img>，不要换成 background-image。 */
+.reveal-card__art {
+  display: grid;
+  place-items: center;
+  width: clamp(180px, 18vw, 240px);
+  height: clamp(160px, 16vw, 210px);
+  margin: 0 auto var(--sp-2);
+  border-radius: 50%;
+  background: var(--c-mint-soft);
+}
+
+.reveal-card__art img {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+}
+
+.reveal-card__title {
+  margin: 0;
+  font-size: clamp(26px, 2.6vw, 40px);
+  font-weight: 600;
+  color: var(--c-teal-deep);
+}
+
+.reveal-card__desc {
+  margin: var(--sp-1) 0 var(--sp-3);
+  font-size: var(--fs-note);
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--c-ink-2);
+}
+
+/* ---------- 20 件道具收藏册 ---------- */
+/* 4 列 × 5 行，视窗一次只露 2 行——这两个数字对应
+   CONFIG.COLLECTION_COLUMNS 与 CONFIG.COLLECTION_VISIBLE_ROWS，
+   改配置的话这里的 repeat(4) 和视窗高度公式要一起改。 */
+/* 开合走 opacity + visibility，不走 display:none：
+   收回时面板要从当前位置缩向右下角，display 一切就没有过渡帧了。
+   visibility:hidden 本身已经挡住了鼠标事件，不用再补 pointer-events。 */
+.collection {
+  position: fixed;
+  inset: 0;
+  z-index: 126;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 71, 93, 0.66);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear var(--t-mid);
+}
+
+.collection.is-open {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--t-mid) var(--ease), visibility 0s linear 0s;
+}
+
+.collection__panel {
+  --coll-cell: clamp(104px, 10.4vw, 168px);
+  --coll-gap: clamp(14px, 1.5vw, 22px);
+  width: min(1120px, 86vw);
+  padding: clamp(24px, 3.2vh, 38px) clamp(30px, 3.6vw, 56px) clamp(20px, 2.6vh, 28px);
+  color: var(--c-paper);
+  background: var(--c-teal);
+  border: 1px solid rgba(247, 238, 225, 0.5);
+  border-radius: var(--r-m);
+  box-shadow: 0 28px 70px rgba(4, 86, 108, 0.28);
+  /* 收回时缩向右下角的收藏夹图标，所以缩放原点钉在面板右下。 */
+  transform-origin: calc(100% - 30px) calc(100% - 30px);
+  transform: scale(0.96) translateY(16px);
+  transition: transform var(--t-scene) var(--ease-out);
+}
+
+.collection.is-open .collection__panel { transform: none; }
+/* 收回期间 .is-open 还挂着（JS 要等动画播完才摘），所以这两条必须排在 .is-open 之后。 */
+.collection.is-closing { opacity: 0; visibility: visible; }
+.collection.is-closing .collection__panel { transform: scale(0.08) translate(45vw, 36vh); }
+
+.collection__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.collection__kicker {
+  margin: 0 0 6px;
+  font-size: var(--fs-note);
+  font-weight: 400;
+  letter-spacing: var(--ls-tag);
+  color: rgba(247, 238, 225, 0.66);
+}
+
+.collection__title {
+  margin: 0;
+  font-size: clamp(24px, 2.4vw, 38px);
+  font-weight: 600;
+  color: var(--c-paper);
+}
+
+.collection__count {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  font-size: var(--fs-note);
+  color: rgba(247, 238, 225, 0.7);
+}
+
+.collection__count strong {
+  font-size: clamp(26px, 2.5vw, 36px);
+  font-weight: 500;
+  color: var(--c-star);
+}
+
+/* 视窗高度 = 2 行 + 1 个行距，正好卡在第二行的下沿，
+   露出半行会让人以为下面没东西了。
+   overscroll-behavior:contain 负责断开滚动链——滚轮到底之后不再带动整页；
+   视窗以外的面板区域由 collection.js 补一个 preventDefault。 */
+.collection__viewport {
+  height: calc(var(--coll-cell) * 2 + var(--coll-gap));
+  padding: 3px 12px 3px 3px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(247, 238, 225, 0.55) rgba(247, 238, 225, 0.12);
+  outline: none;
+}
+
+.collection__viewport:focus-visible { outline: 2px solid var(--c-paper); outline-offset: 4px; }
+.collection__viewport::-webkit-scrollbar { width: 7px; }
+.collection__viewport::-webkit-scrollbar-track { background: rgba(247, 238, 225, 0.12); border-radius: var(--r-pill); }
+.collection__viewport::-webkit-scrollbar-thumb { background: rgba(247, 238, 225, 0.55); border-radius: var(--r-pill); }
+
+.collection__grid { display: flex; flex-direction: column; gap: var(--coll-gap); }
+
+.collection__row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  gap: var(--coll-gap);
+  height: var(--coll-cell);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.collection__item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, var(--coll-cell));
+  aspect-ratio: 1;
+  justify-self: center;
+  overflow: hidden;
+  background: var(--c-paper-3);
+  border: 1px solid rgba(247, 238, 225, 0.72);
+  border-radius: 50%;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+
+.collection__item:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(4, 86, 108, 0.17); }
+.collection__item:focus-visible { outline: 2px solid var(--c-star); outline-offset: 3px; }
+
+.collection__item img {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+  transition: filter var(--t-mid) var(--ease), opacity var(--t-mid) var(--ease), transform var(--t-scene) var(--ease-out);
+}
+
+/* 未解锁 = 灰色剪影，已解锁 = 彩色原图。两者用的是同一张图，不需要另做素材。 */
+.collection__item.is-locked img { filter: grayscale(1) brightness(0.45) contrast(0.68); opacity: 0.28; transform: scale(0.9); }
+.collection__item.is-unlocked img { filter: none; opacity: 1; transform: scale(1); }
+.collection__item.is-fresh { animation: unlock-cell 900ms var(--ease-out); }
+
+@keyframes unlock-cell {
+  0% { box-shadow: 0 0 0 rgba(242, 201, 76, 0); transform: scale(0.82); }
+  42% { box-shadow: 0 0 0 11px rgba(242, 201, 76, 0.25); transform: scale(1.07); }
+  100% { box-shadow: 0 0 0 rgba(242, 201, 76, 0); transform: scale(1); }
+}
+
+/* 名称默认不显示：已解锁 hover 出名字，未解锁 hover 出「未解锁」。 */
+.collection__label {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 9px;
+  padding: 5px 7px;
+  font-size: clamp(11px, 1vw, 14px);
+  text-align: center;
+  color: var(--c-ink-2);
+  background: rgba(253, 251, 246, 0.9);
+  border-radius: var(--r-pill);
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  pointer-events: none;
+}
+
+.collection__item:hover .collection__label,
+.collection__item:focus-visible .collection__label { opacity: 1; transform: none; }
+.collection__item.is-locked .collection__label { color: var(--c-ink-3); }
+
+/* --scroll-progress 由 collection.js 在滚动时写入。 */
+.collection__hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 26px;
+  margin: 6px 0 0;
+  font-size: clamp(11px, 0.95vw, 13px);
+  letter-spacing: 0.08em;
+  color: rgba(247, 238, 225, 0.72);
+}
+
+.collection__hint i { position: relative; width: 70px; height: 1px; background: rgba(247, 238, 225, 0.25); }
+
+.collection__hint i::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--scroll-progress, 0) * (100% - 5px));
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--c-paper);
+  transition: left var(--t-fast) var(--ease);
+}
+
+.collection__tip {
+  margin: 7px 0 12px;
+  font-size: var(--fs-note);
+  font-weight: 300;
+  text-align: center;
+  color: rgba(247, 238, 225, 0.72);
+}
+
+.collection__close {
+  display: block;
+  margin: 0 auto;
+  color: var(--c-teal);
+  background: var(--c-paper);
+  border-color: var(--c-paper);
+}
+
+/* ---------- 右下角常驻入口 ---------- */
+/* 第一次收进道具后才出现（collection.js 去掉 hidden），此后本次体验内一直在。 */
+.collection-fab {
+  position: fixed;
+  z-index: 130;
+  right: clamp(20px, 2.4vw, 38px);
+  bottom: clamp(18px, 2.4vh, 34px);
+  display: grid;
+  place-items: center;
+  width: clamp(64px, 6vw, 88px);
+  height: clamp(64px, 6vw, 88px);
+  padding: 0;
+  background: rgba(253, 251, 246, 0.94);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 14px 34px rgba(4, 86, 108, 0.24);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+
+.collection-fab[hidden] { display: none; }
+.collection-fab:hover { transform: translateY(-4px) rotate(-2deg); box-shadow: 0 18px 40px rgba(4, 86, 108, 0.28); }
+.collection-fab:focus-visible { outline: 2px solid var(--c-star); outline-offset: 4px; }
+.collection-fab img { width: 78%; height: 78%; object-fit: contain; }
+.collection-fab.is-pulsing { animation: folder-pulse 650ms var(--ease-out); }
+
+@keyframes folder-pulse {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.18) rotate(-4deg); }
+  100% { transform: scale(1); }
+}
+
+.collection-fab__badge {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  font-size: clamp(11px, 1vw, 13px);
+  color: var(--c-ink);
+  background: var(--c-star);
+  border: 3px solid var(--c-paper-3);
+  border-radius: var(--r-pill);
+}
+
+/* ---------- 飞进槽位的道具替身 ---------- */
+/* 挂在 body 上、position:fixed，位置和缩放全由 collection.js 的 Web Animation 控制，
+   这里只负责它压在收藏册之上、不吃鼠标事件。 */
+.collection-flyer {
+  position: fixed;
+  z-index: 140;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 18px rgba(4, 86, 108, 0.18));
+}
+
+@media (max-width: 1180px) {
+  .collection__panel { --coll-cell: clamp(96px, 11vw, 140px); width: 92vw; }
+  .slot--reward { width: min(560px, 82vw); }
+}
+
+@media (max-width: 820px) {
+  .level-stars { --ribbon-w: min(330px, 84vw); }
+  .level-result-meta { gap: 22px; }
+  .level-result-meta > div { min-width: 118px; }
+  .collection__panel { --coll-cell: clamp(84px, 20vw, 120px); padding: 22px 16px 18px; }
+  .collection__head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .collection-fab { right: 16px; bottom: 16px; }
+}
+

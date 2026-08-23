@@ -382,7 +382,43 @@ const CONFIG = {
   // 这个数只是"什么时候切到 u05"的信号，必须和 --t-slow 一样是 900，改一处要改两处。
   SLOT_LIFT_MS: 900,
   // 道具替身从停止位飞到结果位的时长。
-  GADGET_FLY_MS: 720
+  GADGET_FLY_MS: 720,
+
+  // ================= 星级评定与 20 件道具收藏 =================
+  // 只作用于第一、二关。第三关不判通关与否、直接导向结局，所以它没有阈值，
+  // 也不会出现在这张表里——别顺手补一行 3，level-rating.js 查不到就当没有评定。
+  //
+  // 评定规则：没通关 = 0 星（三颗灰星）；通关至少 1 星；
+  // 通关用时 ≤ three 秒给 3 星，≤ two 秒给 2 星，其余 1 星。
+  // 用时取 LevelGame 的 stats.elapsedMs（含小数），不是 secondsLeft 的整秒。
+  // 独裁者按钮按下的瞬间 gameplay 就置 false、计时随即冻结，
+  // 所以用按钮提前清空拿到的就是真实用时，不额外扣星。
+  //
+  // 下面两组是暂定值（第一关限时 36 秒、第二关 30 秒），实测后直接改这里。
+  LEVEL_STAR_THRESHOLDS: Object.freeze({
+    1: Object.freeze({ three: 22, two: 29 }),
+    2: Object.freeze({ three: 19, two: 25 })
+  }),
+
+  // 结算卡里三颗星依次亮起：第一颗的等待 + 每颗之间的间隔。
+  // 不要一次性全亮，所以 STAGGER 不能给 0。
+  STAR_REVEAL_DELAY_MS: 260,
+  STAR_REVEAL_STAGGER_MS: 360,
+
+  // 奖励老虎机：复用 u04 的三列滚轮（SLOT_SPIN_MS / SLOT_REEL_STAGGER_MS / SLOT_ROW_VISIBLE），
+  // 这里只补「停稳之后多久亮出新道具」。
+  REWARD_REVEAL_DELAY_MS: 620,
+
+  // 收藏册：4 列 × 5 行共 20 件，视窗一次只露 2 行，其余靠滚轮看。
+  COLLECTION_COLUMNS: 4,
+  COLLECTION_ROWS: 5,
+  COLLECTION_VISIBLE_ROWS: 2,
+  // 抽卡后的收藏动画：开册 → 滚到目标行 → 道具飞进槽位 → 停留 → 收回右下角。
+  COLLECTION_OPEN_MS: 420,
+  COLLECTION_SCROLL_SETTLE_MS: 650,
+  COLLECTION_FLY_MS: 820,
+  COLLECTION_UNLOCK_HOLD_MS: 3200,
+  COLLECTION_CLOSE_MS: 480
 };
 
 /** 重现阶段的随机点击反馈文案：只描述“又出现了”，不出现“删除成功”。 */
