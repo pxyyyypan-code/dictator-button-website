@@ -367,6 +367,12 @@ const App = (function () {
     } else if (outcome.ending === 4) {
       setText('gameStatus', '麻袋里的泡泡正在失去稳定，它们挤在一起开始自行爆裂……');
     }
+    if (outcome.ending === 1) {
+      // 结局1 是唯一一条「画面自己长成结局页」的路：不切场景，
+      // 而是让第三关当前这一帧慢慢变成 u11。结局 2/4 仍走原来的硬切。
+      playEndingOne();
+      return;
+    }
     LevelGame.playOutcome(kind, function () {
       SceneManager.goToId('u11');
     });
@@ -394,16 +400,21 @@ const App = (function () {
     appData.gameResolving = true;
     if (level.level === 3 && level.key === 'L3A') {
       setText('gameStatus', '独裁者按钮没有反应。');
-      LevelGame.triggerButton({
-        failed: true,
-        onComplete: function (stats) {
-          appData.latestGameStats = stats;
-          const outcome = GameState.completeWithButton(stats);
-          setText('gameStatus', '麻袋松开了，泡泡正从缝隙中慢慢飘走……');
-          SceneManager.addTimer(function () { SceneManager.goToId('u11'); }, 520);
-          appData.finalChoice = outcome.trigger;
-        }
-      });
+      // 这里**不能**借道 LevelGame.triggerButton({ failed: true })：
+      // 那条会先跑 queueEscapeSequence——泡泡排队从扎口挤出去的失控演出，
+      // 正是结局1 明确不要的东西；而且等它跑完再开始「远去」，
+      // 袋子里已经空了，收尾会从一个空袋子开始。
+      // 直接进过渡即可：playFarewell() 自己会把 gameplay 关掉，
+      // 倒计时和泡泡生成随之停住，扎口也只是松开、不排队。
+      const stats = LevelGame.getStats();
+      appData.latestGameStats = stats;
+      const outcome = GameState.completeWithButton(stats);
+      appData.finalChoice = outcome.trigger;
+      playEndingOne();
+      // 这句要等那一拍静默过去再说：先「没有反应」，然后才是「松开了」。
+      SceneManager.addTimer(function () {
+        setText('gameStatus', '麻袋松开了，泡泡正慢慢飘向远方……');
+      }, Number(CONFIG.ENDING1_RELEASE_DELAY_MS) || 520);
       return;
     }
 
@@ -527,9 +538,18 @@ const App = (function () {
     }
   };
 
+  /**
+   * u11 的 onEnter。结局1 走过渡时文案已经在过渡开始那一刻填好了，
+   * 这里再填一次是幂等的，不会闪。
+   */
   function renderEnding() {
     LevelGame.stop();
     closeLevelResult();
+    fillEnding();
+  }
+
+  /** 只填 u11 的文案与 data-ending，不碰 Canvas、不停游戏。 */
+  function fillEnding() {
     const snapshot = GameState.snapshot();
     const ending = snapshot.ending || 4;
     const copy = ENDING_COPY[ending];
@@ -556,6 +576,19 @@ const App = (function () {
       ? (selected[2].length > 8 ? selected[2].slice(0, 7) + '…' : selected[2])
       : '');
     appData.finalChoice = copy.label;
+  }
+
+  /**
+   * 第三关 →「远去」→ 结局1。
+   * 关卡画面自己变成结局页：泡泡松开慢慢飘远、麻袋缩成右侧线稿、
+   * 米白转青蓝、哆啦A梦淡入，最后才真正切到 u11。
+   * 时间线在 js/ending-transition.js，画面在 LevelGame.playFarewell()。
+   */
+  function playEndingOne() {
+    EndingTransition.play({
+      fillCopy: fillEnding,
+      commit: function () { SceneManager.goToId('u11'); }
+    });
   }
 
   function resultMethodLabel(record) {
@@ -671,6 +704,7 @@ const App = (function () {
     // 收藏只活在本次体验里：重新开始就清空 20 格并收起右下角入口。
     LevelRating.reset();
     Collection.reset();
+    EndingTransition.reset();
     resetGameUi();
     SceneManager.reset();
   }
@@ -729,7 +763,12 @@ const App = (function () {
       onExit: LevelGame.stop
     });
 
-    SceneManager.registerHooks('u11', { onEnter: renderEnding });
+    SceneManager.registerHooks('u11', {
+      onEnter: renderEnding,
+      // 过渡用的 class 一直留到离开 u11 才摘：提前摘会让结局页
+      // 在切场景那一刻重新播一次淡入，反而闪一下。
+      onExit: EndingTransition.reset
+    });
     SceneManager.registerHooks('u12', { onEnter: renderLog });
   }
 

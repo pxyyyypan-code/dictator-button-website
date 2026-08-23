@@ -88,6 +88,38 @@ const LevelGame = (function () {
   const BUBBLE_TEXT_COLOR = LEVEL_TUNING.BUBBLE_TEXT_COLOR || 'rgba(39,57,68,0.90)';
   const PARTICLE_COLOR = LEVEL_TUNING.BUBBLE_PARTICLE_COLOR || '#2C89A8';
 
+  /* 结局1「远去」的收尾演出。和 playOutcome('escape') 是两回事：
+     那个是「从扎口挤出去」的快动作，这里是「松开手、慢慢飘远」。
+     参数全在 config.js 的 ENDING1_*，这里只做取值兜底。 */
+  const FAR = {
+    sackStart: Number(LEVEL_TUNING.ENDING1_SACK_START_MS) || 700,
+    sackMs: Number(LEVEL_TUNING.ENDING1_SACK_MS) || 2500,
+    tintStart: Number(LEVEL_TUNING.ENDING1_TINT_START_MS) || 1500,
+    tintMs: Number(LEVEL_TUNING.ENDING1_TINT_MS) || 1900,
+    veilStart: Number(LEVEL_TUNING.ENDING1_VEIL_START_MS) || 3000,
+    veilMs: Number(LEVEL_TUNING.ENDING1_VEIL_MS) || 1200,
+    riseMin: Number(LEVEL_TUNING.ENDING1_RISE_SPEED_MIN) || 30,
+    riseMax: Number(LEVEL_TUNING.ENDING1_RISE_SPEED_MAX) || 66,
+    spread: Number(LEVEL_TUNING.ENDING1_RISE_SPREAD) || 30,
+    funnel: Number(LEVEL_TUNING.ENDING1_RISE_FUNNEL) || 0.16,
+    drag: Number(LEVEL_TUNING.ENDING1_RISE_DRAG) || 0.55,
+    stagger: Number(LEVEL_TUNING.ENDING1_RISE_STAGGER_MS) || 160,
+    release: Number(LEVEL_TUNING.ENDING1_RELEASE_DELAY_MS) || 520,
+    sway: Number(LEVEL_TUNING.ENDING1_RISE_SWAY) || 7,
+    shrink: Number(LEVEL_TUNING.ENDING1_SHRINK_PER_SEC) || 0.10,
+    fadeStart: Number(LEVEL_TUNING.ENDING1_FADE_START_MS) || 1700,
+    fadeMs: Number(LEVEL_TUNING.ENDING1_FADE_MS) || 2300,
+    popAt: Number(LEVEL_TUNING.ENDING1_POP_AT_MS) || 2100,
+    popCount: Number(LEVEL_TUNING.ENDING1_POP_PARTICLES) || 6,
+    popSpeed: Number(LEVEL_TUNING.ENDING1_POP_SPEED_SCALE) || 0.34
+  };
+  const FAR_TEAL = LEVEL_TUNING.ENDING1_TEAL_RGB || [4, 156, 191];
+  const FAR_TEAL_RGB = FAR_TEAL[0] + ',' + FAR_TEAL[1] + ',' + FAR_TEAL[2];
+  // 结局页 .ending-sack 的描边色（style.css: rgba(247,238,225,0.76)）。
+  // canvas 上的麻袋最后要变成同一根线，两处必须一致，否则交接时线会跳色。
+  const FAR_LINE_RGB = '247,238,225';
+  const FAR_LINE_A = 0.76;
+
   const FILM = {
     light: Number(LEVEL_TUNING.BUBBLE_LIGHT_ANGLE_DEG) || 347,
     env: Number(LEVEL_TUNING.BUBBLE_ENV_STRENGTH) || 1.60,
@@ -150,6 +182,8 @@ const LevelGame = (function () {
   let mouthOpen = 0;
   let mouthForced = false;
   let tieRecoil = 0;
+  /** 结局1收尾演出的进度包；null = 没在演。见 playFarewell()。 */
+  let farewell = null;
   let reducedMotion = false;
   let filmGeometry = null;      // 与膜厚相位无关的那半：法线、菲涅尔、环境反射、高光、焦散
   let filmSprites = null;       // 常规态 SPRITE_FRAMES 张离屏 canvas
@@ -696,6 +730,7 @@ const LevelGame = (function () {
     nextId = 1;
     profileCursor = 0;
     resetWall();
+    farewell = null;
     reducedMotion = prefersReducedMotion();
     mount(opts.canvas || canvas);
     bag = computeBag();
@@ -736,6 +771,7 @@ const LevelGame = (function () {
     collisionEvents = 0;
     growthBlockedRatio = 0;
     resetWall();
+    farewell = null;
     stats = freshStats();
     profileCursor = 0;
   }
@@ -875,6 +911,7 @@ const LevelGame = (function () {
 
   function update(dt) {
     if (!bag) return;
+    if (farewell) updateFarewell(dt);
     if (gameplay) {
       timeLeftMs = Math.max(0, timeLeftMs - dt * 1000);
       stats.elapsedMs += dt * 1000;
@@ -913,6 +950,16 @@ const LevelGame = (function () {
       if (bubble.state === 'escaping') {
         updateEscape(bubble, dt);
         if (bubble.escapePhase === 'gone') bubbles.splice(i, 1);
+        continue;
+      }
+
+      // 结局1：松开手之后的漂离。不参与碰撞、不再受袋壁约束——
+      // 此时袋子本身也已经在缩小让位，两者是同一件事的两面。
+      if (bubble.state === 'drifting') {
+        updateDrift(bubble, dt);
+        if (bubble.opacity <= 0.01 || bubble.y + bubble.r * bubble.scale < -40) {
+          bubbles.splice(i, 1);
+        }
         continue;
       }
 
@@ -1352,10 +1399,133 @@ const LevelGame = (function () {
     finishCallback = typeof onComplete === 'function' ? onComplete : null;
   }
 
-  function emitParticles(x, y, color, count) {
+  /**
+   * 结局1「远去」。和 playOutcome('escape') 刻意分开写：
+   * 那条是「扎口松了、泡泡排队挤出去」的失控演出，这条是「不再抓着它」——
+   * 泡泡自己慢慢离开麻袋、越飘越慢、彼此拉开，麻袋留在原地缩小成线稿。
+   *
+   * 只改绘制与泡泡运动，不动 computeBag、不动 stats：
+   * 玩法此刻已经停了，结局也已经在 GameState 里判完，这里纯粹是收尾画面。
+   *
+   * @param {{sackTarget?: {cx:number, cy:number, w:number}}} options
+   *        sackTarget 是结局页 .ending-sack 的实测位置与宽度（画布坐标系），
+   *        由 ending-transition.js 量出来传进来——写死百分比在三档分辨率上会错位。
+   */
+  function playFarewell(options) {
+    if (!bag) return getStats();
+    const opts = options || {};
+    gameplay = false;
+    if (!bubbles.some(function (bubble) { return bubble.state === 'normal'; })) {
+      for (let i = 0; i < 7; i += 1) spawnBubble(false, true);
+    }
+    // 扎口松开，但**不**调 queueEscapeSequence——不排队、不挤压、不加速。
+    mouthForced = true;
+
+    const normal = bubbles.filter(function (bubble) { return bubble.state === 'normal'; });
+    // 靠近袋口的先走：由上往下依次松手，读起来才是「一点点放开」。
+    normal.sort(function (a, b) { return a.y - b.y; });
+    normal.forEach(function (bubble, index) {
+      bubble.state = 'drifting';
+      bubble.stateTime = 0;
+      bubble.driftDelay = (FAR.release + index * FAR.stagger) / 1000;
+      // 警戒态的红色反光必须在这里清掉：结局1 不是失败结局，
+      // 一颗还泛着红的泡泡飘上去，整段情绪就读反了。
+      bubble.edgeGlow = 0;
+      bubble.edgeCooldown = 0;
+      // 初速里带一点朝袋口中线的收拢，泡泡才像是从口子里出来的，
+      // 而不是从袋壁四面穿出去。
+      bubble.vx = (bag.cx - bubble.x) * FAR.funnel + random(-FAR.spread, FAR.spread);
+      bubble.vy = -random(FAR.riseMin, FAR.riseMax);
+      bubble.squeeze = 0;
+    });
+
+    const target = opts.sackTarget || null;
+    farewell = {
+      t: 0,
+      sack: 0,          // 麻袋位移/缩放进度 0→1
+      material: 1,      // 袋身填充、高光、褶子的存量 1→0
+      line: 0,          // 米白线稿的显影 0→1
+      tint: 0,          // 米白→青蓝 0→1
+      handoff: 0,   // 结局页盖上来的进度：canvas 线稿按这个退让 1→0
+      popped: false,
+      // 破的那颗挑最靠上的：它最先飘出画面上沿，破在半路才看得见。
+      popId: normal.length ? normal[0].id : 0,
+      targetX: target ? target.cx : width * 0.78,
+      targetY: target ? target.cy : height * 0.62,
+      // 缩放由「结局页线稿的宽度 ÷ 当前袋子的宽度」直接算出来，
+      // 所以三档分辨率上袋子都正好收进线稿里，不用分别调参。
+      targetScale: target && target.w
+        ? clamp(target.w / Math.max(1, bag.rx * 2), 0.12, 1)
+        : 0.46
+    };
+    return getStats();
+  }
+
+  /** 结局1：单颗泡泡的漂离。速度每秒衰减到 drag 倍，所以是越飘越慢。 */
+  function updateDrift(bubble, dt) {
+    if (bubble.stateTime < bubble.driftDelay) return;
+    const decay = Math.pow(FAR.drag, dt);
+    bubble.vx *= decay;
+    bubble.vy *= decay;
+    bubble.x += bubble.vx * dt + Math.sin(bubble.stateTime * 0.8 + bubble.phase) * FAR.sway * dt;
+    bubble.y += bubble.vy * dt;
+    bubble.r = Math.max(8, bubble.r * (1 - FAR.shrink * dt));
+  }
+
+  /** 结局1：麻袋的绘制期变换。绕袋心缩放，再把袋心送到结局页线稿的位置。 */
+  function applyFarewellSack() {
+    const p = farewell.sack;
+    const k = 1 + (farewell.targetScale - 1) * p;
+    const cx = bag.cx + (farewell.targetX - bag.cx) * p;
+    const cy = bag.cy + (farewell.targetY - bag.cy) * p;
+    ctx.translate(cx, cy);
+    ctx.scale(k, k);
+    ctx.translate(-bag.cx, -bag.cy);
+  }
+
+  function updateFarewell(dt) {
+    farewell.t += dt * 1000;
+    const t = farewell.t;
+    farewell.sack = easeOut(clamp((t - FAR.sackStart) / FAR.sackMs, 0, 1));
+    // 填充比位移先走完：袋子还在往右挪的时候，已经只剩一根线了。
+    farewell.material = 1 - clamp((t - FAR.sackStart) / (FAR.sackMs * 0.72), 0, 1);
+    farewell.line = clamp((t - FAR.sackStart - FAR.sackMs * 0.30) / (FAR.sackMs * 0.70), 0, 1);
+    farewell.tint = easeOut(clamp((t - FAR.tintStart) / FAR.tintMs, 0, 1));
+    // 结局页的 .ending-sack 是同一根米白线，位置也已经对齐；两边同时全亮
+    // 会看出双线（一个是 canvas 极坐标块，一个是 border-radius 块）。
+    // 所以结局页淡入的同时，canvas 这根线等量退下去，读起来就是「交接」。
+    farewell.handoff = clamp((t - FAR.veilStart) / FAR.veilMs, 0, 1);
+
+    if (!farewell.popped && t >= FAR.popAt) {
+      farewell.popped = true;
+      const victim = bubbles.filter(function (bubble) {
+        return bubble.state === 'drifting' && bubble.id === farewell.popId;
+      })[0] || bubbles.filter(function (bubble) { return bubble.state === 'drifting'; })[0];
+      if (victim) {
+        // 肥皂泡的破法：几粒慢碎屑，不用 startBurst（那是会撑大再炸的）。
+        emitParticles(victim.x, victim.y, 'rgba(214,232,238,0.85)', FAR.popCount, FAR.popSpeed);
+        victim.opacity = 0;
+        victim.scale = 0;
+      }
+    }
+
+    // 全体一起变淡，和背景转青蓝同步——泡泡先淡下去，米白基底才不会
+    // 隔着一层烘焙好的暖色反光跟青蓝打架。
+    if (t > FAR.fadeStart) {
+      const step = dt * 1000 / FAR.fadeMs;
+      bubbles.forEach(function (bubble) {
+        if (bubble.state === 'drifting') bubble.opacity = Math.max(0, bubble.opacity - step);
+      });
+    }
+  }
+
+  function easeOut(p) { return 1 - Math.pow(1 - p, 3); }
+
+  function emitParticles(x, y, color, count, speedScale) {
+    const scale = speedScale === undefined ? 1 : speedScale;
     for (let i = 0; i < count; i += 1) {
       const angle = random(0, Math.PI * 2);
-      const speed = random(45, 150);
+      const speed = random(45, 150) * scale;
       particles.push({
         x: x,
         y: y,
@@ -1400,11 +1570,22 @@ const LevelGame = (function () {
   function draw(time) {
     ctx.clearRect(0, 0, width, height);
     drawAmbient();
-    drawSack();
-    bubbles.forEach(function (bubble) { drawBubble(bubble, time); });
-    // 扎口画在泡泡之后：正在挤出去的泡泡是从口子「底下」穿过的，
-    // 这样才看得见扎带勒着它，而不是泡泡盖在扎带上面。
-    drawTie();
+    if (farewell) {
+      // 结局1：麻袋和扎口一起做绘制期变换（缩小 → 右移 → 变线稿）。
+      // 此时没有泡泡在挤扎口了，所以扎口不必再压在泡泡之后。
+      ctx.save();
+      applyFarewellSack();
+      drawSack();
+      drawTie();
+      ctx.restore();
+      bubbles.forEach(function (bubble) { drawBubble(bubble, time); });
+    } else {
+      drawSack();
+      bubbles.forEach(function (bubble) { drawBubble(bubble, time); });
+      // 扎口画在泡泡之后：正在挤出去的泡泡是从口子「底下」穿过的，
+      // 这样才看得见扎带勒着它，而不是泡泡盖在扎带上面。
+      drawTie();
+    }
     particles.forEach(drawParticle);
   }
 
@@ -1426,6 +1607,15 @@ const LevelGame = (function () {
     vignette.addColorStop(1, 'rgba(150,124,88,0.10)');
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
+
+    // 结局1：米白 → 哆啦A梦青蓝。画在 canvas 上而不是改 --game-bg——
+    // 那个变量是泡泡精灵烘焙时的假定底色（见 style.css .game-scene 的注释），
+    // 动它会让球面上那圈环境反光和背景脱节。canvas 是透明底，
+    // 这里按 tint 叠一层青蓝，正好等于「米白与青蓝按比例混合」。
+    if (farewell && farewell.tint > 0) {
+      ctx.fillStyle = 'rgba(' + FAR_TEAL_RGB + ',' + farewell.tint.toFixed(4) + ')';
+      ctx.fillRect(0, 0, width, height);
+    }
   }
 
 
@@ -1603,26 +1793,49 @@ const LevelGame = (function () {
     const path = sackPath();
     const mouth = mouthGeometry();
     const neck = mouth.neck > 6 ? neckPath(mouth) : null;
+    // 结局1：袋身的「材质存量」。1 = 正常塑料袋，0 = 只剩一根线。
+    const material = farewell ? farewell.material : 1;
 
     ctx.save();
-    drawFilmBody(path, 0);
-    if (neck) drawFilmBody(neck, 0.012);
+    if (material > 0.004) {
+      ctx.globalAlpha = material;
+      drawFilmBody(path, 0);
+      if (neck) drawFilmBody(neck, 0.012);
 
-    ctx.save();
-    ctx.clip(path);
-    drawSheen();
-    drawWrinkles();
-    ctx.restore();
+      ctx.save();
+      ctx.clip(path);
+      drawSheen();
+      drawWrinkles();
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
 
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = rimStroke();
-    ctx.lineWidth = Math.max(1.8, width * 0.0018);
-    ctx.stroke(path);
-    if (neck) ctx.stroke(neck);
+    if (material > 0.004) {
+      ctx.globalAlpha = material;
+      ctx.strokeStyle = rimStroke();
+      ctx.lineWidth = Math.max(1.8, width * 0.0018);
+      ctx.stroke(path);
+      if (neck) ctx.stroke(neck);
+      ctx.globalAlpha = 1;
+    }
+
+    // 结局1：米白线稿接手。颜色和 style.css 的 .ending-sack 描边完全一致，
+    // 所以交接的那一帧两根线是重合的，看不出换了实现。
+    if (farewell && farewell.line > 0) {
+      ctx.globalAlpha = farewell.line * (1 - farewell.handoff) * FAR_LINE_A;
+      ctx.strokeStyle = 'rgba(' + FAR_LINE_RGB + ',1)';
+      // 线宽要抵消掉外层的缩放，否则袋子缩到 0.46 时线也跟着变细一半。
+      ctx.lineWidth = Math.max(1.6, width * 0.0022) /
+        Math.max(0.2, 1 + (farewell.targetScale - 1) * farewell.sack);
+      ctx.stroke(path);
+      ctx.globalAlpha = 1;
+    }
 
     // 警戒：袋壁整体透红。首轮直接挂 pressure，结果压力刚过一半就烧成一圈红环，
     // 把材质本身盖掉了。改成只在 pressureStage 已经进警戒之后、按超出量平方上升。
-    if (pressureStage > 0) {
+    // 结局1不是失败结局，收尾演出里一律不出现红色警报，所以 farewell 期间整段跳过。
+    if (pressureStage > 0 && !farewell) {
       const heat = clamp(pressure, 0, 1) * clamp(pressure, 0, 1);
       ctx.globalAlpha = heat * 0.40;
       ctx.strokeStyle = '#F5654F';
@@ -1644,11 +1857,16 @@ const LevelGame = (function () {
     if (!bag) return;
     const mouth = mouthGeometry();
     if (mouth.neck <= 6) return;
+    // 结局1：扎口跟着袋身一起淡出。结局页的扎口由 .ending-sack::after 接手，
+    // 两边都留着会看见两个口子。
+    const material = farewell ? farewell.material : 1;
+    if (material <= 0.004) return;
     const open = clamp(mouthOpen, 0, 1);
     const tieL = mouth.cx - mouth.halfW;
     const tieR = mouth.cx + mouth.halfW;
 
     ctx.save();
+    ctx.globalAlpha = material;
     ctx.lineCap = 'round';
 
     // 收拢的褶子：口子越松，褶子越向两侧散开、越浅。
@@ -1715,7 +1933,9 @@ const LevelGame = (function () {
     // 松到能漏泡泡时，口沿透一点警示红——这是玩家唯一能看见的「要漏了」提示。
     const escapeGrade = clamp(Math.round((spec && spec.escape) || 1), 1, 3);
     const threshold = MOUTH_ESCAPE_MIN * (1 - 0.22 * (escapeGrade - 1));
-    if (open > threshold) {
+    // 结局1 期间不画：那时扎口是被主动松开的，不是「快撑不住了」，
+    // 而且 mouthForced 会把 open 顶到 1，这圈红必然亮，正好和整段情绪相反。
+    if (open > threshold && !farewell) {
       const heat = clamp((open - threshold) / Math.max(0.01, 1 - threshold), 0, 1);
       ctx.strokeStyle = 'rgba(217,70,54,' + (heat * 0.46).toFixed(4) + ')';
       ctx.lineWidth = 2 + heat * 2;
@@ -1816,6 +2036,7 @@ const LevelGame = (function () {
     destroy: destroy,
     triggerButton: triggerButton,
     playOutcome: playOutcome,
+    playFarewell: playFarewell,
     getStats: getStats,
     isRunning: function () { return running; },
     isPlaying: function () { return gameplay; },

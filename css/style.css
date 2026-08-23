@@ -3959,6 +3959,169 @@ body[data-current-scene="u03"] .stage {
   to { transform: rotate(360deg) translateX(10px) rotate(-360deg); }
 }
 
+/* ── 第三关 → 结局1「远去」的连续过渡 ───────────────────────────
+   分工：泡泡漂离、麻袋缩成线稿、米白转青蓝全在 canvas 上（level-game.js
+   的 playFarewell）；这里只负责 DOM 那一半——HUD 淡出，以及把已经存在的
+   结局1页面「铺在上面再点亮」。没有新结局页，终点就是同一个 u11。
+
+   下面四个时长必须和 js/config.js 的 ENDING1_* 对齐（CSS 读不到 JS，
+   和 SLOT_LIFT_MS ↔ --t-slow 是同一种「改一处要改两处」）：
+     --e1-hud   = ENDING1_HUD_FADE_MS  900
+     --e1-veil  = ENDING1_VEIL_MS      1200
+   页面淡入的起点由 JS 加 .is-lit 的时刻决定（ENDING1_VEIL_START_MS），
+   所以这里不写 delay。 */
+.scene--ending {
+  --e1-hud: 900ms;
+  --e1-veil: 1200ms;
+}
+
+/* 1. HUD、独裁者按钮淡出。只动 opacity：u06~u10 期间 Canvas 及其祖先
+      不得 display:none，而这几个节点和 Canvas 同在一个场景里。
+      pointer-events 一并关掉，免得淡到一半还能点。 */
+.game-scene.is-farewell .game-header,
+.game-scene.is-farewell .game-timer,
+.game-scene.is-farewell .immersive-exit,
+.game-scene.is-farewell .game-bag-note,
+.game-scene.is-farewell .game-dictator {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--e1-hud, 900ms) var(--ease);
+}
+
+/* 状态行是这一段唯一的一句话（「泡泡正慢慢飘向远方……」），
+   要比别的 HUD 多留一会儿再退场：先说完，再安静。 */
+.game-scene.is-farewell .game-status {
+  opacity: 0;
+  transition: opacity var(--e1-hud, 900ms) var(--ease) 1600ms;
+}
+
+/* 2. 收藏夹入口。它挂在 body 上，不在场景里，所以单独一条。 */
+body.is-ending-transition .collection-fab {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--e1-hud, 900ms) var(--ease);
+}
+
+/* 3. 结局页「铺开但不可见」。
+      这一步是整段过渡成立的前提：只有真正参与布局，
+      ending-transition.js 才量得到 .ending-sack 的位置，
+      canvas 里的麻袋才知道该缩到哪儿去。
+      animation:none 用来压住 .scene--ending.scene--active 自带的 fade-in
+      —— 那一下会在真正切场景时又淡入一次，反而闪。 */
+.scene--ending.is-arriving {
+  display: grid;
+  z-index: 60;
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
+}
+
+/* 4. 点亮。此时 canvas 上的米白已经转成同一个青蓝，两层颜色一致，
+      所以看到的不是「一块蓝板盖下来」，而是画面自己安定下来。 */
+.scene--ending.is-arriving.is-lit {
+  opacity: 1;
+  transition: opacity var(--e1-veil, 1200ms) var(--ease-out);
+}
+
+/* 切场景之后恢复可交互（「查看体验总结」「重新体验」）。 */
+.scene--ending.is-arriving.is-committed { pointer-events: auto; }
+
+/* 5. 哆啦A梦从右下轻轻淡入，移动到它本来的位置。位移量很小：
+      这是「走近」，不是「飞入」。 */
+.scene--ending.is-arriving .ending-doraemon {
+  opacity: 0;
+  transform: translate3d(6%, 9%, 0);
+}
+
+.scene--ending.is-arriving.is-lit .ending-doraemon {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition: opacity 1100ms var(--ease-out) 260ms,
+              transform 1400ms var(--ease-out) 260ms;
+}
+
+/* 6. 左栏文案错峰浮现。间隔刻意拉到 140ms 一档：一次全亮读起来像弹窗，
+      逐行出现才接得上「安静下来之后，话才慢慢说出口」。 */
+.scene--ending.is-arriving .ending-label,
+.scene--ending.is-arriving .ending-title,
+.scene--ending.is-arriving .ending-worry,
+.scene--ending.is-arriving .ending-insight,
+.scene--ending.is-arriving .ending-doraemon-copy,
+.scene--ending.is-arriving .ending-actions,
+.scene--ending.is-arriving .ending-exit {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+}
+
+.scene--ending.is-arriving.is-lit .ending-label,
+.scene--ending.is-arriving.is-lit .ending-title,
+.scene--ending.is-arriving.is-lit .ending-worry,
+.scene--ending.is-arriving.is-lit .ending-insight,
+.scene--ending.is-arriving.is-lit .ending-doraemon-copy,
+.scene--ending.is-arriving.is-lit .ending-actions,
+.scene--ending.is-arriving.is-lit .ending-exit {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition: opacity 720ms var(--ease-out), transform 720ms var(--ease-out);
+}
+
+.scene--ending.is-arriving.is-lit .ending-label { transition-delay: 120ms; }
+.scene--ending.is-arriving.is-lit .ending-title { transition-delay: 260ms; }
+.scene--ending.is-arriving.is-lit .ending-worry { transition-delay: 400ms; }
+.scene--ending.is-arriving.is-lit .ending-insight { transition-delay: 540ms; }
+.scene--ending.is-arriving.is-lit .ending-doraemon-copy { transition-delay: 680ms; }
+.scene--ending.is-arriving.is-lit .ending-actions { transition-delay: 820ms; }
+.scene--ending.is-arriving.is-lit .ending-exit { transition-delay: 940ms; }
+
+/* 7. 结局页自带的漂浮泡泡等页面亮起来再动，否则它们会在还没显影时
+      就已经飘到了半路，接不上 canvas 上那几颗。 */
+.scene--ending.is-arriving[data-ending="1"] .ending-bubble { animation-play-state: paused; }
+.scene--ending.is-arriving.is-lit[data-ending="1"] .ending-bubble { animation-play-state: running; }
+
+/* 减少动态：整段退化成一次短交叉淡入。不做位移、不做错峰、不做漂浮。
+   JS 那边同时跳过 playFarewell()，canvas 上也不会有漂离与转色。 */
+@media (prefers-reduced-motion: reduce) {
+  .game-scene.is-farewell .game-header,
+  .game-scene.is-farewell .game-timer,
+  .game-scene.is-farewell .immersive-exit,
+  .game-scene.is-farewell .game-bag-note,
+  .game-scene.is-farewell .game-dictator,
+  .game-scene.is-farewell .game-status,
+  body.is-ending-transition .collection-fab {
+    transition-duration: 200ms;
+    transition-delay: 0ms;
+  }
+
+  .scene--ending.is-arriving.is-lit { transition-duration: 240ms; }
+
+  .scene--ending.is-arriving .ending-doraemon,
+  .scene--ending.is-arriving .ending-label,
+  .scene--ending.is-arriving .ending-title,
+  .scene--ending.is-arriving .ending-worry,
+  .scene--ending.is-arriving .ending-insight,
+  .scene--ending.is-arriving .ending-doraemon-copy,
+  .scene--ending.is-arriving .ending-actions,
+  .scene--ending.is-arriving .ending-exit {
+    opacity: 1;
+    transform: none;
+  }
+
+  .scene--ending.is-arriving.is-lit .ending-doraemon,
+  .scene--ending.is-arriving.is-lit .ending-label,
+  .scene--ending.is-arriving.is-lit .ending-title,
+  .scene--ending.is-arriving.is-lit .ending-worry,
+  .scene--ending.is-arriving.is-lit .ending-insight,
+  .scene--ending.is-arriving.is-lit .ending-doraemon-copy,
+  .scene--ending.is-arriving.is-lit .ending-actions,
+  .scene--ending.is-arriving.is-lit .ending-exit {
+    transform: none;
+    transition: none;
+    transition-delay: 0ms;
+  }
+
+  .scene--ending.is-arriving[data-ending="1"] .ending-bubble { animation: none; }
+}
+
 @media (max-width: 1180px) {
   .game-header { max-width: 58vw; }
   .game-dictator { max-width: 230px; }

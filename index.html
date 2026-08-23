@@ -4,7 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>22世纪未来道具体验馆 · No.001《独裁者按钮》</title>
-<link rel="stylesheet" href="css/style.css">
+<!-- ?v= 是给浏览器换缓存用的：GitHub Pages 只改文件内容、不改文件名，
+     浏览器会把上一次的 style.css / *.js 一直留在磁盘缓存里，于是出现
+     「index.html 是新的、样式和脚本还是旧的」这种半新半旧的画面
+     （表现为锦旗按原始尺寸铺开、六颗星并排、用时停在「—」）。
+     每次推 GitHub 之前把下面这一串日期版本号一起改掉，就不用叫人硬刷新了。 -->
+<link rel="stylesheet" href="css/style.css?v=20260823b">
 </head>
 <body>
 <main id="stage" class="stage">
@@ -495,22 +500,26 @@
   </div>
 </div>
 
-<script src="js/config.js"></script>
-<script src="js/font-support.js"></script>
-<script src="js/worry-data.js"></script>
-<script src="js/gadget-data.js"></script>
-<script src="js/bubble-game.js"></script>
-<script src="js/game-state.js"></script>
-<script src="js/level-game.js"></script>
-<script src="js/scene-manager.js"></script>
+<!-- ?v= 同 <head> 里的样式表，改一处就要全改，版本号保持一致。 -->
+<script src="js/config.js?v=20260823b"></script>
+<script src="js/font-support.js?v=20260823b"></script>
+<script src="js/worry-data.js?v=20260823b"></script>
+<script src="js/gadget-data.js?v=20260823b"></script>
+<script src="js/bubble-game.js?v=20260823b"></script>
+<script src="js/game-state.js?v=20260823b"></script>
+<script src="js/level-game.js?v=20260823b"></script>
+<script src="js/scene-manager.js?v=20260823b"></script>
 <!-- 三个前半段模块必须排在 app.js 之前：app.js 的 init() 会直接调它们。 -->
-<script src="js/dialogue.js"></script>
-<script src="js/worry-picker.js"></script>
-<script src="js/gadget-match.js"></script>
+<script src="js/dialogue.js?v=20260823b"></script>
+<script src="js/worry-picker.js?v=20260823b"></script>
+<script src="js/gadget-match.js?v=20260823b"></script>
 <!-- 星级评定与收藏册排在 gadget-match.js 之后：level-rating.js 要调它的 spinReward()。 -->
-<script src="js/collection.js"></script>
-<script src="js/level-rating.js"></script>
-<script src="js/intro-tunnel.js"></script>
-<script src="js/app.js"></script>
+<script src="js/collection.js?v=20260823b"></script>
+<script src="js/level-rating.js?v=20260823b"></script>
+<script src="js/intro-tunnel.js?v=20260823b"></script>
+<!-- 第三关 → 结局1 的过渡时间线。必须排在 app.js 之前：
+     app.js 的 playEndingOne() 会直接引用 EndingTransition。 -->
+<script src="js/ending-transition.js?v=20260823b"></script>
+<script src="js/app.js?v=20260823b"></script>
 </body>
 </html>

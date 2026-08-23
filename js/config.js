@@ -418,7 +418,56 @@ const CONFIG = {
   COLLECTION_SCROLL_SETTLE_MS: 650,
   COLLECTION_FLY_MS: 820,
   COLLECTION_UNLOCK_HOLD_MS: 3200,
-  COLLECTION_CLOSE_MS: 480
+  COLLECTION_CLOSE_MS: 480,
+
+  /* ── 第三关 → 结局1「远去」的连续过渡 ─────────────────────────
+     情绪线：拥挤 → 松开 → 漂浮 → 远离 → 安静 → 释然。
+     不是失败结局，所以全程没有爆裂、没有红色警报、没有失控逃跑。
+
+     下面的时间点全是**相对起点的绝对毫秒**，不是各段时长依次相加。
+     这样改任何一个值都不会把后面的整体推移，调参时不用重算。
+       0                 泡泡松开、HUD/收藏夹/独裁者按钮开始淡出
+       SACK_START        麻袋开始缩小 → 右移 → 填充淡出成线稿
+       TINT_START        米白开始转青蓝（画在 canvas 上，不动 --game-bg）
+       VEIL_START        结局1页面在上方铺开，开始淡入
+       TOTAL             真正切场景；此刻两屏画面已经一致，切换看不见
+     TOTAL 必须 ≥ VEIL_START + VEIL_MS，否则会在淡入没走完时硬切。 */
+  ENDING1_HUD_FADE_MS: 900,
+  ENDING1_SACK_START_MS: 700,
+  ENDING1_SACK_MS: 2500,
+  ENDING1_TINT_START_MS: 1500,
+  ENDING1_TINT_MS: 1900,
+  ENDING1_VEIL_START_MS: 3000,
+  ENDING1_VEIL_MS: 1200,
+  ENDING1_TOTAL_MS: 4400,
+
+  // 结局页的青蓝。必须和 style.css 的 --c-teal-bright (#049CBF) 是同一个颜色，
+  // 否则过渡完成的那一帧会跳色。canvas 这层是 rgba 叠加，所以写成分量。
+  ENDING1_TEAL_RGB: Object.freeze([4, 156, 191]),
+
+  // 泡泡离开麻袋：给一个向上的初速，之后每秒衰减到 DRAG 倍——
+  // 所以是「越飘越慢、彼此拉开」，而不是加速逃跑。
+  ENDING1_RISE_SPEED_MIN: 30,
+  ENDING1_RISE_SPEED_MAX: 66,
+  ENDING1_RISE_SPREAD: 30,
+  ENDING1_RISE_FUNNEL: 0.16,
+  ENDING1_RISE_DRAG: 0.55,
+  ENDING1_RISE_STAGGER_MS: 160,
+  // 触发到「手真的松开」之间留一拍。按钮那条路上这一拍最要紧：
+  // 按下去 → 什么也没发生 → 然后泡泡才开始自己走。
+  ENDING1_RELEASE_DELAY_MS: 520,
+  ENDING1_RISE_SWAY: 7,
+  ENDING1_SHRINK_PER_SEC: 0.10,
+  ENDING1_FADE_START_MS: 1700,
+  ENDING1_FADE_MS: 2300,
+
+  // 其中一颗像肥皂泡一样轻轻破掉：几粒碎屑、慢速、无闪光、无冲击波。
+  ENDING1_POP_AT_MS: 2100,
+  ENDING1_POP_PARTICLES: 6,
+  ENDING1_POP_SPEED_SCALE: 0.34,
+
+  // prefers-reduced-motion：整段退化成一次短交叉淡入，不做任何位移。
+  ENDING1_REDUCED_MS: 420
 };
 
 /** 重现阶段的随机点击反馈文案：只描述“又出现了”，不出现“删除成功”。 */
