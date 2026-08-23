@@ -34,6 +34,48 @@ const LevelGame = (function () {
   const PRESSURE_CRITICAL = Number(LEVEL_TUNING.LEVEL_GAME_PRESSURE_CRITICAL) || 0.82;
   const BAG_VISUAL_STRETCH = Number(LEVEL_TUNING.LEVEL_GAME_BAG_VISUAL_STRETCH) || 0.055;
 
+  // ---- 5.3 软体袋 ----
+  const NODE_COUNT = Math.max(24, Number(LEVEL_TUNING.BAG_NODE_COUNT) || 96);
+  const BAG_K = Number(LEVEL_TUNING.BAG_STIFFNESS) || 46;
+  const BAG_C = Number(LEVEL_TUNING.BAG_DAMPING) || 5.4;
+  const BAG_T = Number(LEVEL_TUNING.BAG_TENSION) || 120;
+  const BAG_IMPULSE = Number(LEVEL_TUNING.BAG_IMPULSE_SCALE) || 0.00040;
+  const BAG_CONTACT = Number(LEVEL_TUNING.BAG_CONTACT_SCALE) || 2.6;
+  const BAG_CONTACT_BAND = Number(LEVEL_TUNING.BAG_CONTACT_BAND) || 0.74;
+  const BAG_MAX_BULGE = Number(LEVEL_TUNING.BAG_MAX_BULGE) || 0.20;
+  const BAG_MAX_DENT = Number(LEVEL_TUNING.BAG_MAX_DENT) || 0.11;
+  const BAG_AREA_KEEP = Number(LEVEL_TUNING.BAG_AREA_KEEP) || 0.72;
+  const BAG_SAG = Number(LEVEL_TUNING.BAG_GRAVITY_SAG) || 0.055;
+  const BAG_NECK_PINCH = Number(LEVEL_TUNING.BAG_NECK_PINCH) || 0.11;
+  const BAG_SUBSTEPS = Math.max(1, Number(LEVEL_TUNING.BAG_SUBSTEPS) || 2);
+
+  // ---- 5.4 扎口与逃逸 ----
+  const MOUTH_ANGLE = Number(LEVEL_TUNING.BAG_MOUTH_HALF_ANGLE) || 0.46;
+  const MOUTH_ESCAPE_MIN = Number(LEVEL_TUNING.BAG_MOUTH_ESCAPE_MIN) || 0.34;
+  const NECK_HEIGHT = Number(LEVEL_TUNING.BAG_NECK_HEIGHT) || 0.26;
+  const TIE_WIDTH_MIN = Number(LEVEL_TUNING.BAG_TIE_WIDTH_MIN) || 0.085;
+  const TIE_WIDTH_MAX = Number(LEVEL_TUNING.BAG_TIE_WIDTH_MAX) || 0.30;
+  const MOUTH_EASE = Number(LEVEL_TUNING.BAG_MOUTH_EASE_PER_SEC) || 3.4;
+  const TIE_RECOIL = Number(LEVEL_TUNING.BAG_TIE_RECOIL) || 0.34;
+  const TIE_RECOIL_DECAY = Number(LEVEL_TUNING.BAG_TIE_RECOIL_DECAY) || 0.9;
+  const SQUEEZE_MS = Number(LEVEL_TUNING.BAG_ESCAPE_SQUEEZE_MS) || 620;
+  const RELEASE_MS = Number(LEVEL_TUNING.BAG_ESCAPE_RELEASE_MS) || 420;
+  const QUEUE_TOTAL_MS = Number(LEVEL_TUNING.BAG_ESCAPE_QUEUE_TOTAL_MS) || 2400;
+  const QUEUE_MIN_MS = Number(LEVEL_TUNING.BAG_ESCAPE_QUEUE_MIN_MS) || 90;
+  const QUEUE_MAX_MS = Number(LEVEL_TUNING.BAG_ESCAPE_QUEUE_MAX_MS) || 340;
+  const ESCAPE_SQUASH = Number(LEVEL_TUNING.BAG_ESCAPE_SQUASH) || 0.52;
+  // 扎口在正上方。归一化空间里 y 向下，所以正上方是 −π/2。
+  const MOUTH_PHI = -Math.PI / 2;
+
+  // ---- 5.5 塑料膜 ----
+  const FILM_TINT = LEVEL_TUNING.BAG_FILM_TINT || [206, 224, 230];
+  const FILM_BODY_A = Number(LEVEL_TUNING.BAG_FILM_BODY_ALPHA) || 0.062;
+  const FILM_RIM_A = Number(LEVEL_TUNING.BAG_FILM_RIM_ALPHA) || 0.40;
+  const SHEEN_A = Number(LEVEL_TUNING.BAG_SHEEN_ALPHA) || 0.22;
+  const WRINKLE_COUNT = Number(LEVEL_TUNING.BAG_WRINKLE_COUNT) || 15;
+  const WRINKLE_A = Number(LEVEL_TUNING.BAG_WRINKLE_ALPHA) || 0.15;
+  const FILM_RGB = FILM_TINT[0] + ',' + FILM_TINT[1] + ',' + FILM_TINT[2];
+
   // ── 泡泡材质：薄膜干涉精灵。数值全部来自 config.js，这里只做取值与兜底。──
   const SPRITE = Number(LEVEL_TUNING.BUBBLE_SPRITE_SIZE) || 224;
   const SPRITE_R = Number(LEVEL_TUNING.BUBBLE_SPRITE_RADIUS) || 104;
@@ -96,6 +138,19 @@ const LevelGame = (function () {
   let collisionEvents = 0;
   let growthBlockedRatio = 0;
   let bag = null;
+  // 5.3：袋壁质点。u 是径向位移（无量纲），uv 是它的速度，uf 是本帧累积的外力。
+  // 三条都是定长 Float32Array，整局复用，不在帧里分配。
+  const wallU = new Float32Array(NODE_COUNT);
+  const wallV = new Float32Array(NODE_COUNT);
+  const wallF = new Float32Array(NODE_COUNT);
+  // 静止形状相对单位圆的偏差（下坠 + 扎口收腰），只跟角度有关，建一次。
+  const wallRest = new Float32Array(NODE_COUNT);
+  let wallReady = false;
+  // 5.4：扎口松紧 0~1，以及每挤出一颗泡泡时的瞬时撑开量。
+  let mouthOpen = 0;
+  let mouthForced = false;
+  let tieRecoil = 0;
+  let reducedMotion = false;
   let filmGeometry = null;      // 与膜厚相位无关的那半：法线、菲涅尔、环境反射、高光、焦散
   let filmSprites = null;       // 常规态 SPRITE_FRAMES 张离屏 canvas
   let filmSpritesWarn = null;   // 警戒态同上；edgeGlow 在两套之间做连续交叉淡入
@@ -120,7 +175,9 @@ const LevelGame = (function () {
       blockedSpawns: 0,
       growthBlocked: 0,
       peakGrowthBlocked: 0,
-      collisionEvents: 0
+      collisionEvents: 0,
+      // 5.4：扎口松紧。只是后台状态，不在前台展示数值。
+      mouthOpen: 0
     };
   }
 
@@ -360,6 +417,207 @@ const LevelGame = (function () {
     };
   }
 
+  /* ─────────────────────────────────────────────────────────────
+     5.3 软体袋
+     把袋子压成单位圆的归一化空间：p = ((x−cx)/rx, (y−cy)/ry)。
+     袋壁在这个空间里是一条极坐标曲线 R(φ) = 1 + rest(φ) + u(φ) + swell，
+     其中只有 u 是动力学量。这个表示法有两个好处：
+       · 容纳判定仍然是 O(1)——查一次 u 的插值就行，不用做多边形求交；
+       · 形变天然是「相对袋子本身」的，换分辨率、换袋子档位都不用重算。
+     ───────────────────────────────────────────────────────────── */
+
+  function nodeAngle(index) {
+    return -Math.PI + (index / NODE_COUNT) * Math.PI * 2;
+  }
+
+  function angleDelta(a, b) {
+    let d = a - b;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  /** 静止形状：底部下坠 + 扎口处收腰。只跟角度有关，整个生命周期建一次。 */
+  function buildWallRest() {
+    if (wallReady) return;
+    const denom = 2 * MOUTH_ANGLE * MOUTH_ANGLE;
+    for (let i = 0; i < NODE_COUNT; i += 1) {
+      const phi = nodeAngle(i);
+      const d = angleDelta(phi, MOUTH_PHI);
+      wallRest[i] = BAG_SAG * Math.sin(phi) - BAG_NECK_PINCH * Math.exp(-(d * d) / denom);
+    }
+    wallReady = true;
+  }
+
+  function resetWall() {
+    wallU.fill(0);
+    wallV.fill(0);
+    wallF.fill(0);
+    mouthOpen = 0;
+    mouthForced = false;
+    tieRecoil = 0;
+  }
+
+  /** 归一化空间里 φ 方向的袋壁半径。swell 是拥挤度带来的整体鼓胀。 */
+  function wallRadiusAt(phi) {
+    buildWallRest();
+    const t = (phi + Math.PI) / (Math.PI * 2) * NODE_COUNT;
+    let i0 = Math.floor(t);
+    const frac = t - i0;
+    i0 = ((i0 % NODE_COUNT) + NODE_COUNT) % NODE_COUNT;
+    const i1 = (i0 + 1) % NODE_COUNT;
+    const dev = (wallRest[i0] + wallU[i0]) * (1 - frac) + (wallRest[i1] + wallU[i1]) * frac;
+    return 1 + dev + pressure * BAG_VISUAL_STRETCH;
+  }
+
+  function wallPoint(phi) {
+    const rad = wallRadiusAt(phi);
+    return {
+      x: bag.cx + Math.cos(phi) * rad * bag.rx,
+      y: bag.cy + Math.sin(phi) * rad * bag.ry
+    };
+  }
+
+  // 复用的查询结果。调用方只能立即读取，不得持有——避免每帧上千次小对象分配。
+  const wallQuery = { d: 0, ux: 0, uy: -1, phi: MOUTH_PHI, limit: 1, pxPerUnit: 1 };
+
+  /**
+   * 查询某点相对袋壁的位置。limit 是该方向上圆心可以到达的最大归一化半径，
+   * 已经扣掉泡泡半径与接触间隙。半径要按方向换算：椭圆是各向异性的，
+   * 同样的像素长度在不同方向上占的归一化长度不一样。
+   */
+  function queryWall(px, py, radiusPx) {
+    const d = Math.hypot(px, py);
+    const ux = d > 1e-6 ? px / d : 0;
+    const uy = d > 1e-6 ? py / d : -1;
+    const phi = Math.atan2(uy, ux);
+    const pxPerUnit = Math.max(1, Math.hypot(ux * bag.rx, uy * bag.ry));
+    const inset = ((Number(radiusPx) || 0) + COLLISION_GAP) / pxPerUnit;
+    wallQuery.d = d;
+    wallQuery.ux = ux;
+    wallQuery.uy = uy;
+    wallQuery.phi = phi;
+    wallQuery.pxPerUnit = pxPerUnit;
+    wallQuery.limit = Math.max(0.10, wallRadiusAt(phi) - inset);
+    return wallQuery;
+  }
+
+  /** 以 φ 为中心把量摊到五个质点上，避免单点尖刺让张力项去救。 */
+  const DEPOSIT_KERNEL = [0.10, 0.20, 0.40, 0.20, 0.10];
+  function depositWall(target, phi, amount) {
+    if (!amount) return;
+    const center = Math.round((phi + Math.PI) / (Math.PI * 2) * NODE_COUNT);
+    for (let k = 0; k < 5; k += 1) {
+      const index = (((center + k - 2) % NODE_COUNT) + NODE_COUNT) % NODE_COUNT;
+      target[index] += amount * DEPOSIT_KERNEL[k];
+    }
+  }
+
+  /** 撞击是冲量（直接改速度，与 dt 无关）；接触是力（进加速度，随 dt 积分）。 */
+  function depositWallImpulse(phi, normalSpeed, bubbleRadius) {
+    const mass = (bubbleRadius * bubbleRadius) / (RADIUS_MAX * RADIUS_MAX);
+    depositWall(wallV, phi, normalSpeed * mass * BAG_IMPULSE);
+  }
+
+  function updateWall(dt) {
+    if (!bag) return;
+    buildWallRest();
+
+    // prefers-reduced-motion：不做形变振荡，让袋壁平滑回到静止形状。
+    // 拥挤带来的整体鼓胀由 swell 承担，所以袋子仍然「会随压力变化」，只是不抖。
+    if (reducedMotion) {
+      const relax = Math.min(1, dt * 4);
+      for (let i = 0; i < NODE_COUNT; i += 1) {
+        wallU[i] -= wallU[i] * relax;
+        wallV[i] = 0;
+      }
+      wallF.fill(0);
+      return;
+    }
+
+    // 接触压力：靠在壁上的泡泡持续把壁顶出去。少了这一路，泡泡一安定
+    // 袋子就静止了，看着像个硬壳而不是装着东西的软袋。
+    for (let i = 0; i < bubbles.length; i += 1) {
+      const bubble = bubbles[i];
+      if (!isPhysicalBubble(bubble)) continue;
+      const px = (bubble.x - bag.cx) / bag.rx;
+      const py = (bubble.y - bag.cy) / bag.ry;
+      const d = Math.hypot(px, py);
+      if (d < BAG_CONTACT_BAND) continue;
+      const mass = (bubble.r * bubble.r) / (RADIUS_MAX * RADIUS_MAX);
+      const depth = (d - BAG_CONTACT_BAND) / Math.max(0.01, 1 - BAG_CONTACT_BAND);
+      depositWall(wallF, Math.atan2(py, px), depth * BAG_CONTACT * mass);
+    }
+
+    const h = dt / BAG_SUBSTEPS;
+    for (let step = 0; step < BAG_SUBSTEPS; step += 1) {
+      for (let i = 0; i < NODE_COUNT; i += 1) {
+        const prev = wallU[(i - 1 + NODE_COUNT) % NODE_COUNT];
+        const next = wallU[(i + 1) % NODE_COUNT];
+        const accel = -BAG_K * wallU[i] - BAG_C * wallV[i] +
+          BAG_T * (prev + next - 2 * wallU[i]) + wallF[i];
+        wallV[i] += accel * h;
+      }
+      for (let i = 0; i < NODE_COUNT; i += 1) wallU[i] += wallV[i] * h;
+    }
+
+    // 塑料袋几乎不拉伸：压制零阶模，让某处鼓出去必然导致别处瘪进来。
+    let mean = 0;
+    for (let i = 0; i < NODE_COUNT; i += 1) mean += wallU[i];
+    mean /= NODE_COUNT;
+    const correction = BAG_AREA_KEEP * mean;
+    for (let i = 0; i < NODE_COUNT; i += 1) {
+      wallU[i] = clamp(wallU[i] - correction, -BAG_MAX_DENT, BAG_MAX_BULGE);
+    }
+    wallF.fill(0);
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     5.4 扎口
+     口子扎在袋子正上方。松紧由拥挤度驱动：packing 越过 PRESSURE_WARN
+     开始变松，到 PRESSURE_CRITICAL 基本全松。逃逸档决定它一开始扎得多紧。
+     每挤出去一颗泡泡，扎口被瞬时撑开一下（tieRecoil）再回弹——所以
+     一旦开始漏，后面就越漏越快，这个正反馈是有意的。
+     ───────────────────────────────────────────────────────────── */
+
+  function mouthTarget() {
+    if (mouthForced) return 1;
+    const escapeGrade = clamp(Math.round((spec && spec.escape) || 1), 1, 3);
+    const loose = 0.20 * (escapeGrade - 1);
+    const span = Math.max(0.01, PRESSURE_CRITICAL - PRESSURE_WARN);
+    const packOpen = clamp((stats.packing - PRESSURE_WARN) / span, 0, 1);
+    return clamp(loose + packOpen * (0.86 - loose * 0.5), 0, 1);
+  }
+
+  function updateMouth(dt) {
+    tieRecoil = Math.max(0, tieRecoil - dt * TIE_RECOIL_DECAY);
+    const target = clamp(mouthTarget() + tieRecoil, 0, 1);
+    mouthOpen += (target - mouthOpen) * Math.min(1, dt * MOUTH_EASE);
+    stats.mouthOpen = mouthOpen;
+  }
+
+  /**
+   * 扎口的几何：颈根、扎点、口子半宽。
+   * tieY 有一条画布顶部的限位：1366×768 上方的烦恼列表能占到三行，
+   * 不限位的话扎口和耳朵会顶进那块文字里。限位只在窄屏生效，1920 上不咬。
+   */
+  function mouthGeometry() {
+    const left = wallPoint(MOUTH_PHI - MOUTH_ANGLE);
+    const right = wallPoint(MOUTH_PHI + MOUTH_ANGLE);
+    const baseY = (left.y + right.y) * 0.5;
+    const ceiling = height * 0.24;
+    const neck = Math.max(0, Math.min(bag.ry * NECK_HEIGHT, baseY - ceiling));
+    return {
+      left: left,
+      right: right,
+      cx: bag.cx,
+      baseY: baseY,
+      neck: neck,
+      tieY: baseY - neck,
+      halfW: (TIE_WIDTH_MIN + (TIE_WIDTH_MAX - TIE_WIDTH_MIN) * mouthOpen) * bag.rx
+    };
+  }
+
   function resize() {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -433,6 +691,8 @@ const LevelGame = (function () {
     growthBlockedRatio = 0;
     nextId = 1;
     profileCursor = 0;
+    resetWall();
+    reducedMotion = prefersReducedMotion();
     mount(opts.canvas || canvas);
     bag = computeBag();
     gameplay = true;
@@ -471,6 +731,7 @@ const LevelGame = (function () {
     pressureStage = 0;
     collisionEvents = 0;
     growthBlockedRatio = 0;
+    resetWall();
     stats = freshStats();
     profileCursor = 0;
   }
@@ -479,6 +740,8 @@ const LevelGame = (function () {
     if (!running || !ctx || !canvas) return;
     const dt = Math.min(0.034, Math.max(0.001, (now - lastTime) / 1000));
     lastTime = now;
+    // 每帧查一次就够。原来在 drawBubble 里逐颗查 matchMedia，满员时一帧 60 次。
+    reducedMotion = prefersReducedMotion();
     update(dt);
     draw(now / 1000);
     raf = requestAnimationFrame(frame);
@@ -489,23 +752,17 @@ const LevelGame = (function () {
   }
 
   function isPhysicalBubble(bubble) {
-    return bubble && (bubble.state === 'normal' || bubble.state === 'escaping');
-  }
-
-  function safeEllipse(radius) {
-    const inset = Math.max(2, Number(radius) || 0) + COLLISION_GAP;
-    return {
-      rx: Math.max(36, bag.rx - inset),
-      ry: Math.max(36, bag.ry - inset)
-    };
+    // 5.4：排队等着挤出去的泡泡仍然是刚体，会在口子底下互相推挤；
+    // 一旦开始挤过扎口就交给动画接管，不再参与碰撞，否则会被挤回袋里。
+    if (!bubble) return false;
+    if (bubble.state === 'normal') return true;
+    return bubble.state === 'escaping' && bubble.escapePhase === 'approach';
   }
 
   function insideBagAt(x, y, radius) {
     if (!bag) return false;
-    const safe = safeEllipse(radius);
-    const nx = (x - bag.cx) / safe.rx;
-    const ny = (y - bag.cy) / safe.ry;
-    return nx * nx + ny * ny <= 1;
+    const query = queryWall((x - bag.cx) / bag.rx, (y - bag.cy) / bag.ry, radius);
+    return query.d <= query.limit;
   }
 
   function clearanceAt(x, y, radius) {
@@ -529,10 +786,9 @@ const LevelGame = (function () {
     let bestClearance = -Infinity;
     for (let attempt = 0; attempt < SPAWN_SEARCH_ATTEMPTS; attempt += 1) {
       const angle = random(0, Math.PI * 2);
-      const radial = Math.sqrt(Math.random()) * 0.82;
-      const safe = safeEllipse(radius);
-      const x = bag.cx + Math.cos(angle) * safe.rx * radial;
-      const y = bag.cy + Math.sin(angle) * safe.ry * radial;
+      const radial = Math.sqrt(Math.random()) * 0.82 * wallRadiusAt(angle);
+      const x = bag.cx + Math.cos(angle) * bag.rx * radial;
+      const y = bag.cy + Math.sin(angle) * bag.ry * radial;
       if (!insideBagAt(x, y, radius)) continue;
       const clearance = clearanceAt(x, y, radius);
       if (clearance >= 0) return { x: x, y: y };
@@ -650,13 +906,8 @@ const LevelGame = (function () {
       }
 
       if (bubble.state === 'escaping') {
-        bubble.x += bubble.vx * dt;
-        bubble.y += bubble.vy * dt;
-        bubble.scale += dt * 0.18;
-        if (bubble.x < -bubble.r * 3 || bubble.x > width + bubble.r * 3 ||
-            bubble.y < -bubble.r * 3 || bubble.y > height + bubble.r * 3) {
-          bubbles.splice(i, 1);
-        }
+        updateEscape(bubble, dt);
+        if (bubble.escapePhase === 'gone') bubbles.splice(i, 1);
         continue;
       }
 
@@ -695,6 +946,9 @@ const LevelGame = (function () {
     collisionEvents = 0;
     resolveBubbleCollisions();
     updatePressure(dt);
+    // 顺序有讲究：碰撞解算完，本帧的撞击冲量才齐；扎口松紧要等 packing 更新完。
+    updateWall(dt);
+    updateMouth(dt);
     updateParticles(dt);
     stats.remaining = activeNormalCount();
     notifyStats();
@@ -719,35 +973,39 @@ const LevelGame = (function () {
   }
 
   function constrainBubble(bubble) {
-    const safe = safeEllipse(bubble.r);
-    const safeRx = safe.rx;
-    const safeRy = safe.ry;
-    const nx = (bubble.x - bag.cx) / safeRx;
-    const ny = (bubble.y - bag.cy) / safeRy;
-    const d = Math.sqrt(nx * nx + ny * ny);
-    if (d < 1) return;
+    const query = queryWall((bubble.x - bag.cx) / bag.rx, (bubble.y - bag.cy) / bag.ry, bubble.r);
+    if (query.d < query.limit) return;
 
-    const normalX = nx / Math.max(0.001, d);
-    const normalY = ny / Math.max(0.001, d);
+    const normalX = query.ux;
+    const normalY = query.uy;
+    const phi = query.phi;
+    const limit = query.limit;
     if (bubble.edgeCooldown <= 0) {
       bubble.edgeHits += 1;
       bubble.edgeCooldown = 0.18;
     }
     bubble.edgeGlow = 1;
+    const dot = bubble.vx * normalX + bubble.vy * normalY;
+    // 5.3：撞墙的法向速度就是打给袋壁的冲量。袋子的形变因此跟的是
+    // 「泡泡撞得多急」，而不是「袋里有几颗」——后者只通过 swell 起作用。
+    if (dot > 0) depositWallImpulse(phi, dot, bubble.r);
+
     const requiredHits = Math.max(1, 5 - Math.round(spec.escape || 1) -
       (Math.round(spec.bag || 1) - 1) - (Math.round(spec.level || 1) - 1));
     const minimumAge = effectiveEscapeMinAge();
     const oldEnough = bubble.age >= minimumAge;
-    // 只有上沿缝线是正常游戏中的薄弱区；侧面和袋底只能反弹。
-    const weakSeam = normalY < -0.38 && Math.abs(normalX) < 0.94;
-    if (weakSeam && bubble.edgeHits >= requiredHits && oldEnough) {
-      startEscape(bubble, false);
+    // 5.4：唯一的出口是上方的扎口，而且必须先松到 MOUTH_ESCAPE_MIN。
+    // 逃逸档越高，同样的松紧就越容易漏。侧壁和袋底永远只能反弹。
+    const atMouth = Math.abs(angleDelta(phi, MOUTH_PHI)) < MOUTH_ANGLE;
+    const escapeGrade = clamp(Math.round(spec.escape || 1), 1, 3);
+    const openEnough = mouthOpen >= MOUTH_ESCAPE_MIN * (1 - 0.22 * (escapeGrade - 1));
+    if (atMouth && openEnough && bubble.edgeHits >= requiredHits && oldEnough) {
+      startEscape(bubble, false, 0);
       return;
     }
 
-    bubble.x = bag.cx + normalX * safeRx * 0.998;
-    bubble.y = bag.cy + normalY * safeRy * 0.998;
-    const dot = bubble.vx * normalX + bubble.vy * normalY;
+    bubble.x = bag.cx + normalX * limit * 0.998 * bag.rx;
+    bubble.y = bag.cy + normalY * limit * 0.998 * bag.ry;
     if (dot > 0) {
       bubble.vx -= (1 + BOUNDARY_RESTITUTION) * dot * normalX;
       bubble.vy -= (1 + BOUNDARY_RESTITUTION) * dot * normalY;
@@ -756,16 +1014,11 @@ const LevelGame = (function () {
   }
 
   function projectInsideBag(bubble) {
-    if (!bag || bubble.state !== 'normal') return;
-    const safe = safeEllipse(bubble.r);
-    const nx = (bubble.x - bag.cx) / safe.rx;
-    const ny = (bubble.y - bag.cy) / safe.ry;
-    const d = Math.hypot(nx, ny);
-    if (d <= 1) return;
-    const normalX = nx / Math.max(0.001, d);
-    const normalY = ny / Math.max(0.001, d);
-    bubble.x = bag.cx + normalX * safe.rx * 0.998;
-    bubble.y = bag.cy + normalY * safe.ry * 0.998;
+    if (!bag || !isPhysicalBubble(bubble)) return;
+    const query = queryWall((bubble.x - bag.cx) / bag.rx, (bubble.y - bag.cy) / bag.ry, bubble.r);
+    if (query.d <= query.limit) return;
+    bubble.x = bag.cx + query.ux * query.limit * 0.998 * bag.rx;
+    bubble.y = bag.cy + query.uy * query.limit * 0.998 * bag.ry;
   }
 
   function limitBubbleSpeed(bubble) {
@@ -882,20 +1135,121 @@ const LevelGame = (function () {
     }
   }
 
-  function startEscape(bubble, forced) {
+  function startEscape(bubble, forced, waitSec) {
     if (!bubble || bubble.state !== 'normal') return;
     bubble.state = 'escaping';
     bubble.stateTime = 0;
-    const dx = bubble.x - bag.cx || random(-1, 1);
-    const dy = bubble.y - bag.cy || random(-1, 1);
-    const distance = Math.max(1, Math.hypot(dx, dy));
-    const range = effectiveSpeedRange();
-    const speed = forced ? random(250, 360) : random(range[0] * 1.18, range[1] * 1.42);
-    bubble.vx = dx / distance * speed;
-    bubble.vy = dy / distance * speed - (forced ? random(30, 80) : 0);
+    // 5.4：不再直接甩出去。先游到扎口下方排队，再挤过口子，最后弹回球形飘走。
+    bubble.escapePhase = 'approach';
+    bubble.escapeT = 0;
+    bubble.escapeWait = Math.max(0, Number(waitSec) || 0);
+    bubble.escapeForced = Boolean(forced);
+    bubble.squeeze = 0;
+    bubble.squeezeAngle = 0;
+    bubble.vx *= 0.35;
+    bubble.vy *= 0.35;
+    if (forced) mouthForced = true;
     stats.escaped += 1;
     statusPulse = 1;
     if (typeof callbacks.onEscape === 'function') callbacks.onEscape(getStats());
+  }
+
+  /** reduced-motion 下整套逃逸压到 45%，形变也归零，但流程一步不少。 */
+  function escapeTiming() {
+    const factor = reducedMotion ? 0.45 : 1;
+    return { squeeze: SQUEEZE_MS * factor / 1000, release: RELEASE_MS * factor / 1000 };
+  }
+
+  /**
+   * 逃逸三段。approach 段仍是刚体，会和其他排队的泡泡互相推挤；
+   * squeeze 段交给动画，沿颈部直线上行并被扎口压扁；free 段弹回球形，
+   * 带一点超调，然后靠浮力飘出画面。
+   */
+  function updateEscape(bubble, dt) {
+    const timing = escapeTiming();
+    const mouth = mouthGeometry();
+    bubble.escapeT += dt;
+
+    if (bubble.escapePhase === 'approach') {
+      const targetX = mouth.cx;
+      const targetY = mouth.baseY + bubble.r * 0.35;
+      const dx = targetX - bubble.x;
+      const dy = targetY - bubble.y;
+      const distance = Math.hypot(dx, dy);
+      // 向口子的定向牵引：越接近越慢，避免冲过头再被拉回来。
+      const pull = 340 * Math.min(1, distance / Math.max(1, bag.ry * 0.5));
+      if (distance > 0.001) {
+        bubble.vx += (dx / distance * pull - bubble.vx) * Math.min(1, dt * 2.6);
+        bubble.vy += (dy / distance * pull - bubble.vy) * Math.min(1, dt * 2.6);
+      }
+      bubble.x += bubble.vx * dt;
+      bubble.y += bubble.vy * dt;
+      projectInsideBag(bubble);
+      const ready = bubble.escapeT >= bubble.escapeWait;
+      if (ready && distance < bubble.r * 1.15) {
+        bubble.escapePhase = 'squeeze';
+        bubble.escapeT = 0;
+        bubble.squeezeFromX = bubble.x;
+        bubble.squeezeFromY = bubble.y;
+        bubble.vx = 0;
+        bubble.vy = 0;
+      }
+      return;
+    }
+
+    if (bubble.escapePhase === 'squeeze') {
+      const k = clamp(bubble.escapeT / Math.max(0.001, timing.squeeze), 0, 1);
+      const ease = k * k * (3 - 2 * k);
+      const exitY = mouth.tieY - bubble.r * 0.85;
+      bubble.x = bubble.squeezeFromX + (mouth.cx - bubble.squeezeFromX) * ease;
+      bubble.y = bubble.squeezeFromY + (exitY - bubble.squeezeFromY) * ease;
+      // 正穿过扎口那一刻压得最狠：横向被口子勒住，纵向被挤长。
+      bubble.squeeze = reducedMotion ? 0 : Math.sin(Math.PI * k);
+      bubble.squeezeAngle = 0;
+      // 泡泡挤过去的同时把扎口撑开，这一下也打进袋壁，口子会跟着抖。
+      depositWall(wallV, MOUTH_PHI, bubble.squeeze * 0.06 * dt * 60);
+      if (k >= 1) {
+        bubble.escapePhase = 'free';
+        bubble.escapeT = 0;
+        tieRecoil = Math.min(1, tieRecoil + TIE_RECOIL);
+        const speed = bubble.escapeForced ? random(120, 190) : random(80, 130);
+        bubble.vx = random(-46, 46);
+        bubble.vy = -speed;
+      }
+      return;
+    }
+
+    // free
+    const k = clamp(bubble.escapeT / Math.max(0.001, timing.release), 0, 1);
+    // 回弹带超调：先过冲成横向扁一点，再收敛回圆。
+    bubble.squeeze = reducedMotion ? 0 : -Math.sin(Math.PI * k) * (1 - k) * 0.55;
+    bubble.x += bubble.vx * dt;
+    bubble.y += bubble.vy * dt;
+    bubble.vy -= 46 * dt;
+    bubble.vx += Math.sin(bubble.escapeT * 3.1 + bubble.phase) * 26 * dt;
+    bubble.scale += dt * 0.18;
+    if (bubble.x < -bubble.r * 3 || bubble.x > width + bubble.r * 3 ||
+        bubble.y < -bubble.r * 3 || bubble.y > height + bubble.r * 3) {
+      bubble.escapePhase = 'gone';
+    }
+  }
+
+  /**
+   * 结局时让所有泡泡排队从扎口挤出去，而不是同一帧四散飞开。
+   * 总排队时长固定，间隔按只数摊——20 颗泡泡配固定间隔会把结局拖到七八秒。
+   * 返回整段动画需要的毫秒数，调用方拿它设 finishDelay。
+   */
+  function queueEscapeSequence(list) {
+    if (!list.length) return 700;
+    const gap = clamp(QUEUE_TOTAL_MS / list.length, QUEUE_MIN_MS, QUEUE_MAX_MS);
+    const sorted = list.slice().sort(function (a, b) {
+      return Math.hypot(a.x - bag.cx, a.y - bag.top) - Math.hypot(b.x - bag.cx, b.y - bag.top);
+    });
+    sorted.forEach(function (bubble, index) {
+      startEscape(bubble, true, index * gap / 1000);
+    });
+    const timing = escapeTiming();
+    return gap * (sorted.length - 1) + (timing.squeeze + timing.release) * 1000 + 520;
   }
 
   function startBurst(bubble, automatic, delay) {
@@ -929,12 +1283,9 @@ const LevelGame = (function () {
 
   function pointInsideBag(x, y, padding) {
     if (!bag) return false;
-    const inset = Number(padding) || 0;
-    const rx = Math.max(1, bag.rx - inset);
-    const ry = Math.max(1, bag.ry - inset);
-    const nx = (x - bag.cx) / rx;
-    const ny = (y - bag.cy) / ry;
-    return nx * nx + ny * ny <= 1;
+    // padding 为正表示往里缩，语义与旧版一致。
+    const query = queryWall((x - bag.cx) / bag.rx, (y - bag.cy) / bag.ry, Number(padding) || 0);
+    return query.d <= query.limit;
   }
 
   function triggerButton(options) {
@@ -943,11 +1294,15 @@ const LevelGame = (function () {
     gameplay = false;
     if (opts.failed) {
       const normal = bubbles.filter(function (bubble) { return bubble.state === 'normal'; });
-      if (!normal.length) for (let i = 0; i < 7; i += 1) spawnBubble(false, true);
-      bubbles.forEach(function (bubble) {
-        if (bubble.state === 'normal') startEscape(bubble, true);
-      });
-      finishDelay = 1900;
+      if (!normal.length) {
+        for (let i = 0; i < 7; i += 1) spawnBubble(false, true);
+      }
+      // 按钮失灵：扎口整个松开，泡泡排队挤出去。finishDelay 由动画时长决定，
+      // 不能写死——写死就会出现「还在挤，结局已经切了」。
+      mouthForced = true;
+      finishDelay = queueEscapeSequence(bubbles.filter(function (bubble) {
+        return bubble.state === 'normal';
+      }));
     } else {
       bubbles.forEach(function (bubble) {
         if (bubble.state !== 'manual' && bubble.state !== 'button-clear') {
@@ -968,10 +1323,10 @@ const LevelGame = (function () {
       if (!bubbles.some(function (bubble) { return bubble.state === 'normal'; })) {
         for (let i = 0; i < 8; i += 1) spawnBubble(false, true);
       }
-      bubbles.forEach(function (bubble) {
-        if (bubble.state === 'normal') startEscape(bubble, true);
-      });
-      finishDelay = 1800;
+      mouthForced = true;
+      finishDelay = queueEscapeSequence(bubbles.filter(function (bubble) {
+        return bubble.state === 'normal';
+      }));
     } else if (kind === 'burst') {
       if (!bubbles.some(function (bubble) { return bubble.state === 'normal'; })) {
         for (let i = 0; i < 8; i += 1) spawnBubble(false, true);
@@ -1040,8 +1395,11 @@ const LevelGame = (function () {
   function draw(time) {
     ctx.clearRect(0, 0, width, height);
     drawAmbient();
-    drawSack(time);
+    drawSack();
     bubbles.forEach(function (bubble) { drawBubble(bubble, time); });
+    // 扎口画在泡泡之后：正在挤出去的泡泡是从口子「底下」穿过的，
+    // 这样才看得见扎带勒着它，而不是泡泡盖在扎带上面。
+    drawTie();
     particles.forEach(drawParticle);
   }
 
@@ -1090,87 +1448,278 @@ const LevelGame = (function () {
     return lines.length ? lines : ['烦恼'];
   }
 
-  function sackPath(time) {
+  /* ─────────────────────────────────────────────────────────────
+     5.5 塑料膜
+     材质是塑料袋不是麻袋，所以没有编织交叉线。四层：
+       膜体（极淡的冷色填充）→ 顺光的高光带 → 松弛处的褶皱 → 一圈明暗边。
+     褶皱直接由 5.3 的 u 场驱动：被压缩（u<0）的地方才起褶。
+     这是整套里最像塑料的一个信号，而且它本身就是物理的结果，不是画上去的贴图。
+     ───────────────────────────────────────────────────────────── */
+
+  // 渲染用的取样步长。u 场本身被张力项磨得很平滑，隔一个点取样看不出差别，
+  // 但路径段数直接减半——一帧要 fill/clip/stroke 好几遍，段数是要省的。
+  const SACK_STRIDE = 2;
+
+  /** 用 Catmull-Rom 穿过袋壁质点，转成三次贝塞尔的闭合路径。 */
+  function sackPath() {
     const path = new Path2D();
-    const tremble = pressure * Math.sin((Number(time) || 0) * 7.5) * 0.008;
-    const stretch = pressure * BAG_VISUAL_STRETCH;
-    const rx = bag.rx * (1 + stretch + tremble);
-    const ry = bag.ry * (1 + stretch * 0.58 - tremble * 0.4);
-    const left = bag.cx - rx;
-    const right = bag.cx + rx;
-    const top = bag.cy - ry;
-    const bottom = bag.cy + ry;
-    path.moveTo(left + rx * 0.14, top + ry * 0.16);
-    path.bezierCurveTo(left - rx * 0.04, top + ry * 0.44, left + rx * 0.02, bottom - ry * 0.20, bag.cx - rx * 0.22, bottom - ry * 0.02);
-    path.quadraticCurveTo(bag.cx, bottom + ry * 0.04, bag.cx + rx * 0.22, bottom - ry * 0.02);
-    path.bezierCurveTo(right - rx * 0.02, bottom - ry * 0.20, right + rx * 0.04, top + ry * 0.44, right - rx * 0.14, top + ry * 0.16);
-    path.quadraticCurveTo(bag.cx, top - ry * (0.08 + pressure * 0.025), left + rx * 0.14, top + ry * 0.16);
+    const count = Math.floor(NODE_COUNT / SACK_STRIDE);
+    const xs = new Array(count);
+    const ys = new Array(count);
+    for (let i = 0; i < count; i += 1) {
+      const phi = nodeAngle(i * SACK_STRIDE);
+      const rad = wallRadiusAt(phi);
+      xs[i] = bag.cx + Math.cos(phi) * rad * bag.rx;
+      ys[i] = bag.cy + Math.sin(phi) * rad * bag.ry;
+    }
+    path.moveTo(xs[0], ys[0]);
+    for (let i = 0; i < count; i += 1) {
+      const p0 = (i - 1 + count) % count;
+      const p1 = i;
+      const p2 = (i + 1) % count;
+      const p3 = (i + 2) % count;
+      path.bezierCurveTo(
+        xs[p1] + (xs[p2] - xs[p0]) / 6, ys[p1] + (ys[p2] - ys[p0]) / 6,
+        xs[p2] - (xs[p3] - xs[p1]) / 6, ys[p2] - (ys[p3] - ys[p1]) / 6,
+        xs[p2], ys[p2]
+      );
+    }
     path.closePath();
     return path;
   }
 
-  // 注意：这里只是把袋子从「米白线条压青底」翻成「冷灰线条压米白底」，
-  // 让它在新背景上还看得见。真正的软体塑料袋是 5.3 的事，形态逻辑先不动。
-  function drawSack(time) {
-    if (!bag) return;
-    const path = sackPath(time);
-    ctx.save();
-    ctx.fillStyle = 'rgba(88,116,132,0.055)';
-    ctx.fill(path);
-    ctx.clip(path);
+  /** 颈部：从袋肩两侧收拢到扎点。口子越松，收口越宽。 */
+  function neckPath(mouth) {
+    const path = new Path2D();
+    const tieL = mouth.cx - mouth.halfW;
+    const tieR = mouth.cx + mouth.halfW;
+    const midY = (mouth.baseY + mouth.tieY) * 0.5;
+    path.moveTo(mouth.left.x, mouth.left.y);
+    path.bezierCurveTo(mouth.left.x, midY, tieL, midY, tieL, mouth.tieY);
+    path.lineTo(tieR, mouth.tieY);
+    path.bezierCurveTo(tieR, midY, mouth.right.x, midY, mouth.right.x, mouth.right.y);
+    path.closePath();
+    return path;
+  }
 
-    ctx.strokeStyle = 'rgba(70,100,118,0.10)';
-    ctx.lineWidth = 0.7;
-    const mesh = 13;
-    const drift = (time * 2.2) % mesh;
-    for (let x = bag.cx - bag.rx - bag.ry; x < bag.cx + bag.rx + bag.ry; x += mesh) {
+  /** 光的屏幕方向。高光带与明暗边都挂在这个方向上，和泡泡用的是同一束光。 */
+  function lightVector() {
+    const angle = FILM.light * Math.PI / 180;
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  }
+
+  function drawFilmBody(path, extraAlpha) {
+    ctx.fillStyle = 'rgba(' + FILM_RGB + ',' + (FILM_BODY_A + (extraAlpha || 0)) + ')';
+    ctx.fill(path);
+  }
+
+  /**
+   * 顺着光走的高光带 + 一道背光侧的冷影。塑料和肥皂泡不同，反射是带状的
+   * 而不是一个点。米白底上纯白几乎看不见，所以亮带压一点暖、暗带压一点冷，
+   * 靠色相差而不是靠明度差把膜读出来。
+   */
+  function drawSheen() {
+    const light = lightVector();
+    const span = Math.max(bag.rx, bag.ry) * 1.6;
+    const gradient = ctx.createLinearGradient(
+      bag.cx - light.x * span, bag.cy - light.y * span,
+      bag.cx + light.x * span, bag.cy + light.y * span
+    );
+    const alpha = SHEEN_A * (1 - pressure * 0.22);
+    const warm = function (a) { return 'rgba(255,252,243,' + a.toFixed(4) + ')'; };
+    const cool = function (a) { return 'rgba(150,180,196,' + a.toFixed(4) + ')'; };
+    gradient.addColorStop(0.00, cool(alpha * 0.34));
+    gradient.addColorStop(0.16, cool(alpha * 0.10));
+    gradient.addColorStop(0.28, warm(alpha * 0.42));
+    gradient.addColorStop(0.34, warm(alpha));
+    gradient.addColorStop(0.41, warm(alpha * 0.16));
+    gradient.addColorStop(0.52, cool(alpha * 0.26));
+    gradient.addColorStop(0.68, warm(alpha * 0.52));
+    gradient.addColorStop(0.76, warm(alpha * 0.06));
+    gradient.addColorStop(1.00, cool(alpha * 0.40));
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  /**
+   * 褶皱。塑料袋在松弛处起褶，绷紧处平整，所以取样点的褶皱强度取
+   * 该处的压缩量 −min(0,u)。另外给一层很淡的常驻折痕：真实的塑料袋
+   * 从来不是完全光滑的，全靠 u 驱动的话袋子安静时会显得像玻璃。
+   */
+  function drawWrinkles() {
+    ctx.lineCap = 'round';
+    for (let i = 0; i < WRINKLE_COUNT; i += 1) {
+      // 用序号的三角函数当伪随机：每帧一致，不会闪。
+      const seed = i * 2.3999632;
+      const phi = -Math.PI + (i / WRINKLE_COUNT) * Math.PI * 2 + Math.sin(seed) * 0.09;
+      const node = (((Math.round((phi + Math.PI) / (Math.PI * 2) * NODE_COUNT)) % NODE_COUNT) +
+        NODE_COUNT) % NODE_COUNT;
+      const compression = Math.max(0, -wallU[node]) / Math.max(0.001, BAG_MAX_DENT);
+      // 底数不能太低：塑料袋从来不是完全光滑的，全靠 u 驱动的话
+      // 袋子安静时会读成一块玻璃。0.55 是「静止时也看得出是张膜」的下限。
+      const strength = 0.55 + compression * 0.65;
+      const rad = wallRadiusAt(phi);
+      const startR = rad * (0.96 - Math.abs(Math.sin(seed * 1.7)) * 0.03);
+      const endR = startR - (0.14 + 0.20 * compression) * (0.7 + Math.abs(Math.cos(seed)) * 0.6);
+      const sway = Math.sin(seed * 3.1) * 0.10;
+      const x0 = bag.cx + Math.cos(phi) * startR * bag.rx;
+      const y0 = bag.cy + Math.sin(phi) * startR * bag.ry;
+      const x1 = bag.cx + Math.cos(phi + sway) * endR * bag.rx;
+      const y1 = bag.cy + Math.sin(phi + sway) * endR * bag.ry;
+      const midR = (startR + endR) * 0.5;
+      const cx0 = bag.cx + Math.cos(phi + sway * 1.8) * midR * bag.rx;
+      const cy0 = bag.cy + Math.sin(phi + sway * 1.8) * midR * bag.ry;
+      ctx.strokeStyle = 'rgba(96,124,140,' + (WRINKLE_A * strength).toFixed(4) + ')';
+      ctx.lineWidth = 0.8 + compression * 0.7;
       ctx.beginPath();
-      ctx.moveTo(x + drift, bag.top - 20);
-      ctx.lineTo(x + bag.ry * 1.5 + drift, bag.bottom + 20);
+      ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo(cx0, cy0, x1, y1);
       ctx.stroke();
     }
-    for (let x = bag.cx - bag.rx - bag.ry; x < bag.cx + bag.rx + bag.ry; x += mesh) {
-      ctx.beginPath();
-      ctx.moveTo(x - drift, bag.bottom + 20);
-      ctx.lineTo(x + bag.ry * 1.5 - drift, bag.top - 20);
-      ctx.stroke();
-    }
+    ctx.lineCap = 'butt';
+  }
+
+  /** 一圈明暗边：迎光那侧亮、背光那侧沉。单次带渐变的 stroke。 */
+  function rimStroke() {
+    const light = lightVector();
+    const span = Math.max(bag.rx, bag.ry);
+    const gradient = ctx.createLinearGradient(
+      bag.cx - light.x * span, bag.cy - light.y * span,
+      bag.cx + light.x * span, bag.cy + light.y * span
+    );
+    gradient.addColorStop(0, 'rgba(255,255,255,' + (FILM_RIM_A * 0.95).toFixed(4) + ')');
+    gradient.addColorStop(0.42, 'rgba(140,172,188,' + (FILM_RIM_A * 0.72).toFixed(4) + ')');
+    gradient.addColorStop(1, 'rgba(58,90,108,' + (FILM_RIM_A * 0.80).toFixed(4) + ')');
+    return gradient;
+  }
+
+  function drawSack() {
+    if (!bag) return;
+    const path = sackPath();
+    const mouth = mouthGeometry();
+    const neck = mouth.neck > 6 ? neckPath(mouth) : null;
+
+    ctx.save();
+    drawFilmBody(path, 0);
+    if (neck) drawFilmBody(neck, 0.012);
+
+    ctx.save();
+    ctx.clip(path);
+    drawSheen();
+    drawWrinkles();
     ctx.restore();
 
-    ctx.save();
-    ctx.strokeStyle = pressureStage >= 2
-      ? 'rgba(217,70,54,' + (0.52 + pressure * 0.30) + ')'
-      : 'rgba(64,96,114,0.44)';
-    ctx.lineWidth = Math.max(1.4, width * 0.0014);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = rimStroke();
+    ctx.lineWidth = Math.max(1.8, width * 0.0018);
     ctx.stroke(path);
-    ctx.setLineDash([7, 7]);
-    ctx.strokeStyle = 'rgba(64,96,114,0.22)';
+    if (neck) ctx.stroke(neck);
+
+    // 警戒：袋壁整体透红。首轮直接挂 pressure，结果压力刚过一半就烧成一圈红环，
+    // 把材质本身盖掉了。改成只在 pressureStage 已经进警戒之后、按超出量平方上升。
+    if (pressureStage > 0) {
+      const heat = clamp(pressure, 0, 1) * clamp(pressure, 0, 1);
+      ctx.globalAlpha = heat * 0.40;
+      ctx.strokeStyle = '#F5654F';
+      ctx.lineWidth = 2.5 + heat * 5;
+      ctx.shadowColor = 'rgba(217,70,54,0.45)';
+      ctx.shadowBlur = 10 + heat * 26;
+      ctx.stroke(path);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  /**
+   * 5.4 扎口。画在泡泡之后，所以正在挤出去的泡泡是从扎口「底下」穿过的，
+   * 能看见口子勒住它。三部分：向下散开的褶子、扎带本身、扎带以上的松口。
+   */
+  function drawTie() {
+    if (!bag) return;
+    const mouth = mouthGeometry();
+    if (mouth.neck <= 6) return;
+    const open = clamp(mouthOpen, 0, 1);
+    const tieL = mouth.cx - mouth.halfW;
+    const tieR = mouth.cx + mouth.halfW;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // 收拢的褶子：口子越松，褶子越向两侧散开、越浅。
+    // 底端落在袋肩之间而不是自己外推——外推会跑到袋壁外面去。
+    const pleats = 5;
+    ctx.strokeStyle = 'rgba(96,124,140,' + (0.26 - open * 0.10).toFixed(4) + ')';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < pleats; i += 1) {
+      const t = pleats > 1 ? i / (pleats - 1) : 0.5;
+      const topX = tieL + (tieR - tieL) * t;
+      const shoulder = mouth.left.x + (mouth.right.x - mouth.left.x) * t;
+      const baseX = topX + (shoulder - topX) * (0.55 + open * 0.35);
+      ctx.beginPath();
+      ctx.moveTo(topX, mouth.tieY + 1);
+      ctx.quadraticCurveTo(topX, (mouth.tieY + mouth.baseY) * 0.5, baseX, mouth.baseY);
+      ctx.stroke();
+    }
+
+    // 扎带。扎紧时是一道实线；松开后变细、变虚，中间露出缝。
+    const bandH = Math.max(3, bag.ry * 0.022) * (1 - open * 0.32);
+    const bandGrad = ctx.createLinearGradient(tieL, 0, tieR, 0);
+    bandGrad.addColorStop(0, 'rgba(58,90,108,0.30)');
+    bandGrad.addColorStop(0.5, 'rgba(58,90,108,' + (0.62 - open * 0.24).toFixed(4) + ')');
+    bandGrad.addColorStop(1, 'rgba(58,90,108,0.30)');
+    ctx.fillStyle = bandGrad;
+    ctx.beginPath();
+    ctx.ellipse(mouth.cx, mouth.tieY, mouth.halfW * 1.06, bandH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.34 - open * 0.14).toFixed(4) + ')';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.ellipse(bag.cx, bag.cy, bag.rx * 0.92, bag.ry * 0.90, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    const seamY = bag.top + bag.ry * 0.14;
-    ctx.strokeStyle = 'rgba(64,96,114,0.52)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(bag.cx - bag.rx * 0.72, seamY);
-    ctx.quadraticCurveTo(bag.cx, bag.top - bag.ry * 0.04, bag.cx + bag.rx * 0.72, seamY);
+    ctx.ellipse(mouth.cx, mouth.tieY - bandH * 0.35, mouth.halfW * 0.94, bandH * 0.5, 0,
+      Math.PI * 1.06, Math.PI * 1.94);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(64,96,114,0.56)';
-    ctx.beginPath();
-    ctx.ellipse(bag.cx, bag.bottom - bag.ry * 0.01, bag.rx * 0.055, bag.ry * 0.035, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (pressureStage > 0) {
-      ctx.globalAlpha = clamp(pressure * 0.48, 0, 0.48);
-      ctx.strokeStyle = '#F5654F';
-      ctx.lineWidth = 5 + pressure * 5;
-      ctx.shadowColor = 'rgba(217,70,54,0.55)';
-      ctx.shadowBlur = 18 + pressure * 24;
-      ctx.stroke(path);
+    // 扎带以上的松口：两片外翻的塑料。口子越松，翻得越开、垂得越低。
+    // 宽度不能只挂 halfW：扎紧时 halfW 只有二十来像素，纯比例算出来的耳朵
+    // 会缩成一根天线。给一个相对 rx 的底，扎紧时也还是两片塑料。
+    // 形状是「先向上翻过去，再垂到扎带下方」——真实扎口的两端是耷拉着的，
+    // 一味向上翘既不像塑料袋，也会顶到窄屏上方的文字。
+    const earW = (mouth.halfW + bag.rx * 0.032) * (1.15 + open * 0.95);
+    const earH = mouth.neck * (0.26 + open * 0.30);
+    const droop = earH * (0.34 + open * 0.52);
+    ctx.fillStyle = 'rgba(' + FILM_RGB + ',' + (FILM_BODY_A + 0.026).toFixed(4) + ')';
+    ctx.strokeStyle = 'rgba(96,124,140,' + (0.30 + open * 0.06).toFixed(4) + ')';
+    ctx.lineWidth = 1;
+    for (let side = -1; side <= 1; side += 2) {
+      ctx.beginPath();
+      ctx.moveTo(mouth.cx + side * mouth.halfW * 0.35, mouth.tieY - bandH * 0.4);
+      ctx.bezierCurveTo(
+        mouth.cx + side * earW * 0.24, mouth.tieY - earH,
+        mouth.cx + side * earW * 0.96, mouth.tieY - earH * 0.42,
+        mouth.cx + side * earW * 0.86, mouth.tieY + droop
+      );
+      ctx.quadraticCurveTo(
+        mouth.cx + side * earW * 0.32, mouth.tieY - bandH * 0.1,
+        mouth.cx + side * mouth.halfW * 0.35, mouth.tieY - bandH * 0.4
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
+
+    // 松到能漏泡泡时，口沿透一点警示红——这是玩家唯一能看见的「要漏了」提示。
+    const escapeGrade = clamp(Math.round((spec && spec.escape) || 1), 1, 3);
+    const threshold = MOUTH_ESCAPE_MIN * (1 - 0.22 * (escapeGrade - 1));
+    if (open > threshold) {
+      const heat = clamp((open - threshold) / Math.max(0.01, 1 - threshold), 0, 1);
+      ctx.strokeStyle = 'rgba(217,70,54,' + (heat * 0.46).toFixed(4) + ')';
+      ctx.lineWidth = 2 + heat * 2;
+      ctx.beginPath();
+      ctx.ellipse(mouth.cx, mouth.tieY, mouth.halfW * 1.06, bandH, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.lineCap = 'butt';
     ctx.restore();
   }
 
@@ -1184,8 +1733,20 @@ const LevelGame = (function () {
     ctx.save();
     ctx.globalAlpha = bubble.opacity;
 
+    // 5.4：挤过扎口时的形变。塑料袋口勒住的是横向，泡泡就沿前进方向拉长。
+    // 体积守恒 sx·sy = 1，所以只有一个自由度；squeeze 为负是出口后的回弹超调。
+    const squeeze = Number(bubble.squeeze) || 0;
+    if (squeeze) {
+      const sx = clamp(1 - squeeze * ESCAPE_SQUASH, 0.35, 1.9);
+      ctx.translate(bubble.x, bubble.y);
+      ctx.rotate(Number(bubble.squeezeAngle) || 0);
+      ctx.scale(sx, 1 / sx);
+      ctx.rotate(-(Number(bubble.squeezeAngle) || 0));
+      ctx.translate(-bubble.x, -bubble.y);
+    }
+
     if (filmSprites) {
-      const drift = prefersReducedMotion() ? 0 : time * FILM.speed;
+      const drift = reducedMotion ? 0 : time * FILM.speed;
       const cycle = bubble.phase + drift;
       const pos = (cycle - Math.floor(cycle)) * SPRITE_FRAMES;
       const i0 = Math.floor(pos) % SPRITE_FRAMES;
