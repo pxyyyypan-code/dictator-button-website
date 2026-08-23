@@ -424,47 +424,121 @@ const CONFIG = {
      情绪线：拥挤 → 松开 → 漂浮 → 远离 → 安静 → 释然。
      不是失败结局，所以全程没有爆裂、没有红色警报、没有失控逃跑。
 
+     整段是一条连贯的物理链，不是四段各自淡入淡出的效果：
+       ① 扎口松开，袋里的泡泡一颗接一颗游到袋口、挤过扎口、浮出去；
+       ② 泡泡出了口子就一直向上，越飘越开；
+       ③ 最后一颗离开之后，袋子失去支撑，浮力小于重力，往下掉出画面；
+       ④ 镜头跟着泡泡上抬，米白的世界向下退场，青蓝的结局从上方漫下来。
+
      下面的时间点全是**相对起点的绝对毫秒**，不是各段时长依次相加。
      这样改任何一个值都不会把后面的整体推移，调参时不用重算。
-       0                 泡泡松开、HUD/收藏夹/独裁者按钮开始淡出
-       SACK_START        麻袋开始缩小 → 右移 → 填充淡出成线稿
-       TINT_START        米白开始转青蓝（画在 canvas 上，不动 --game-bg）
-       VEIL_START        结局1页面在上方铺开，开始淡入
+       0                 松手：HUD/收藏夹/独裁者按钮淡出，扎口开始松
+       RELEASE_DELAY     第一颗泡泡开始挤扎口，之后按 MOUTH_QUEUE 摊开
+       FLUSH             还堵在袋里的一律放行，按 FLUSH_GAP 一颗接一颗
+       TINT_START        青蓝的分界线从画面上方压下来
+       PAN_START         镜头开始上抬
+       DROP_START        袋子空了，开始下落
+       VEIL_START        结局1页面从上方滑入并淡入
        TOTAL             真正切场景；此刻两屏画面已经一致，切换看不见
-     TOTAL 必须 ≥ VEIL_START + VEIL_MS，否则会在淡入没走完时硬切。 */
+     两条硬约束：
+       · DROP_START 应当晚于「最后一颗挤完」＝ FLUSH_MS + (n-1)·FLUSH_GAP_MS
+         + SQUEEZE_MS。这只是算得出来的下限；level-game.js 里还另接了一道
+         硬门：只要还有泡泡在袋子里或者卡在扎口上，袋子就不开始掉——
+         用户要的因果是「泡泡全出来了，袋子没了支撑才掉」，不能倒过来。
+         注意那道门不算已经过了口子、正在回弹的那些（free 段）：
+         它们已经在袋外，本来就不再支撑袋子；
+       · TOTAL 必须 ≥ VEIL_START + VEIL_MS，否则会在淡入没走完时硬切。 */
   ENDING1_HUD_FADE_MS: 900,
-  ENDING1_SACK_START_MS: 700,
-  ENDING1_SACK_MS: 2500,
-  ENDING1_TINT_START_MS: 1500,
-  ENDING1_TINT_MS: 1900,
-  ENDING1_VEIL_START_MS: 3000,
-  ENDING1_VEIL_MS: 1200,
-  ENDING1_TOTAL_MS: 4400,
 
-  // 结局页的青蓝。必须和 style.css 的 --c-teal-bright (#049CBF) 是同一个颜色，
-  // 否则过渡完成的那一帧会跳色。canvas 这层是 rgba 叠加，所以写成分量。
-  ENDING1_TEAL_RGB: Object.freeze([4, 156, 191]),
-
-  // 泡泡离开麻袋：给一个向上的初速，之后每秒衰减到 DRAG 倍——
-  // 所以是「越飘越慢、彼此拉开」，而不是加速逃跑。
-  ENDING1_RISE_SPEED_MIN: 30,
-  ENDING1_RISE_SPEED_MAX: 66,
-  ENDING1_RISE_SPREAD: 30,
-  ENDING1_RISE_FUNNEL: 0.16,
-  ENDING1_RISE_DRAG: 0.55,
-  ENDING1_RISE_STAGGER_MS: 160,
   // 触发到「手真的松开」之间留一拍。按钮那条路上这一拍最要紧：
   // 按下去 → 什么也没发生 → 然后泡泡才开始自己走。
   ENDING1_RELEASE_DELAY_MS: 520,
+
+  // 泡泡排队从扎口出去。总排队时长固定、间隔按只数摊——
+  // 固定间隔配倒计时那条路上的二十几颗泡泡，会把结局拖到十秒开外。
+  ENDING1_MOUTH_QUEUE_MS: 2000,
+  ENDING1_MOUTH_GAP_MIN_MS: 70,
+  ENDING1_MOUTH_GAP_MAX_MS: 420,
+
+  // 排队是刚体排队：泡泡在袋口互相推挤，口子一次只过得去一颗，
+  // 所以「按只数摊间隔」只是发车节奏，实际出完的时间由挤压决定。
+  // 到 FLUSH 这一刻还堵在袋子里的，一律放行——把「等到口子跟前」这个
+  // 条件去掉，让它们从当前位置直接被口子吸过去，按 FLUSH_GAP 一颗接一颗。
+  // 不这么做的话，倒计时那条路（二十几颗）会拖到袋子该掉的时候还没出完。
+  ENDING1_FLUSH_MS: 1800,
+  // 放行的间隔和 MOUTH_QUEUE 一个路子：给一个固定窗口，按剩下的只数摊。
+  // 写死一个 gap 的话，倒计时那条路（二十多颗）会排到 DROP_START 之后，
+  // 而袋子必须等它们全出完才能掉，于是一直拖到结局页都开始淡入了。
+  ENDING1_FLUSH_WINDOW_MS: 700,
+  ENDING1_FLUSH_GAP_MIN_MS: 45,
+  ENDING1_FLUSH_GAP_MAX_MS: 110,
+  // 挤过扎口 / 挤出来之后回弹成球。比失控逃逸的 BAG_ESCAPE_* 慢：
+  // 那边是被压力顶出去的，这边是自己松开手，动作必须是缓的。
+  ENDING1_SQUEEZE_MS: 820,
+  ENDING1_REBOUND_MS: 560,
+  ENDING1_EXIT_SPEED_MIN: 96,
+  ENDING1_EXIT_SPEED_MAX: 146,
+  // 出口的横向初速（±）。给得太小的话，十几颗泡泡会叠成一根烟囱；
+  // 给得太大又像被喷出来的。配上 RISE_DRAG 的衰减：先散开，再各自安定。
+  // 74 实测偏窄：所有泡泡都从同一个口子出来，横向总位移
+  // 大致是 spread ÷ ln(1/drag)，74/0.60 只有 120px，于是排成一根链。
+  ENDING1_EXIT_SPREAD: 120,
+
+  // 出口之后的上浮。终速不是一个死数，而是「镜头速度 + RISE_EXTRA」：
+  // 镜头也在往上抬，泡泡只有比镜头再快一点，在屏幕上才是缓缓爬升；
+  // 写死一个速度的话，镜头一快就会把泡泡甩到画面下方去。
+  ENDING1_RISE_EXTRA: 58,
+  ENDING1_RISE_EASE: 1.05,
+  // 横向速度每秒衰减到 DRAG 倍：先散开，再各自安定。
+  // 和 EXIT_SPREAD 是一对：衰得太快，再大的初速也跑不出去。
+  ENDING1_RISE_DRAG: 0.68,
   ENDING1_RISE_SWAY: 7,
-  ENDING1_SHRINK_PER_SEC: 0.10,
-  ENDING1_FADE_START_MS: 1700,
-  ENDING1_FADE_MS: 2300,
+  ENDING1_SHRINK_PER_SEC: 0.08,
+
+  // 空袋下落。袋子本身的塌陷不用写：泡泡走光之后袋壁没有接触压力，
+  // 5.3 的质点解算会自己把它松回去，再加上 BAG_GRAVITY_SAG 的底部下坠。
+  // 这里只给「掉」这件事：重力加速度，外加一点绕扎口的倾倒。
+  // DROP_START 只是「最早不得早于」；level-game.js 里的硬门会把它往后推到
+  // 真的没泡泡卡在扎口上为止（大致 FLUSH + FLUSH_WINDOW + SQUEEZE）。
+  // 重力给得比早期大：下落和镜头上抬在屏幕上是同一个方向，
+  // 掉得比镜头慢的话看起来就只是「被镜头带出画面」，而不是「掉下去」。
+  ENDING1_DROP_START_MS: 3000,
+  ENDING1_DROP_GRAVITY: 1750,
+  ENDING1_DROP_SPIN: 0.22,
+
+  // 镜头上抬。PAN_HEIGHTS 是抬升距离 ÷ 画布高。
+  // 抬升本身只是绘制期的 translate，泡泡与袋子的世界坐标一律不动，
+  // 所以碰撞、袋壁约束、扎口几何全部不受影响。
+  ENDING1_PAN_START_MS: 3400,
+  ENDING1_PAN_MS: 1900,
+  ENDING1_PAN_HEIGHTS: 0.85,
+
+  // 米白 → 青蓝：一条水平分界线从画面上方压下来，泡泡从线下浮到线上。
+  // ABOVE/BELOW 是分界线的起止位置（÷ 画布高，负值表示在画面上方），
+  // SOFT 是这条线的羽化带宽度——不羽化就是一条生硬的直边。
+  ENDING1_TINT_START_MS: 3000,
+  ENDING1_TINT_MS: 2300,
+  ENDING1_TINT_ABOVE: -0.15,
+  ENDING1_TINT_BELOW: 1.15,
+  ENDING1_TINT_SOFT: 0.10,
+
+  // 结局页的青蓝。必须和 style.css 的 --c-teal-bright (#049CBF) 是同一个颜色，
+  // 否则过渡完成的那一帧会跳色。canvas 这层是纯色填充，所以写成分量。
+  ENDING1_TEAL_RGB: Object.freeze([4, 156, 191]),
+
+  // 泡泡整体变淡：要晚于「浮进青蓝」，玩家得先看见它们进了蓝色区。
+  ENDING1_FADE_START_MS: 3800,
+  ENDING1_FADE_MS: 1900,
 
   // 其中一颗像肥皂泡一样轻轻破掉：几粒碎屑、慢速、无闪光、无冲击波。
-  ENDING1_POP_AT_MS: 2100,
+  ENDING1_POP_AT_MS: 3900,
   ENDING1_POP_PARTICLES: 6,
   ENDING1_POP_SPEED_SCALE: 0.34,
+
+  // 结局页从上方滑入。滑入方向和镜头、泡泡一致，都是向上。
+  ENDING1_VEIL_START_MS: 4700,
+  ENDING1_VEIL_MS: 1200,
+  ENDING1_TOTAL_MS: 5900,
 
   // prefers-reduced-motion：整段退化成一次短交叉淡入，不做任何位移。
   ENDING1_REDUCED_MS: 420

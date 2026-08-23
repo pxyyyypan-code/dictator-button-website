@@ -4002,25 +4002,31 @@ body.is-ending-transition .collection-fab {
   transition: opacity var(--e1-hud, 900ms) var(--ease);
 }
 
-/* 3. 结局页「铺开但不可见」。
-      这一步是整段过渡成立的前提：只有真正参与布局，
-      ending-transition.js 才量得到 .ending-sack 的位置，
-      canvas 里的麻袋才知道该缩到哪儿去。
+/* 3. 结局页「铺开但不可见」，并且预先停在画面上方。
+      整段过渡的运动方向只有一个：向上。泡泡向上浮，镜头向上抬，
+      青蓝从上方漫下来——所以结局页也必须是从上方下来的那一层，
+      而不是原地淡入。-14% 只是一小段：这是「跟着镜头到位」，
+      不是「一整页飞进来」。
+      display:grid 让它真正参与布局，避免切场景那一帧重新排版跳一下。
       animation:none 用来压住 .scene--ending.scene--active 自带的 fade-in
       —— 那一下会在真正切场景时又淡入一次，反而闪。 */
 .scene--ending.is-arriving {
   display: grid;
   z-index: 60;
   opacity: 0;
+  transform: translate3d(0, -14%, 0);
   pointer-events: none;
   animation: none;
 }
 
 /* 4. 点亮。此时 canvas 上的米白已经转成同一个青蓝，两层颜色一致，
-      所以看到的不是「一块蓝板盖下来」，而是画面自己安定下来。 */
+      所以看到的不是「一块蓝板盖下来」，而是画面自己安定下来。
+      位移和淡入用同一条时长曲线，读起来才是一个动作。 */
 .scene--ending.is-arriving.is-lit {
   opacity: 1;
-  transition: opacity var(--e1-veil, 1200ms) var(--ease-out);
+  transform: translate3d(0, 0, 0);
+  transition: opacity var(--e1-veil, 1200ms) var(--ease-out),
+              transform var(--e1-veil, 1200ms) var(--ease-out);
 }
 
 /* 切场景之后恢复可交互（「查看体验总结」「重新体验」）。 */
@@ -4092,7 +4098,15 @@ body.is-ending-transition .collection-fab {
     transition-delay: 0ms;
   }
 
-  .scene--ending.is-arriving.is-lit { transition-duration: 240ms; }
+  /* 减少动态：整段退化成一次短交叉淡入，结局页不做任何位移。
+     transform 必须在 .is-arriving 上就归零，否则起始位置还是偏上的，
+     加 .is-lit 时会瞬移一下——这恰恰是这条媒体查询要避免的东西。 */
+  .scene--ending.is-arriving,
+  .scene--ending.is-arriving.is-lit { transform: none; }
+
+  .scene--ending.is-arriving.is-lit {
+    transition: opacity 240ms var(--ease-out);
+  }
 
   .scene--ending.is-arriving .ending-doraemon,
   .scene--ending.is-arriving .ending-label,

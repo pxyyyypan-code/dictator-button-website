@@ -3,11 +3,13 @@
  *
  * 查四件事：
  *   1. 两条通往结局1的路（L3A 按钮失效 / 第三关倒计时结束）都走过渡；
- *   2. canvas 上的麻袋确实收进结局页 .ending-sack 的框里（三档分辨率各查一次）；
- *   3. 过渡结束时 u11 真的成为当前场景，且没有 JS 报错；
+ *   2. 结局页从上方滑入后位移归零（transform 回到 none）；
+ *   3. 过渡结束时 u11 真的成为当前场景、位移归零，且没有 JS 报错；
  *   4. prefers-reduced-motion 下不做位移，照样能走到结局页。
  *
  * 按时间点截图，方便肉眼确认「拥挤 → 松开 → 漂浮 → 远离 → 安静 → 释然」。
+ * 断言只能查「有没有跑通」，查不了「像不像那么回事」——袋子往哪儿掉、
+ * 泡泡是不是从口子出去的，只有看图才知道，所以截图是这个脚本的主产物。
  * 截图落在 assets/dev/_shots-ending1/，已进 .gitignore。
  *
  *   NODE_PATH="$(npm root -g)" node assets/dev/_ending1-shots.js
@@ -33,8 +35,13 @@ const SIZES = [
   { width: 1920, height: 1080 }
 ];
 
-// 对应 config.js 的 ENDING1_*：起点 / 松开 / 麻袋在路上 / 页面淡入 / 落定。
-const MARKS = [0, 900, 2000, 3200, 4800];
+// 对应 config.js 的 ENDING1_*：
+//   0 起点 / 900 泡泡在排队出口 / 2000 出得差不多了 /
+//   3200 最后几颗被放行 / 3900 空袋开始往下掉 /
+//   4600 泡泡进青蓝区、袋子已出画 / 5600 结局页滑到位。
+// 总时长 ENDING1_TOTAL_MS = 5900，最后一张必须在这之前，
+// 否则截到的是 goToId 之后的静态结局页，看不出过渡本身。
+const MARKS = [0, 900, 2000, 3200, 3900, 4600, 5600];
 
 function serve() {
   return new Promise(function (resolve) {
@@ -97,25 +104,29 @@ async function shotSet(page, tag, t0) {
   return actual;
 }
 
-/** 量 canvas 与结局页线稿的相对位置，顺便记下三个过渡 class 的状态。 */
+/**
+ * 记下 u11 的排版状态。麻袋不再往结局页的线稿里缩，
+ * 所以不再量 .ending-sack 的落点。
+ * stats.remaining 只数 normal 态的泡泡，换到 escaping 就归零，
+ * 所以它只能当参考打印，不能拿来断言「泡泡飘完了没有」——
+ * 那件事只能看图。
+ */
 async function probe(page) {
   return page.evaluate(function () {
     const canvas = document.querySelector('[data-canvas="experience"]');
     const u11 = document.querySelector('[data-scene="u11"]');
     const u06 = document.querySelector('[data-scene="u06"]');
-    const sack = u11 && u11.querySelector('.ending-sack');
-    if (!canvas || !u11 || !sack) return { why: 'missing node' };
+    if (!canvas || !u11) return { why: 'missing node' };
     const c = canvas.getBoundingClientRect();
-    const s = sack.getBoundingClientRect();
     const cs = getComputedStyle(u11);
+    const stats = (typeof LevelGame !== 'undefined' && LevelGame.getStats)
+      ? LevelGame.getStats() : null;
     return {
       canvas: Math.round(c.width) + 'x' + Math.round(c.height),
-      sack: Math.round(s.width) + 'x' + Math.round(s.height) +
-        ' @ ' + Math.round(s.left - c.left) + ',' + Math.round(s.top - c.top),
-      inCanvas: s.left >= c.left - 2 && s.right <= c.right + 2 &&
-        s.top >= c.top - 2 && s.bottom <= c.bottom + 2,
+      remaining: stats ? stats.remaining : -1,
       display: cs.display,
       opacity: cs.opacity,
+      transform: cs.transform,
       ending: u11.dataset.ending,
       u11class: u11.className,
       u06class: u06 ? u06.className : '',
@@ -168,21 +179,27 @@ async function runOne(browser, base, size, opts) {
   const t0 = Date.now();
   const start = await probe(page);
   const actual = await shotSet(page, label, t0);
+  // 最后一张截在 5600ms，切场景在 5900ms，等一下再量终点。
+  await page.waitForTimeout(600);
   const end = await probe(page);
 
   const problems = [];
   if (errors.length) problems.push('JS 报错：' + errors.join(' | '));
   if (start.ending !== '1') problems.push('data-ending 不是 1（是 ' + start.ending + '）');
-  if (start.display === 'none') problems.push('过渡开始时 u11 仍是 display:none，量不到麻袋');
-  if (!start.inCanvas) problems.push('结局页麻袋不在画布范围内，canvas 那只会缩到画外');
+  if (start.display === 'none') problems.push('过渡开始时 u11 仍是 display:none，接不住画面');
   if (end.scene !== 'u11') problems.push('过渡结束后当前场景是 ' + end.scene + '，没切到 u11');
   if (end.opacity !== '1') problems.push('结局页最终 opacity=' + end.opacity);
+  if (end.transform !== 'none' && end.transform !== 'matrix(1, 0, 0, 1, 0, 0)') {
+    problems.push('结局页最终仍有位移 transform=' + end.transform);
+  }
 
   console.log('\n' + label + (opts.reduced ? '  (reduced-motion)' : ''));
   console.log('  canvas        ' + start.canvas);
-  console.log('  结局页麻袋    ' + start.sack + (start.inCanvas ? '  ✓ 在画布内' : '  ✗ 越界'));
-  console.log('  起点          display=' + start.display + ' opacity=' + start.opacity);
-  console.log('  终点          scene=' + end.scene + ' opacity=' + end.opacity);
+  console.log('  起点          display=' + start.display + ' opacity=' + start.opacity +
+    ' 泡泡=' + start.remaining);
+  console.log('  终点          scene=' + end.scene + ' opacity=' + end.opacity +
+    ' 泡泡=' + end.remaining);
+  console.log('  终点 transform ' + end.transform);
   console.log('  u06 class     ' + end.u06class);
   console.log('  u11 class     ' + end.u11class);
   console.log('  截图 标称/实际 ' + actual.join('  '));
@@ -200,11 +217,12 @@ async function run() {
   const browser = await chromium.launch();
   let allOk = true;
 
-  // 按钮路跑满三档分辨率：麻袋落点的对齐只能靠这个查。
+  // 按钮路跑满三档分辨率：镜头抬升量、袋子落点、青蓝分界都跟画布高有关。
   for (const size of SIZES) {
     allOk = await runOne(browser, base, size, { tag: 'button', path: 'button' }) && allOk;
   }
   // 倒计时路跑一档就够：它和按钮路共用同一段过渡，差别只在触发点。
+  // 但它的泡泡多得多（二十几颗），排队出口这一段只有这条路能验。
   allOk = await runOne(browser, base, SIZES[1], { tag: 'timeout', path: 'timeout' }) && allOk;
   // 减少动态：不做位移，但必须照样走到结局页。
   allOk = await runOne(browser, base, SIZES[1],

@@ -14,11 +14,16 @@
  *
  * 这里的做法是把硬切藏起来：
  *   1. 先给 u11 加 .is-arriving —— display:grid + opacity:0 + z-index 抬高，
- *      结局页此刻已经**排好版但看不见**，于是可以量它的 .ending-sack；
- *   2. 把量到的位置交给 LevelGame.playFarewell()，canvas 里的麻袋朝那个
- *      位置缩小右移、填充淡出、只剩一根米白线；背景同时转青蓝；
- *   3. 结局页再淡入（.is-lit）；这时两屏画面已经基本重合；
+ *      并且整页预先向上偏移，结局页此刻已经**排好版但看不见**；
+ *   2. canvas 那边交给 LevelGame.playFarewell()：扎口松开，泡泡一颗接一颗
+ *      挤出袋口向上浮走；袋子空了失去支撑，往下掉出画面；镜头跟着泡泡上抬，
+ *      青蓝色从画面上方漫下来；
+ *   3. 结局页从上方滑入并淡入（.is-lit）——滑入方向和镜头、泡泡一致，
+ *      都是向上，所以两屏是同一个运动的两段，不是两个独立的动画；
  *   4. 最后才真正 goToId('u11')。切换发生在两屏一模一样的那一帧，看不见。
+ *
+ * 这里不再量结局页麻袋的位置：canvas 上的袋子是掉出画面的，不和结局页的
+ * 线稿对接，也就没有「缩到哪儿去」这个问题。
  *
  * SceneManager 本身一行没改：这个模块只操作 u11 那个 <section> 的 class，
  * 另外 11 个节点的行为完全不受影响。
@@ -40,27 +45,6 @@ const EndingTransition = (function () {
   function gameScene() { return document.querySelector('[data-scene="u06"]'); }
   function endingScene() { return document.querySelector('[data-scene="u11"]'); }
 
-  /**
-   * 量结局页麻袋线稿的位置，换算到画布坐标系。
-   * 必须实测而不是写死百分比：.ending-sack 用的是 %，1366/1440/1920 上
-   * 落点各不相同，写死就会出现「袋子缩过去了，线稿在旁边」。
-   * 调用前 u11 必须已经是 display:grid（.is-arriving），否则量到全 0。
-   */
-  function measureSackTarget() {
-    const canvas = document.querySelector('[data-canvas="experience"]');
-    const ending = endingScene();
-    const sack = ending && ending.querySelector('.ending-sack');
-    if (!canvas || !sack) return null;
-    const canvasBox = canvas.getBoundingClientRect();
-    const sackBox = sack.getBoundingClientRect();
-    if (canvasBox.width < 4 || sackBox.width < 4) return null;
-    return {
-      cx: sackBox.left + sackBox.width / 2 - canvasBox.left,
-      cy: sackBox.top + sackBox.height / 2 - canvasBox.top,
-      w: sackBox.width
-    };
-  }
-
   function timer(fn, delay) {
     if (typeof SceneManager !== 'undefined' && typeof SceneManager.addTimer === 'function') {
       // 走 SceneManager 的定时器池：重新开始时 clearTimers() 一次全清，
@@ -74,8 +58,8 @@ const EndingTransition = (function () {
   /**
    * @param {{fillCopy: function, commit: function}} hooks
    *   fillCopy —— 把结局1的文案填进 u11（app.js 的 fillEnding）。
-   *               必须在量尺寸之前调：它会写 data-ending="1"，
-   *               而 [data-ending="1"] .ending-sack 带一个 rotate。
+   *               要在挂 .is-arriving 之前调：它会写 data-ending="1"，
+   *               而结局页的一部分样式挂在这个属性上。
    *   commit   —— 真正切场景（app.js 里就是 SceneManager.goToId('u11')）。
    */
   function play(hooks) {
@@ -97,7 +81,7 @@ const EndingTransition = (function () {
     scene.classList.add('is-farewell');
     document.body.classList.add('is-ending-transition');
 
-    // 结局页先「铺开但不可见」，这样才量得到，也才能在下面接住画面。
+    // 结局页先「铺开但不可见」，停在画面上方等着被镜头带下来。
     ending.classList.add('is-arriving');
 
     if (reducedMotion()) {
@@ -108,21 +92,20 @@ const EndingTransition = (function () {
       return;
     }
 
-    // 读一次布局，逼浏览器把 .is-arriving 的 display:grid 结算掉，
-    // 否则这一帧量到的还是 display:none 时的全 0 矩形。
+    // 读一次布局，逼浏览器把 .is-arriving 的 display:grid 和起始位移结算掉，
+    // 否则下面加 .is-lit 时浏览器会把两个 class 合成一帧，滑入根本不发生。
     void ending.offsetWidth;
-    const target = measureSackTarget();
 
-    // 2/3/6. 泡泡松开慢慢飘远、麻袋缩小右移变线稿、背景转青蓝——
-    //        都在同一块 canvas 上，交给 LevelGame 一帧一帧推。
-    LevelGame.playFarewell({ sackTarget: target });
+    // 2/3/4. 泡泡挤出袋口向上浮、空袋下坠、镜头上抬、米白转青蓝——
+    //        全在同一块 canvas 上，交给 LevelGame 一帧一帧推。
+    LevelGame.playFarewell();
 
-    // 5/7. 结局页淡入：哆啦A梦从右下轻轻进场，左侧文案错峰出现。
+    // 5. 结局页从上方滑入并淡入：哆啦A梦从右下轻轻进场，左侧文案错峰出现。
     timer(function () { ending.classList.add('is-lit'); },
-      Number(T.ENDING1_VEIL_START_MS) || 3000);
+      Number(T.ENDING1_VEIL_START_MS) || 4700);
 
     timer(function () { commit(ending, scene, done); },
-      Number(T.ENDING1_TOTAL_MS) || 4400);
+      Number(T.ENDING1_TOTAL_MS) || 5900);
   }
 
   /**
