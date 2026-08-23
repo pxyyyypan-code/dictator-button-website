@@ -162,13 +162,16 @@
     <div class="worry-subs" data-bind="worrySubs" role="group" aria-label="细分烦恼"></div>
     <div class="worry-particles" data-bind="worryCategories" role="group" aria-label="烦恼大类"></div>
 
-    <!-- 确认键的文案随选中条数变（worry-picker.js 的 sync() 改写），
-         所以这里的字只是首屏默认值，不代表最终文案。
+    <!-- 这颗键的语义是「我选完了，往下走」，不是「对这一条表态」，
+         所以文案**不随条数变化**，也绝不出现「这个 / 这 2 条」这类指代。
+         旧文案「确认这个烦恼」实测会被读成单条确认：玩家选中第一条就下意识按下去，
+         根本没意识到还能再选两条。带数字的版本（「确认这 2 条烦恼」）同样有这个毛病——
+         只要句子里指着某几件东西，它看上去就还是在对那几件东西做操作。
          「清空重选」是多选之后新增的：选到第 3 条才发现选错，总得有一条退路，
          而它不能藏进推测面板里——预设条目那条支线根本不会打开面板。 -->
     <div class="scene__actions scene__actions--center">
       <button type="button" class="btn btn--primary" data-action="confirm-worry"
-              data-bind="confirmWorry" disabled>确认这个烦恼</button>
+              data-bind="confirmWorry" disabled>选好了，去匹配道具</button>
       <button type="button" class="btn btn--link" data-action="reset-worry-pick">清空重选</button>
     </div>
 
@@ -192,8 +195,12 @@
       <p class="classify-panel__guess" data-bind="classifyGuess"></p>
       <p class="classify-panel__note" data-bind="classifyNote"></p>
       <div class="classify-panel__actions">
+        <!-- 和居中那颗是**同一个 data-action**，做的也是同一件事：结束选择、进入 u04。
+             所以文案必须一字不差地跟着它走。这颗以前叫「确认分类」，
+             听上去像「对，就是这一类」——一句只关乎当前这条输入的话，
+             玩家点下去却整个离开了 u03，和居中那颗「确认这个烦恼」是同一种误导。 -->
         <button type="button" class="btn btn--primary btn--compact" data-action="confirm-worry"
-                data-bind="classifyConfirm">确认分类</button>
+                data-bind="classifyConfirm">选好了，去匹配道具</button>
         <!-- 这颗以前是 reset-worry-pick（清掉唯一那条选择）。改成多选后不能再那么干：
              自由输入只是三条里的一条，点它不该把前面挑好的两条一起抹掉。
              现在它只收起面板、放回自由输入框和粒子场，已选的原样留着。 -->

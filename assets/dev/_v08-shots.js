@@ -158,10 +158,10 @@ async function run() {
     await openCategory(0);
     await shot('u03-expanded');       // 完整列表 + 左侧「← 返回全部类别」
     await page.locator('[data-bind="worrySubs"] [data-action="pick-worry"]').first().click();
-    await shot('u03');                // 两条：确认键文案变成「确认这 2 条烦恼」
+    await shot('u03');                // 两条：提示行变成「已选 2 / 3……还能再选 1 条。」
 
     // 再挑一条凑满 3 条，这是版面压力最大的一档：
-    // 提示行最长、确认键最宽，u05 与 u11 也要摆三件道具。
+    // 提示行最长（确认键是常量文案，宽度不随条数变），u05 与 u11 也要摆三件道具。
     // 换大类先按返回键退回粒子场——这正是玩家的走法，也顺带证明返回键真的能用。
     await page.click('[data-bind="worrySubs"] [data-action="worry-back"]');
     await openCategory(1);

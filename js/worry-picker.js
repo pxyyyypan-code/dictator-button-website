@@ -105,11 +105,12 @@ const WorryPicker = (function () {
       return;
     }
     const rest = CONFIG.WORRY_MAX_PICK - list.length;
-    // 选满了就不再补一句「已经选满，确认吧」：
-    // 「3 / 3」和按钮上的「确认这 3 条烦恼」已经把这件事说了两遍，
-    // 再加一句只会把这行顶到「社交」那颗粒子底下去。
+    // 这行现在是**唯一**报条数的地方：按钮改成了常量文案「选好了，去匹配道具」，
+    // 不再带「这 2 条」。所以「n / 3」和「还能再选 m 条」必须留在这里。
+    // 「也可以直接确认」删掉了——按钮自己已经写着「选好了」，同一件事说两遍，
+    // 反而把这行撑长，而它上面 6% 就是大标题，多折一行就会顶上去。
     setHint('已选 ' + list.length + ' / ' + CONFIG.WORRY_MAX_PICK + '：' + pickedList() +
-      (rest > 0 ? '　还能再选 ' + rest + ' 条，也可以直接确认。' : ''));
+      (rest > 0 ? '　还能再选 ' + rest + ' 条。' : ''));
   }
 
   function categoryName(id) {
@@ -347,10 +348,11 @@ const WorryPicker = (function () {
     const confirm = node('confirmWorry');
     if (confirm) {
       confirm.disabled = !list.length || flying;
-      // 文案跟着条数走。多选之后「确认这个烦恼」会和画面上高亮的两三条自相矛盾。
-      confirm.textContent = list.length > 1
-        ? ('确认这 ' + list.length + ' 条烦恼')
-        : '确认这个烦恼';
+      // 文案是常量，**不跟条数走**。这里以前按条数改写成「确认这个烦恼」／
+      // 「确认这 2 条烦恼」，两种写法都把这颗键说成了「对某几条烦恼表态」，
+      // 于是玩家选中第一条就按下去，压根没发现还能再选两条。
+      // 它真正的作用是「选择到此结束，进入下一步」，所以句子里不能出现任何指代，
+      // 条数交给左下角那行提示去报。
     }
   }
 

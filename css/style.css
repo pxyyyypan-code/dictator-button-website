@@ -1991,9 +1991,9 @@ body:is([data-current-scene="u06"], [data-current-scene="u07"],
   top: 52%;
   z-index: 3;
   margin: 0;
-  /* 「确认」+「清空重选」必须并排一行。允许折行的话，
-     绝对定位的收缩宽度会随文案（确认键的字数跟着选中条数变）来回跳，
-     两颗按钮时高时矮，正好压在放大件的下沿。 */
+  /* 「确认」+「清空重选」必须并排一行。允许折行的话，绝对定位的收缩宽度
+     会随两颗键的文案长短跳，时高时矮，正好压在放大件的下沿。
+     （文案本身现在是常量了，不再跟选中条数变——见 worry-picker.js 的 sync()。） */
   flex-wrap: nowrap;
   opacity: 0;
   visibility: hidden;
@@ -2374,7 +2374,11 @@ body[data-current-scene="u03"] .stage {
   bottom: 6%;
 }
 
-.scene--pick .worry-free__field { width: min(25vw, 360px); }
+/* 输入框比原来窄一档。u03 底部是**两列并排**：左边这条自由输入行，
+   右边那行确认键。1366 那一档两列加起来正好把中间那点空档吃光，
+   任何一边稍微变宽就压到另一边——把这里收窄，是给右边留出真正的空档，
+   而不是靠两边都刚好不撞来维持。占位符「自己写下烦恼 →」在 20vw 下不截断。 */
+.scene--pick .worry-free__field { width: min(20vw, 300px); }
 
 .scene--pick .classify-panel {
   left: 1%;
@@ -2383,12 +2387,19 @@ body[data-current-scene="u03"] .stage {
   width: min(42vw, 560px);
 }
 
+/* 这一行**按左缘定位**，不再 translateX(-50%) 居中。
+   居中的写法里，行一变宽左右两边就同时外扩，而它左边贴着自由输入行、
+   右边贴着哆啦A梦探头图，两边都没有余量——确认键文案一改长（「确认这个烦恼」
+   → 「选好了，去匹配道具」），左缘就退了 45px，直接压住「看看它属于哪一类」。
+   改成左缘定位之后，文案再长也只往右边那片空地长，而右边到探头图有几百像素余量。
+   left 从 62% 降到 46%：62% 是居中时的**中心**位置，换成左缘要减去半个行宽。 */
 .scene--pick .scene__actions--center,
 .scene--pick.is-expanded .scene__actions--center {
-  left: 62%;
+  left: 46%;
   top: auto;
   bottom: 6%;
   z-index: 6;
+  transform: none;
 }
 
 @media (max-width: 1100px) {
@@ -2396,7 +2407,7 @@ body[data-current-scene="u03"] .stage {
   .scene--pick .worry-subs--full { width: min(58vw, 560px); }
   .scene--pick .scene__title { max-width: 38vw; }
   .scene--pick .scene__actions--center,
-  .scene--pick.is-expanded .scene__actions--center { left: 60%; }
+  .scene--pick.is-expanded .scene__actions--center { left: 44%; }
 }
 
 /* =====================================================================

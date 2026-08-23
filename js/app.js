@@ -719,7 +719,7 @@ const App = (function () {
     if (!current) return;
     // u02 在同一个场景里完成六个引导分镜；最后一屏才放行进入烦恼分类。
     if (current.id === 'u02' && Dialogue.next()) return;
-    // u03 的出口是「确认这个烦恼」，要先播飞进口袋的动画再翻页。
+    // u03 的出口是「选好了，去匹配道具」，要先播飞进口袋的动画再翻页。
     if (current.id === 'u03') {
       WorryPicker.confirm();
       return;
