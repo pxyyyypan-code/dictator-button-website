@@ -13,3 +13,6 @@ assets/dev/_shots-rating/
 
 # 结局1 过渡的验收截图，同理：跑 _ending1-shots.js 重生成（5 轮 × 5 张）。
 assets/dev/_shots-ending1/
+
+# 静音按钮的位置验收截图，同理：跑 _mute-shot.js 重生成（2 档 × 4 张）。
+assets/dev/_shots-mute/

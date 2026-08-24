@@ -213,6 +213,11 @@ const GadgetMatch = (function () {
       return;
     }
 
+    // 滚轮环境层（SFX05）：从这里响到三列停稳。
+    // 同时把 BGM 压下去，不给 holdMs——恢复时机由 onAllSettled 定，
+    // 因为玩家随时可能按「跳过」，定时器算不准。
+    startSpinAudio();
+
     // 三列先后停下：最后一列正好落在 SLOT_SPIN_MS，整段自动播控制在 2～3 秒内。
     plans.forEach(function (plan, i) {
       const duration = CONFIG.SLOT_SPIN_MS - (plans.length - 1 - i) * CONFIG.SLOT_REEL_STAGGER_MS;
@@ -225,17 +230,41 @@ const GadgetMatch = (function () {
         fill: 'forwards'
       });
       spins.push(anim);
-      if (i === plans.length - 1) anim.onfinish = onAllSettled;
+      // 每一列停住都要响一声（SFX06），不只是最后一列：
+      // “嗒、嗒、嗒”三下才是老虎机的节奏。之前只给最后一列挂 onfinish，
+      // 现在每列都挂，最后一列额外再接 onAllSettled。
+      anim.onfinish = i === plans.length - 1
+        ? function () { reelStop(); onAllSettled(); }
+        : reelStop;
     });
 
     // onfinish 不是可靠的唯一信号（标签页切走时会拖后），补一个兜底。
     SceneManager.addTimer(onAllSettled, CONFIG.SLOT_SPIN_MS + 240);
   }
 
+  /* 两个小包装：抽卡（spinReward）跟 u04 的老虎机用的是同一套声音，
+     写两遍就会分家。 */
+  function startSpinAudio() {
+    if (typeof AudioManager === 'undefined') return;
+    AudioManager.playLoopSfx('sfx05', { fadeMs: 160 });
+    AudioManager.duckBgm(undefined, 0);
+  }
+
+  function stopSpinAudio() {
+    if (typeof AudioManager === 'undefined') return;
+    AudioManager.stopLoopSfx('sfx05', 180);
+    AudioManager.unduckBgm();
+  }
+
+  function reelStop() {
+    if (typeof AudioManager !== 'undefined') AudioManager.playSfx('sfx06');
+  }
+
   /** 三列停稳：换文案、收起「跳过」、让拨杆浮出来。 */
   function onAllSettled() {
     if (settled) return;
     settled = true;
+    stopSpinAudio();
     const matched = gadgets();
     setText('slotLead', matched.length ? '找到了：' + joinNames(matched) : '找到了');
     const skip = node('slotSkip');
@@ -294,6 +323,7 @@ const GadgetMatch = (function () {
     function finish() {
       if (rewardSettled) return;
       rewardSettled = true;
+      stopSpinAudio();
       done();
     }
 
@@ -319,6 +349,8 @@ const GadgetMatch = (function () {
       return;
     }
 
+    startSpinAudio();
+
     plans.forEach(function (plan, i) {
       const duration = CONFIG.SLOT_SPIN_MS - (plans.length - 1 - i) * CONFIG.SLOT_REEL_STAGGER_MS;
       const anim = plan.strip.animate([
@@ -330,7 +362,9 @@ const GadgetMatch = (function () {
         fill: 'forwards'
       });
       rewardSpins.push(anim);
-      if (i === plans.length - 1) anim.onfinish = finish;
+      anim.onfinish = i === plans.length - 1
+        ? function () { reelStop(); finish(); }
+        : reelStop;
     });
     // 和 startSpin 一样补一个兜底：标签页切走时 onfinish 会拖后。
     // 这里用 window.setTimeout 而不是 SceneManager.addTimer——抽卡弹层是文档级的，
@@ -340,6 +374,7 @@ const GadgetMatch = (function () {
 
   function cancelReward() {
     clearRewardTimers();
+    stopSpinAudio();
     rewardSpins.forEach(function (anim) {
       try { anim.cancel(); } catch (err) { /* 忽略 */ }
     });
@@ -352,6 +387,8 @@ const GadgetMatch = (function () {
   function pullLever() {
     if (!settled || pulled) return;
     pulled = true;
+    // 拨杆自己有专属声（SFX04），所以 app.js 的 SILENT_ACTIONS 把它排除了普通点击音。
+    if (typeof AudioManager !== 'undefined') AudioManager.playSfx('sfx04');
     const lever = node('slotLever');
     const scene = slotScene();
     if (lever) {

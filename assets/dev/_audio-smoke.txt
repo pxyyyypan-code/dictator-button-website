@@ -1,0 +1,60 @@
+一、素材可取
+  [ok]   24 个素材 × 2 格式 全部可解码 — 48 个文件
+
+二、模块与配置
+  [ok]   AudioManager 对外方法齐全 — 15 个
+  [ok]   AUDIO_SCENE_BGM 覆盖 u01~u12 — 12 个
+  [ok]   BGM7 覆盖全部四种结局 — u11=bgm7 u12=bgm7
+  [ok]   逐条增益修正 17 条 — 17 条
+  [ok]   泡泡点击声 SFX11/12 — sfx11/sfx12
+  [ok]   独裁者按钮 stinger = BGM5 — bgm5
+
+三、静音按钮
+  [ok]   静音按钮存在且唯一 — 1
+  [ok]   在右上角 — x=1287 y=18 距右=33
+  [ok]   点击区不小于 32px — 46×46
+  [ok]   点一下→ body.is-muted / aria-pressed / isMuted() 三者同步 — body=true aria=true api=true
+  [ok]   静音状态写进 localStorage — 1
+  [ok]   静音按钮自己不发声 — 新增 0 次播放
+  [ok]   再点一下恢复有声 — api=false
+
+四、走一遍真实路径
+  [ok]   一打开首页就起 BGM1 — bgm1,bgm1
+  [ok]   点击声 SFX01 — sfx01,sfx03
+  [ok]   进入 u02 的场景切换声 SFX03 — sfx01,sfx03
+  [ok]   u01→u02 同为 BGM1，不重头播
+  [ok]   SFX01 冷却窗口生效 — 连调两次实际响 1 次
+  当前场景：u03
+  这段里响过：sfx01,bgm2,sfx03
+  [ok]   u03 换到 BGM2 — sfx01,bgm2,sfx03
+  [ok]   悬停预听 SFX02 — sfx02,sfx01
+  当前场景：u04
+  [ok]   老虎机滚轮环境层 SFX05（循环） — sfx01,sfx05
+  [ok]   三列各响一声 SFX06 — 实际 3 声
+  [ok]   拨杆 SFX04 — sfx04
+  [ok]   拨杆不叠普通点击音 — sfx04
+  拨杆后场景：u05
+  当前场景：u06
+  [ok]   u06 换到 BGM3 — sfx01,bgm3,sfx09
+  [ok]   泡泡生成声 SFX09 — sfx01,bgm3,sfx09
+  [ok]   泡泡点破声 SFX11/12 — 4 声（sfx12,sfx11）
+  [ok]   独裁者按钮 stinger BGM5 — sfx01,bgm5
+  [ok]   独裁者按钮用统一的点击音 SFX01 — sfx01,bgm5
+  结算场景：u07
+  [ok]   u07 换到 BGM6 — bgm6,sfx07
+  [ok]   星星亮起来的 SFX07 — 3 声，音高 1/1.09/1.18
+  [ok]   每多一颗星音高抬一点 — 1.00 → 1.09 → 1.18
+  [ok]   抽卡也是三列各响一声 — 3 声
+  [ok]   道具飞进收藏册 SFX08 — sfx01,sfx08
+  [ok]   音效音量在 (0,1]，没溢出 — 最大 0.65
+
+六、剩下那几条
+  [ok]   麻袋绷紧 SFX13 / 倒计时 SFX14 可播 — sfx13,sfx14,sfx10
+  [ok]   结局一漂浮层 SFX10 是循环的 — loop=true
+  [ok]   结局页 BGM7 — bgm7,sfx03
+  [ok]   结局页的退出按钮也不撞静音键 — 间隙 30px
+
+七、控制台
+  [ok]   无页面错误 — 干净
+
+✔ 全部通过

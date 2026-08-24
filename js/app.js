@@ -57,6 +57,14 @@ const appData = {
 const App = (function () {
   const el = {};
 
+  /* 两个只给音效用的边沿记录。onTime / onPressure 都是高频回调，
+     声音要的是「刚好跨过去那一下」，不是「现在处在哪个区间」。
+     开关关卡时重置，不能跟着上一关的值走。 */
+  let audioLastSecond = Infinity;
+  let audioPressureStage = 0;
+  /** 悬停音每个元素只响第一次，鼠标在卡片间来回扫不会变成噪音。 */
+  const hoverSeen = new WeakSet();
+
   // 注意：bind 只做正向缓存、永不失效。所有 data-bind 节点必须首屏就在，
   // 且此后不能被 innerHTML/克隆重建，否则这里会一直往脱离文档的旧节点写字。
   function bind(name) {
@@ -299,6 +307,8 @@ const App = (function () {
     appData.gameResolving = false;
     appData.levelResult = null;
     appData.latestGameStats = null;
+    audioLastSecond = Infinity;
+    audioPressureStage = 0;
     closeLevelResult();
     setLevelCopy(level);
 
@@ -311,12 +321,19 @@ const App = (function () {
           setText('gameTimer', formatTime(seconds));
           const scene = immersiveScene();
           if (scene) scene.classList.toggle('is-time-low', seconds <= 10);
+          // 只在跨过那一秒的那一帧响一次。onTime 每帧都调，
+          // 不记上一秒的话倒计时最后几秒会变成迪饼机。
+          const lowAt = Number(CONFIG.AUDIO_TIME_LOW_AT_SEC) || 4;
+          if (audioLastSecond > lowAt && seconds <= lowAt) AudioManager.playSfx('sfx14');
+          audioLastSecond = seconds;
         },
         onStats: function (stats) {
           appData.latestGameStats = stats;
         },
         onManualClear: function () {
           setText('gameStatus', '这个泡泡被你亲手清除了');
+          // 两条破泡声随机换着用，连点的时候才不像采样器。
+          AudioManager.playSfxOneOf(CONFIG.AUDIO_BUBBLE_POP_KEYS);
         },
         onEscape: function () {
           setText('gameStatus', '有一个泡泡从麻袋边缘逃了出去');
@@ -325,6 +342,10 @@ const App = (function () {
           setText('gameStatus', '有一个泡泡膨胀后自行爆裂');
         },
         onPressure: function (stage) {
+          // 只在升级时响：压力回落也会回调，
+          // 不卡方向的话泡泡在阈值上下抹一下就反复拉袋。
+          if (stage > audioPressureStage) AudioManager.playSfx('sfx13');
+          audioPressureStage = stage;
           if (stage === 1) setText('gameStatus', '泡泡越来越多，麻袋开始绷紧了');
           if (stage === 2) setText('gameStatus', '泡泡正在彼此推挤，留给你的空间不多了');
           if (stage === 3) setText('gameStatus', '麻袋已经快要撑不住了');
@@ -398,6 +419,10 @@ const App = (function () {
     if (appData.gameResolving || !LevelGame.isPlaying()) return;
     const level = GameState.current();
     appData.gameResolving = true;
+    // BGM5 当一次性 stinger：叠在关卡底乐上面放，
+    // 期间把底乐压下去，放完自己恢复——按下去之后场景没变，
+    // 底乐不能断。按钮本身的点击声已经由 handleAction 的 SFX01 给过了。
+    AudioManager.playStinger(CONFIG.AUDIO_DICTATOR_STINGER);
     if (level.level === 3 && level.key === 'L3A') {
       setText('gameStatus', '独裁者按钮没有反应。');
       // 这里**不能**借道 LevelGame.triggerButton({ failed: true })：
@@ -587,7 +612,11 @@ const App = (function () {
   function playEndingOne() {
     EndingTransition.play({
       fillCopy: fillEnding,
-      commit: function () { SceneManager.goToId('u11'); }
+      commit: function () {
+        // 漂浮环境层到此为止：u11 是静的。
+        AudioManager.stopLoopSfx('sfx10', Number(CONFIG.AUDIO_FAREWELL_FADE_MS) || 1400);
+        SceneManager.goToId('u11');
+      }
     });
   }
 
@@ -705,6 +734,9 @@ const App = (function () {
     LevelRating.reset();
     Collection.reset();
     EndingTransition.reset();
+    // 停掉一切正在响的（循环环境层、stinger、BGM）。
+    // 首页的 BGM1 由紧接着的 SceneManager.reset() 重新起。
+    AudioManager.reset();
     resetGameUi();
     SceneManager.reset();
   }
@@ -801,7 +833,18 @@ const App = (function () {
     SceneManager.back();
   }
 
+  /* 不走普通点击音的 action：它们各自有专属声音，
+     或者本来就不该发声。拨杆走 SFX04，静音按钮自己就是开关。
+     独裁者按钮不在这里：用户定下来它用 SFX01（同普通按钮），
+     只是另外叠一段 BGM5 的 stinger。 */
+  const SILENT_ACTIONS = ['pull-lever', 'audio-toggle'];
+
   function handleAction(action, target) {
+    // 放在最前面：自动播放策略挡下来的情况下，
+    // 玩家的第一下点击就是解锁时机。
+    AudioManager.unlock();
+    if (SILENT_ACTIONS.indexOf(action) === -1) AudioManager.playSfx('sfx01');
+
     switch (action) {
       case 'next': handleNext(); break;
       case 'back': handleBack(); break;
@@ -832,6 +875,7 @@ const App = (function () {
       case 'reward-store': LevelRating.storeReward(); break;
       case 'collection-toggle': Collection.toggle(); break;
       case 'collection-close': Collection.close(); break;
+      case 'audio-toggle': AudioManager.toggleMuted(); break;
       default:
         // handleAction 的 default 会静默吞掉未知 action，
         // 打一条 warn 好过页面「点了没反应」还查不到原因。
@@ -841,6 +885,17 @@ const App = (function () {
   }
 
   function bindEvents() {
+    // 悬停音（SFX02）。用 mouseover 而不是 mouseenter：
+    // mouseenter 不冒泡，没法委托；选中器在 config 的 AUDIO_HOVER_SELECTOR。
+    document.addEventListener('mouseover', function (event) {
+      const selector = CONFIG.AUDIO_HOVER_SELECTOR;
+      if (!selector || !event.target || !event.target.closest) return;
+      const target = event.target.closest(selector);
+      if (!target || hoverSeen.has(target)) return;
+      hoverSeen.add(target);
+      AudioManager.playSfx('sfx02');
+    });
+
     document.addEventListener('click', function (event) {
       const target = event.target.closest('[data-action]');
       if (!target || target.disabled) return;
@@ -873,6 +928,10 @@ const App = (function () {
   }
 
   function init() {
+    // 音频最先起：它要在捕获期挂一次性的手势监听，
+    // 必须早于 bindEvents() 的冒泡期点击委托，
+    // 否则首页第一下点击的 SFX01 会因为还没解锁而丢掉。
+    AudioManager.init();
     registerSceneHooks();
     SceneManager.onChange(updateProgress);
     bindEvents();

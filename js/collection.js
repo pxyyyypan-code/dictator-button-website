@@ -257,6 +257,9 @@ const Collection = (function () {
     img.style.height = from.height + 'px';
     document.body.appendChild(img);
     flyer = img;
+    // 飞入收藏册的声音（SFX08）在起飞那一刻起，不在落地：
+    // 这条音效本身就是一段带尾巴的划过声，跟飞行同起同落。
+    if (typeof AudioManager !== 'undefined') AudioManager.playSfx('sfx08');
 
     // 两端都是 object-fit:contain 的方图，按短边算比例，交接前后大小才对得上。
     const scale = (Math.min(to.width, to.height) * 0.68) / Math.min(from.width, from.height);

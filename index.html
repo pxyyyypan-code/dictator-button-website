@@ -9,7 +9,7 @@
      「index.html 是新的、样式和脚本还是旧的」这种半新半旧的画面
      （表现为锦旗按原始尺寸铺开、六颗星并排、用时停在「—」）。
      每次推 GitHub 之前把下面这一串日期版本号一起改掉，就不用叫人硬刷新了。 -->
-<link rel="stylesheet" href="css/style.css?v=20260824a">
+<link rel="stylesheet" href="css/style.css?v=20260824b">
 </head>
 <body>
 <main id="stage" class="stage">
@@ -476,6 +476,21 @@
   </div>
 </section>
 
+<!-- 右上角常驻静音开关。放在 <main> 外面、固定定位：
+     它要横跨 u01~u12 十二个场景都在，不能跟着某一个 section 一起 display:none。
+     图标是内联 SVG：两条声波在静音时隐、斜杠显，全靠 body.is-muted 切，
+     不写可见汉字——否则还得重跑 _build-fonts.py 把新字加进手写体子集。
+     按钮本身不发声（app.js 的 SILENT_ACTIONS）：关声音的那一下还响一声很诡异。 -->
+<button type="button" class="audio-toggle" data-action="audio-toggle"
+        aria-pressed="false" aria-label="关闭声音">
+  <svg class="audio-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path class="audio-toggle__horn" d="M4 9.5h3.4L12 5.4v13.2L7.4 14.5H4z"/>
+    <path class="audio-toggle__wave audio-toggle__wave--near" d="M15.2 9.4a3.6 3.6 0 0 1 0 5.2"/>
+    <path class="audio-toggle__wave audio-toggle__wave--far" d="M17.6 7a7 7 0 0 1 0 10"/>
+    <path class="audio-toggle__slash" d="M15.4 9.6l5 4.8"/>
+  </svg>
+</button>
+
 <!-- 右下角常驻入口：第一次收进道具后出现，本次体验内随时可以点开。 -->
 <button type="button" class="collection-fab" data-bind="collectionFab" data-action="collection-toggle"
         aria-label="打开未来道具收藏" hidden>
@@ -501,25 +516,27 @@
 </div>
 
 <!-- ?v= 同 <head> 里的样式表，改一处就要全改，版本号保持一致。 -->
-<script src="js/config.js?v=20260824a"></script>
-<script src="js/font-support.js?v=20260824a"></script>
-<script src="js/worry-data.js?v=20260824a"></script>
-<script src="js/gadget-data.js?v=20260824a"></script>
-<script src="js/bubble-game.js?v=20260824a"></script>
-<script src="js/game-state.js?v=20260824a"></script>
-<script src="js/level-game.js?v=20260824a"></script>
-<script src="js/scene-manager.js?v=20260824a"></script>
+<script src="js/config.js?v=20260824b"></script>
+<!-- audio.js 只依赖 config，但必须早于所有会调它的模块（场景、关卡、老虎机……）。 -->
+<script src="js/audio.js?v=20260824b"></script>
+<script src="js/font-support.js?v=20260824b"></script>
+<script src="js/worry-data.js?v=20260824b"></script>
+<script src="js/gadget-data.js?v=20260824b"></script>
+<script src="js/bubble-game.js?v=20260824b"></script>
+<script src="js/game-state.js?v=20260824b"></script>
+<script src="js/level-game.js?v=20260824b"></script>
+<script src="js/scene-manager.js?v=20260824b"></script>
 <!-- 三个前半段模块必须排在 app.js 之前：app.js 的 init() 会直接调它们。 -->
-<script src="js/dialogue.js?v=20260824a"></script>
-<script src="js/worry-picker.js?v=20260824a"></script>
-<script src="js/gadget-match.js?v=20260824a"></script>
+<script src="js/dialogue.js?v=20260824b"></script>
+<script src="js/worry-picker.js?v=20260824b"></script>
+<script src="js/gadget-match.js?v=20260824b"></script>
 <!-- 星级评定与收藏册排在 gadget-match.js 之后：level-rating.js 要调它的 spinReward()。 -->
-<script src="js/collection.js?v=20260824a"></script>
-<script src="js/level-rating.js?v=20260824a"></script>
-<script src="js/intro-tunnel.js?v=20260824a"></script>
+<script src="js/collection.js?v=20260824b"></script>
+<script src="js/level-rating.js?v=20260824b"></script>
+<script src="js/intro-tunnel.js?v=20260824b"></script>
 <!-- 第三关 → 结局1 的过渡时间线。必须排在 app.js 之前：
      app.js 的 playEndingOne() 会直接引用 EndingTransition。 -->
-<script src="js/ending-transition.js?v=20260824a"></script>
-<script src="js/app.js?v=20260824a"></script>
+<script src="js/ending-transition.js?v=20260824b"></script>
+<script src="js/app.js?v=20260824b"></script>
 </body>
 </html>

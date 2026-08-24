@@ -2787,7 +2787,10 @@ body[data-current-scene="u03"] .stage {
 .immersive-exit {
   position: absolute;
   z-index: 7;
-  right: clamp(32px, 4vw, 72px);
+  /* 右上角现在是静音开关的（.audio-toggle，fixed，横跨全流程），
+     退出按钮往左让一个圆的位置。两边的内距都是随视口变的，
+     改其中一个就要核对另一个：1366 下静音键占到距右 79px。 */
+  right: clamp(92px, 8vw, 136px);
   top: clamp(24px, 3.2vh, 42px);
   color: rgba(247, 238, 225, 0.72);
 }
@@ -3786,7 +3789,8 @@ body[data-current-scene="u03"] .stage {
   position: absolute;
   z-index: 8;
   top: clamp(24px, 3.5vh, 42px);
-  right: clamp(34px, 4vw, 68px);
+  /* 同 .immersive-exit：给右上角的静音开关腾位。 */
+  right: clamp(92px, 8vw, 136px);
   color: rgba(247, 238, 225, 0.78);
 }
 
@@ -4613,6 +4617,72 @@ body.is-ending-transition .collection-fab {
   border-color: var(--c-paper);
 }
 
+/* ---------- 右上角静音开关 ---------- */
+/* 横跨 u01~u12：挂在 <main> 外面、position:fixed，不属于任何一个场景，
+   所以场景硬切（.scene--active 的 display 切换）碋不到它。
+   底色用半透纸白而不是透明：这个按钮既要踩在米白纸上（u03/u05/u12），
+   也要踩在青蓝底上（u02/u06/u11），只靠 currentColor 两边都得写一套。
+   z-index 在收藏入口（130）之上、收藏面板（140）之下：
+   面板开着的时候遮住它是对的，那是个全屏层。 */
+.audio-toggle {
+  position: fixed;
+  z-index: 132;
+  top: clamp(18px, 2.4vh, 34px);
+  right: clamp(20px, 2.4vw, 38px);
+  display: grid;
+  place-items: center;
+  width: clamp(38px, 3.4vw, 48px);
+  height: clamp(38px, 3.4vw, 48px);
+  padding: 0;
+  color: var(--c-teal-deep);
+  background: rgba(253, 251, 246, 0.78);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(4, 86, 108, 0.16);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease);
+}
+
+.audio-toggle:hover {
+  background: var(--c-paper-3);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(4, 86, 108, 0.22);
+}
+
+.audio-toggle:focus-visible { outline: 2px solid var(--c-teal); outline-offset: 3px; }
+.audio-toggle:active { transform: translateY(0); }
+
+.audio-toggle__icon {
+  width: 58%;
+  height: 58%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 喇叭口是实心的，两道声波和斜杠是线。 */
+.audio-toggle__horn { fill: currentColor; stroke-width: 1.2; }
+
+/* 默认（有声）：声波在、斜杠不在。is-muted 时互换。
+   用 opacity 而不是删节点，两个状态之间才能淡过去。 */
+.audio-toggle__slash { opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.audio-toggle__wave { opacity: 1; transition: opacity var(--t-fast) var(--ease); }
+
+body.is-muted .audio-toggle { color: var(--c-ink-2); }
+body.is-muted .audio-toggle__slash { opacity: 1; }
+body.is-muted .audio-toggle__wave { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-toggle,
+  .audio-toggle__slash,
+  .audio-toggle__wave { transition: none; }
+  .audio-toggle:hover { transform: none; }
+}
+
 /* ---------- 右下角常驻入口 ---------- */
 /* 第一次收进道具后才出现（collection.js 去掉 hidden），此后本次体验内一直在。 */
 .collection-fab {
@@ -4684,5 +4754,8 @@ body.is-ending-transition .collection-fab {
   .collection__panel { --coll-cell: clamp(84px, 20vw, 120px); padding: 22px 16px 18px; }
   .collection__head { flex-direction: column; align-items: flex-start; gap: 8px; }
   .collection-fab { right: 16px; bottom: 16px; }
+  .audio-toggle { top: 14px; right: 16px; width: 36px; height: 36px; }
+  .immersive-exit,
+  .ending-exit { right: 62px; }
 }
 

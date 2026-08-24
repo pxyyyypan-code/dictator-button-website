@@ -34,7 +34,18 @@ DEV = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(DEV, '..', '..'))
 SRC_ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.dirname(REPO)
 
-TTF = os.path.join(SRC_ROOT, '千图马克手写体', '千图马克手写体.TTF')
+def find_ttf(root):
+    """找母带 TTF。认文件名、不认目录名：素材包里那层目录
+    叫「千图小兔手写体.TTF」，里面装的却是「千图马克手写体.TTF」，
+    按目录名拼路径会直接找不到。母带不进仓库，放哪里由使用者决定。"""
+    fixed = os.path.join(root, '千图马克手写体', '千图马克手写体.TTF')
+    if os.path.exists(fixed):
+        return fixed
+    hits = glob.glob(os.path.join(root, '**', '千图马克手写体.TTF'), recursive=True)
+    return hits[0] if hits else fixed
+
+
+TTF = find_ttf(SRC_ROOT)
 OUT_FONT = os.path.join(REPO, 'assets', 'fonts', 'QiantuMarker.woff2')
 OUT_JS = os.path.join(REPO, 'js', 'font-support.js')
 EXTRA = os.path.join(DEV, '_hand-extra.txt')

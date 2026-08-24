@@ -112,8 +112,20 @@ const LevelRating = (function () {
     if (!stars) return;
     const delay = reducedMotion() ? 0 : CONFIG.STAR_REVEAL_DELAY_MS;
     const stagger = reducedMotion() ? 0 : CONFIG.STAR_REVEAL_STAGGER_MS;
+    if (reducedMotion()) {
+      // 星星一次性全亮，声音也就只能响一下——
+      // 三声叠在同一帧只会糊成一团。
+      if (typeof AudioManager !== 'undefined') AudioManager.playSfx('sfx07');
+    }
     slots.slice(0, stars).forEach(function (slot, i) {
-      laterIn(revealTimers, function () { slot.classList.add('is-lit'); }, delay + i * stagger);
+      laterIn(revealTimers, function () {
+        slot.classList.add('is-lit');
+        // 每多一颗星音高抬一点（rate 1.00 / 1.09 / 1.18），
+        // 同一条素材就能读出「越来越好」的递进感。
+        if (!reducedMotion() && typeof AudioManager !== 'undefined') {
+          AudioManager.playSfx('sfx07', { rate: 1 + i * 0.09, cooldown: 0 });
+        }
+      }, delay + i * stagger);
     });
   }
 

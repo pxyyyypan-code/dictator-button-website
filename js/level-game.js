@@ -760,6 +760,11 @@ const LevelGame = (function () {
   function stop() {
     running = false;
     gameplay = false;
+    // 同样走淡出：stop() 会在切场景的 onExit 里跑，硬切会把
+    // 结局一那段正在淡出的漂浮声一下子提早剪断。
+    if (typeof AudioManager !== 'undefined') {
+      AudioManager.stopLoopSfx('sfx10', Number(CONFIG.AUDIO_FAREWELL_FADE_MS) || 1400);
+    }
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
   }
@@ -914,6 +919,10 @@ const LevelGame = (function () {
       phase: random(0, Math.PI * 2)
     };
     bubbles.push(bubble);
+    // quiet 是「成批填袋」的标记（开局铺底、结局补泡）——
+    // 一帧里连生七八颗，那不能一颗一声。
+    // 只有倒计时里真正逐颗冒出来的才响，再叠 config 的冷却窗口。
+    if (!quiet && typeof AudioManager !== 'undefined') AudioManager.playSfx('sfx09');
     profileCursor += 1;
     if (countTowardTarget) stats.totalSpawned += 1;
     notifyStats();
@@ -1488,6 +1497,14 @@ const LevelGame = (function () {
   function playFarewell() {
     if (!bag) return getStats();
     gameplay = false;
+    // 泡泡漂起来的环境层（SFX10）。淡入而不是硬起：
+    // 前一拍还是「没有反应」的静默，声音得跟着扎口一起松开。
+    // 停在 app.js 的 commit 里（真正切 u11 那一刻）。
+    if (typeof AudioManager !== 'undefined') {
+      AudioManager.playLoopSfx('sfx10', {
+        fadeMs: Number(CONFIG.AUDIO_FAREWELL_FADE_MS) || 1400
+      });
+    }
     if (!bubbles.some(function (bubble) { return bubble.state === 'normal'; })) {
       for (let i = 0; i < 7; i += 1) spawnBubble(false, true);
     }

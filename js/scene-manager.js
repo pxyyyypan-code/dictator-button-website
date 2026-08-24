@@ -72,10 +72,31 @@ const SceneManager = (function () {
     if (hooks[target.id] && typeof hooks[target.id].onEnter === 'function') {
       hooks[target.id].onEnter();
     }
+    announceAudio(target.id, leaving ? leaving.id : '');
     if (typeof changeListener === 'function') {
       changeListener(target, currentIndex);
     }
     return true;
+  }
+
+  /**
+   * 切场景的音频：换 BGM，并在白名单内的节点上放一声「页面出现」。
+   *
+   * 写在这里而不是 onChange：那个回调是单变量（changeListener），
+   * 只能注册一个，已经被 app.js 的 updateProgress 占了。
+   *
+   * BGM 切曲本身是幂等的（同曲重复调用不重头播），所以 u06→u08
+   * 这种都是 BGM3 的路径不会断。SFX03 则必须走白名单：
+   * u06~u10 共用同一块 canvas，画面是连续的，响一声反而把连续感打断。
+   */
+  function announceAudio(enteringId, leavingId) {
+    if (typeof AudioManager === 'undefined') return;
+    const tuning = typeof CONFIG !== 'undefined' ? CONFIG : {};
+    const bgm = (tuning.AUDIO_SCENE_BGM || {})[enteringId];
+    if (bgm) AudioManager.playBgm(bgm);
+    if (enteringId === leavingId) return;
+    const list = tuning.AUDIO_SCENE_ENTER_SFX || [];
+    if (list.indexOf(enteringId) !== -1) AudioManager.playSfx('sfx03');
   }
 
   /** 按场景 id 切换，例如 'u01'。找不到时静默返回 false，注意排查拼写。 */
@@ -111,6 +132,9 @@ const SceneManager = (function () {
     clearTimers();
     currentIndex = 0;
     renderVisibility(SCENE_FLOW[0].viewId || SCENE_FLOW[0].id);
+    // 重新开始：app.js 的 restart 链里 AudioManager.reset() 已经把 BGM 停了，
+    // 这里要把首页那首重新起上，否则重新体验一路到 u02 都是静的。
+    announceAudio(SCENE_FLOW[0].id, '');
     if (typeof changeListener === 'function') {
       changeListener(SCENE_FLOW[0], 0);
     }
