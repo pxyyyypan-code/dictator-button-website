@@ -1,0 +1,14 @@
+ending2 进场: {"scene":"u10","phase":"level","cls":"","status":"泡泡正在彼此推挤，留给你的空间不多了","label":"泡泡飘向远方","title":""}
+ending2 空白: {"scene":"u10","phase":"ending2-return","cls":"is-ending2-narrative","status":"","label":"泡泡飘向远方","title":""}
+ending2 整批回返: {"scene":"u10","phase":"ending2-return","cls":"is-ending2-narrative","status":"","label":"泡泡飘向远方","title":""}
+ending2 结局页: {"scene":"u11","phase":"level","cls":"scene scene--immersive game-scene","status":"","label":"短暂的安静","title":"它消失了一会儿，又回来了。"}
+ending2 控制台: clean
+ending3 进场: {"scene":"u10","phase":"level","cls":"","status":"","label":"泡泡飘向远方","title":""}
+ending3 静下来: {"scene":"u10","phase":"ending3-calm","cls":"is-ending3-narrative ending3-stage-hud-out","status":"","label":"泡泡飘向远方","title":""}
+ending3 结局页: {"scene":"u11","phase":"level","cls":"scene scene--immersive game-scene","status":"","label":"一步一步处理","title":"这一次，是你亲手完成的。"}
+ending3 控制台: clean
+ending4 进场: {"scene":"u10","phase":"ending4-overload","cls":"is-ending4-narrative","status":"麻袋已经快要撑不住了","label":"泡泡飘向远方","title":""}
+ending4 脉动: {"scene":"u10","phase":"ending4-overload","cls":"is-ending4-narrative ending4-stage-hud-out ending4-stage-pulse","status":"泡泡越来越多，麻袋开始绷紧了","label":"泡泡飘向远方","title":""}
+ending4 静止: {"scene":"u11","phase":"level","cls":"scene scene--immersive game-scene","status":"泡泡越来越多，麻袋开始绷紧了","label":"麻袋撑不住了","title":"越想控制，它越失去控制。"}
+ending4 结局页: {"scene":"u11","phase":"level","cls":"scene scene--immersive game-scene","status":"泡泡越来越多，麻袋开始绷紧了","label":"麻袋撑不住了","title":"越想控制，它越失去控制。"}
+ending4 控制台: clean

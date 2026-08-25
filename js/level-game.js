@@ -58,6 +58,16 @@ const LevelGame = (function () {
   const MOUTH_EASE = Number(LEVEL_TUNING.BAG_MOUTH_EASE_PER_SEC) || 3.4;
   const TIE_RECOIL = Number(LEVEL_TUNING.BAG_TIE_RECOIL) || 0.34;
   const TIE_RECOIL_DECAY = Number(LEVEL_TUNING.BAG_TIE_RECOIL_DECAY) || 0.9;
+
+  /* 结局2/4 的时长与阈值。和上面一样从 CONFIG 读，业务代码里不写裸数字。
+     ms→秒在这里换一次，状态机内部全部按秒走（dt 就是秒）。 */
+  function tuned(key, fallback) {
+    const value = Number(LEVEL_TUNING[key]);
+    return Number.isFinite(value) ? value : fallback;
+  }
+  function tunedSec(key, fallbackMs, minSec) {
+    return Math.max(Number(minSec) || 0, tuned(key, fallbackMs) / 1000);
+  }
   const SQUEEZE_MS = Number(LEVEL_TUNING.BAG_ESCAPE_SQUEEZE_MS) || 620;
   const RELEASE_MS = Number(LEVEL_TUNING.BAG_ESCAPE_RELEASE_MS) || 420;
   const QUEUE_TOTAL_MS = Number(LEVEL_TUNING.BAG_ESCAPE_QUEUE_TOTAL_MS) || 2400;
@@ -175,6 +185,11 @@ const LevelGame = (function () {
   let timeLeftMs = 0;
   let finishDelay = 0;
   let finishCallback = null;
+  // 结局2「回返」：删除之后又回来的那段演出。独立于第三关玩法——
+  // gameplay 已经关掉了，泡泡的生死全由这台状态机决定。
+  let returnEnding = null;
+  // 结局4「过载」：前段仍可点击，后段转入挤压、连锁破裂与安静收束。
+  let overloadEnding = null;
   let statusPulse = 0;
   let pressure = 0;
   let pressureStage = 0;
@@ -572,6 +587,14 @@ const LevelGame = (function () {
     if (!bag) return;
     buildWallRest();
 
+    // 结局4 的「停住」那半秒：袋壁只保留形状，一切振荡清零。
+    // 高密度动势必须突然断掉，渐停会变成普通的收尾。
+    if (overloadEnding && overloadEnding.active && overloadEnding.phase === 'still') {
+      wallV.fill(0);
+      wallF.fill(0);
+      return;
+    }
+
     // prefers-reduced-motion：不做形变振荡，让袋壁平滑回到静止形状。
     // 拥挤带来的整体鼓胀由 swell 承担，所以袋子仍然「会随压力变化」，只是不抖。
     if (reducedMotion) {
@@ -630,6 +653,10 @@ const LevelGame = (function () {
      ───────────────────────────────────────────────────────────── */
 
   function mouthTarget() {
+    // 过载结局的因果必须发生在袋内：袋子不会破、泡泡也不会从扎口逃走。
+    // 这一句要在 mouthForced 前面——两者同时为真时（不该发生，但状态机
+    // 是可以被外部乱序调用的）以「关死」为准，宁可少一场演出也不能串味。
+    if (overloadEnding && overloadEnding.active) return 0.08;
     if (mouthForced) return 1;
     const escapeGrade = clamp(Math.round((spec && spec.escape) || 1), 1, 3);
     const loose = 0.20 * (escapeGrade - 1);
@@ -700,9 +727,18 @@ const LevelGame = (function () {
     resize();
     ensureFilmSprites();
     pointerHandler = function (event) {
-      if (!gameplay || !canvas) return;
+      if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      hitBubble(event.clientX - rect.left, event.clientY - rect.top);
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      // 结局2 期间 gameplay 已经是 false（关卡结束了），但玩家仍要能点。
+      // 所以这一支必须**抢在** !gameplay 的早退前面。
+      if (returnEnding && returnEnding.active) {
+        hitReturnBubble(x, y);
+        return;
+      }
+      if (!gameplay) return;
+      hitBubble(x, y);
     };
     canvas.addEventListener('pointerdown', pointerHandler);
     if ('ResizeObserver' in window) {
@@ -733,6 +769,8 @@ const LevelGame = (function () {
     timeLeftMs = Math.max(1, Number(spec.duration) || 45) * 1000;
     finishDelay = 0;
     finishCallback = null;
+    returnEnding = null;
+    overloadEnding = null;
     statusPulse = 0;
     pressure = 0;
     pressureStage = 0;
@@ -749,7 +787,13 @@ const LevelGame = (function () {
     running = true;
 
     const initialCounts = LEVEL_TUNING.LEVEL_GAME_INITIAL_COUNT || { 1: 6, 2: 8, 3: 12 };
-    const initial = Math.min(Number(spec.target) || 36, Number(initialCounts[spec.level]) || 6);
+    // spec.initialCount 让调用方按需覆盖开局铺底数量（结局4 要一开始就很挤）。
+    // 没给就按关卡档位，行为和以前完全一样。
+    const requestedInitial = Number(spec.initialCount);
+    const initial = Math.min(Number(spec.target) || 36,
+      Number.isFinite(requestedInitial) && requestedInitial > 0
+        ? Math.round(requestedInitial)
+        : (Number(initialCounts[spec.level]) || 6));
     for (let i = 0; i < initial; i += 1) spawnBubble(true, true);
     notifyTime();
     notifyStats();
@@ -760,6 +804,8 @@ const LevelGame = (function () {
   function stop() {
     running = false;
     gameplay = false;
+    returnEnding = null;
+    overloadEnding = null;
     // 同样走淡出：stop() 会在切场景的 onExit 里跑，硬切会把
     // 结局一那段正在淡出的漂浮声一下子提早剪断。
     if (typeof AudioManager !== 'undefined') {
@@ -811,7 +857,9 @@ const LevelGame = (function () {
     // 5.4：排队等着挤出去的泡泡仍然是刚体，会在口子底下互相推挤；
     // 一旦开始挤过扎口就交给动画接管，不再参与碰撞，否则会被挤回袋里。
     if (!bubble) return false;
-    if (bubble.state === 'normal') return true;
+    // 'returning' 是结局2 里飘回来的泡泡：它们要互相推挤、要撞袋壁，
+    // 否则六颗回来的烦恼会重叠在同一个点上，看着像一颗。
+    if (bubble.state === 'normal' || bubble.state === 'returning') return true;
     return bubble.state === 'escaping' && bubble.escapePhase === 'approach';
   }
 
@@ -929,6 +977,46 @@ const LevelGame = (function () {
     return bubble;
   }
 
+  /* ── 结局3「暂时晴朗」的达成判定 ────────────────────────
+     旧判定是「亲手点满 spec.target 次」。第三关 26 秒 / target 60，
+     要求平均 2.3 次每秒且全程零逃逸零自爆——实际打不出来，
+     结局3 等于不存在。现在改成看结果：生成已经停了、场上清零、
+     没漏也没炸。判定条件本身仍然只在后台算，前台不展示。
+
+     第一、二关不走这条：它们的「通关」语义是点满 target，
+     那是关卡设计，不是结局条件，保持原样。 */
+
+  /** 生成是否已经结束。第三关在倒计时剩 4.2 秒时停生成（见 update 里的 finalStop），
+      所以「把剩下的清完」是一个真实可达的目标，不必等到刚好点满 target。 */
+  function spawnFinished() {
+    if (!spec) return false;
+    if (stats.totalSpawned >= Number(spec.target || 0)) return true;
+    return spec.level === 3 && timeLeftMs <= 4200;
+  }
+
+  /** 场上是否已经没有活着的泡泡了。正在破裂/挤出去的也算「还没完」——
+      那两种都不是玩家亲手清的，让它们跑完再判，免得抢在 escaped++ 前面。 */
+  function fieldCleared() {
+    for (let i = 0; i < bubbles.length; i += 1) {
+      const state = bubbles[i].state;
+      if (state === 'normal' || state === 'bursting' || state === 'escaping') return false;
+    }
+    return true;
+  }
+
+  function manualCompleted() {
+    if (!spec) return false;
+    if (spec.level !== 3) {
+      return stats.totalSpawned >= spec.target && stats.manualCleared >= spec.target &&
+        stats.escaped === 0 && stats.autoBurst === 0;
+    }
+    // MIN_CLEARED 是防误判：开局就铺了十来颗，清得比这还少说明不是「处理完了」。
+    return spawnFinished() && fieldCleared() &&
+      stats.manualCleared >= tuned('ENDING3_MIN_CLEARED', 12) &&
+      stats.escaped <= tuned('ENDING3_MAX_ESCAPED', 0) &&
+      stats.autoBurst <= tuned('ENDING3_MAX_AUTO_BURST', 0);
+  }
+
   function update(dt) {
     if (!bag) return;
     if (farewell) updateFarewell(dt);
@@ -964,6 +1052,38 @@ const LevelGame = (function () {
         bubble.scale = Math.max(0, bubble.scale - dt * speed);
         bubble.opacity = Math.max(0, bubble.opacity - dt * speed * 0.8);
         if (bubble.scale <= 0.02) bubbles.splice(i, 1);
+        continue;
+      }
+
+      // 结局2：被点掉的「回返泡泡」。比普通消除慢一档，
+      // 因为下一秒它就要再出现——太快会读成「没点中」。
+      if (bubble.state === 'return-fade') {
+        bubble.scale = Math.max(0, bubble.scale - dt * 4.2);
+        bubble.opacity = Math.max(0, bubble.opacity - dt * 3.3);
+        if (bubble.scale <= 0.03 || bubble.opacity <= 0.02) bubbles.splice(i, 1);
+        continue;
+      }
+
+      // 结局2：飘回来的泡泡。不参与关卡的成长与浮力，只做缓速漂移，
+      // 撞到袋壁反弹回来——它出不去，这正是这个结局要说的事。
+      if (bubble.state === 'returning') {
+        bubble.age += dt;
+        bubble.scale += (1 - bubble.scale) * Math.min(1, dt * 4.2);
+        bubble.opacity += (0.86 - bubble.opacity) * Math.min(1, dt * 4.6);
+        bubble.x += bubble.vx * dt;
+        bubble.y += bubble.vy * dt;
+        bubble.y += Math.sin(bubble.age * 1.15 + bubble.phase) * dt * 2.0;
+        constrainReturningBubble(bubble);
+        continue;
+      }
+
+      // 结局3：亲手清掉的最后一颗。比普通 manual 慢三倍、向上飘一点、
+      // **不喷粒子**——这一下是收束，不是又一次消除。
+      if (bubble.state === 'ending3-clear') {
+        bubble.scale = Math.max(0, bubble.scale - dt * 1.55);
+        bubble.opacity = Math.max(0, bubble.opacity - dt * 1.20);
+        bubble.y -= dt * 5.5;
+        if (bubble.scale <= 0.02 || bubble.opacity <= 0.01) bubbles.splice(i, 1);
         continue;
       }
 
@@ -1025,6 +1145,8 @@ const LevelGame = (function () {
     updateWall(dt);
     updateMouth(dt);
     updateParticles(dt);
+    updateReturnEnding(dt);
+    updateOverloadEnding(dt);
     stats.remaining = activeNormalCount();
     notifyStats();
 
@@ -1037,8 +1159,7 @@ const LevelGame = (function () {
       }
     }
 
-    if (gameplay && stats.totalSpawned >= spec.target &&
-        stats.manualCleared >= spec.target && stats.escaped === 0 && stats.autoBurst === 0) {
+    if (gameplay && manualCompleted()) {
       gameplay = false;
       if (typeof callbacks.onManualComplete === 'function') callbacks.onManualComplete(getStats());
     } else if (gameplay && timeLeftMs <= 0) {
@@ -1074,7 +1195,7 @@ const LevelGame = (function () {
     const atMouth = Math.abs(angleDelta(phi, MOUTH_PHI)) < MOUTH_ANGLE;
     const escapeGrade = clamp(Math.round(spec.escape || 1), 1, 3);
     const openEnough = mouthOpen >= MOUTH_ESCAPE_MIN * (1 - 0.22 * (escapeGrade - 1));
-    if (atMouth && openEnough && bubble.edgeHits >= requiredHits && oldEnough) {
+    if (!spec.disableEscape && atMouth && openEnough && bubble.edgeHits >= requiredHits && oldEnough) {
       startEscape(bubble, false, 0);
       return;
     }
@@ -1401,10 +1522,18 @@ const LevelGame = (function () {
       if (bubble.state !== 'normal') continue;
       if (!pointInsideBag(bubble.x, bubble.y, bubble.r * 0.2)) continue;
       if (Math.hypot(x - bubble.x, y - bubble.y) > bubble.r * bubble.scale) continue;
-      bubble.state = 'manual';
+      // 结局3 的最后一颗：更柔和的缩小淡出，而且不喷粒子。
+      // 这一下是收束，不是又一次「消除成功」的反馈。
+      // 判定要在改 state 之前算——activeNormalCount() 这时还包含它自己。
+      const finalManualClear = Boolean(spec && spec.level === 3 && spawnFinished() &&
+        activeNormalCount() === 1 &&
+        stats.manualCleared + 1 >= tuned('ENDING3_MIN_CLEARED', 12) &&
+        stats.escaped <= tuned('ENDING3_MAX_ESCAPED', 0) &&
+        stats.autoBurst <= tuned('ENDING3_MAX_AUTO_BURST', 0));
+      bubble.state = finalManualClear ? 'ending3-clear' : 'manual';
       bubble.stateTime = 0;
       stats.manualCleared += 1;
-      emitParticles(bubble.x, bubble.y, PARTICLE_COLOR, 10);
+      if (!finalManualClear) emitParticles(bubble.x, bubble.y, PARTICLE_COLOR, 10);
       if (typeof callbacks.onManualClear === 'function') callbacks.onManualClear(getStats());
       notifyStats();
       return true;
@@ -1448,6 +1577,367 @@ const LevelGame = (function () {
     return true;
   }
 
+  function constrainReturningBubble(bubble) {
+    if (!bag || !bubble) return;
+    const query = queryWall((bubble.x - bag.cx) / bag.rx, (bubble.y - bag.cy) / bag.ry, bubble.r);
+    if (query.d < query.limit) return;
+    const nx = query.ux;
+    const ny = query.uy;
+    const limit = query.limit;
+    bubble.x = bag.cx + nx * limit * 0.992 * bag.rx;
+    bubble.y = bag.cy + ny * limit * 0.992 * bag.ry;
+    const dot = bubble.vx * nx + bubble.vy * ny;
+    if (dot > 0) {
+      bubble.vx -= 1.72 * dot * nx;
+      bubble.vy -= 1.72 * dot * ny;
+    }
+    bubble.vx *= 0.985;
+    bubble.vy *= 0.985;
+  }
+
+  function createReturningBubble(text, interactive, seedIndex) {
+    if (!bag) return null;
+    const radius = random(43, 54);
+    let position = findSpawnPosition(radius);
+    if (!position) {
+      const phi = (Number(seedIndex) || 0) * 1.37 + random(-0.3, 0.3);
+      position = {
+        x: bag.cx + Math.cos(phi) * bag.rx * 0.35,
+        y: bag.cy + Math.sin(phi) * bag.ry * 0.28
+      };
+    }
+    let vx, vy;
+    if (interactive) {
+      const speed = random(13, 20);
+      const angle = random(0, Math.PI * 2);
+      vx = Math.cos(angle) * speed;
+      vy = Math.sin(angle) * speed - random(3, 8);
+    } else {
+      // 最后一组慢慢向两侧让开，让最终文案出现前中央逐渐变空。
+      vx = (position.x < bag.cx ? -1 : 1) * random(7, 14);
+      vy = -random(3, 9);
+    }
+    const bubble = {
+      id: nextId++, text: String(text || '烦恼'),
+      x: position.x, y: position.y, r: radius, baseR: radius,
+      vx: vx, vy: vy, age: 0, edgeHits: 0, edgeCooldown: 0, edgeGlow: 0,
+      state: 'returning', stateTime: 0, scale: 0.10, opacity: 0.12,
+      counted: false, phase: random(0, Math.PI * 2), returnInteractive: Boolean(interactive)
+    };
+    bubbles.push(bubble);
+    if (typeof AudioManager !== 'undefined') AudioManager.playSfxOneOf(LEVEL_TUNING.AUDIO_RETURN_BUBBLE_KEYS || ['sfx15', 'sfx16']);
+    return bubble;
+  }
+
+  function hitReturnBubble(x, y) {
+    if (!returnEnding || !returnEnding.active || returnEnding.phase !== 'interactive') return false;
+    for (let i = bubbles.length - 1; i >= 0; i -= 1) {
+      const bubble = bubbles[i];
+      if (bubble.state !== 'returning' || !bubble.returnInteractive) continue;
+      if (Math.hypot(x - bubble.x, y - bubble.y) > bubble.r * Math.max(0.7, bubble.scale)) continue;
+      bubble.returnInteractive = false;
+      bubble.state = 'return-fade';
+      bubble.stateTime = 0;
+      emitParticles(bubble.x, bubble.y, PARTICLE_COLOR, 7);
+      returnEnding.clicks += 1;
+      returnEnding.phase = 'respawn-wait';
+      returnEnding.phaseTime = 0;
+      return true;
+    }
+    return false;
+  }
+
+  function updateReturnEnding(dt) {
+    if (!returnEnding || !returnEnding.active) return;
+    returnEnding.phaseTime += dt;
+    if (returnEnding.phase === 'blank') {
+      if (returnEnding.phaseTime >= returnEnding.blankSec) {
+        returnEnding.phase = 'interactive';
+        returnEnding.phaseTime = 0;
+        createReturningBubble(returnEnding.primaryText, true, returnEnding.clicks);
+      }
+      return;
+    }
+    if (returnEnding.phase === 'respawn-wait') {
+      if (returnEnding.phaseTime < returnEnding.respawnSec) return;
+      returnEnding.phaseTime = 0;
+      if (returnEnding.clicks < returnEnding.repeatClicks) {
+        returnEnding.phase = 'interactive';
+        createReturningBubble(returnEnding.primaryText, true, returnEnding.clicks);
+        return;
+      }
+      returnEnding.phase = 'group-return';
+      returnEnding.groupTarget = Math.floor(random(returnEnding.finalMin, returnEnding.finalMax + 1));
+      returnEnding.groupSpawned = 0;
+      return;
+    }
+    if (returnEnding.phase === 'group-return') {
+      if (returnEnding.groupSpawned < returnEnding.groupTarget && returnEnding.phaseTime >= returnEnding.groupSpawnSec) {
+        returnEnding.phaseTime = 0;
+        const text = returnEnding.texts[returnEnding.groupSpawned % returnEnding.texts.length] || returnEnding.primaryText;
+        createReturningBubble(text, false, returnEnding.groupSpawned + 20);
+        returnEnding.groupSpawned += 1;
+      }
+      if (returnEnding.groupSpawned >= returnEnding.groupTarget) {
+        returnEnding.phase = 'settle';
+        returnEnding.phaseTime = 0;
+      }
+      return;
+    }
+    if (returnEnding.phase === 'settle' && returnEnding.phaseTime >= returnEnding.settleSec) {
+      const callback = returnEnding.onComplete;
+      returnEnding.active = false;
+      returnEnding = null;
+      if (typeof callback === 'function') callback(getStats());
+    }
+  }
+
+  function playReturnEnding(options) {
+    if (!running || !bag) return false;
+    const opts = options || {};
+    gameplay = false;
+    finishDelay = 0;
+    finishCallback = null;
+    bubbles.length = 0;
+    particles.length = 0;
+    mouthForced = false;
+    const texts = Array.isArray(opts.texts) && opts.texts.length
+      ? opts.texts.map(function (item) { return String(item || '').trim(); }).filter(Boolean)
+      : [String(opts.text || '尚未说出口的烦恼')];
+    const primary = String(opts.text || texts[0] || '尚未说出口的烦恼');
+    returnEnding = {
+      active: true, phase: 'blank', phaseTime: 0, clicks: 0,
+      repeatClicks: Math.max(1, Math.round(tuned('ENDING2_REPEAT_CLICKS', Number(opts.repeatClicks) || 6))),
+      blankSec: tunedSec('ENDING2_BLANK_MS', Number(opts.blankMs) || 2500, 0.5),
+      respawnSec: tunedSec('ENDING2_RESPAWN_MS', Number(opts.respawnMs) || 900, 0.45),
+      groupSpawnSec: tunedSec('ENDING2_GROUP_SPAWN_MS', Number(opts.groupSpawnMs) || 420, 0.2),
+      settleSec: tunedSec('ENDING2_SETTLE_MS', Number(opts.settleMs) || 2600, 1.0),
+      finalMin: Math.max(1, Math.round(tuned('ENDING2_FINAL_MIN', Number(opts.finalMin) || 5))),
+      finalMax: Math.max(1, Math.round(tuned('ENDING2_FINAL_MAX', Number(opts.finalMax) || 8))),
+      groupTarget: 0, groupSpawned: 0,
+      primaryText: primary, texts: texts,
+      onComplete: typeof opts.onComplete === 'function' ? opts.onComplete : null
+    };
+    return true;
+  }
+  function notifyOverloadStage(stage) {
+    if (!overloadEnding || !overloadEnding.active) return;
+    if (overloadEnding.stageNotified === stage) return;
+    overloadEnding.stageNotified = stage;
+    if (typeof overloadEnding.onStage === 'function') overloadEnding.onStage(stage, getStats());
+  }
+
+  function activeOverloadBubbles() {
+    return bubbles.filter(function (bubble) { return bubble.state === 'normal'; });
+  }
+
+  function mostCrowdedBubble() {
+    const normal = activeOverloadBubbles();
+    if (!normal.length) return null;
+    let best = normal[0];
+    let bestScore = -Infinity;
+    normal.forEach(function (bubble) {
+      let score = 0;
+      normal.forEach(function (other) {
+        if (other === bubble) return;
+        const d = Math.max(1, Math.hypot(bubble.x - other.x, bubble.y - other.y));
+        const reach = bubble.r + other.r + 36;
+        if (d < reach) score += (reach - d) / reach;
+      });
+      // 靠近中心的泡泡更容易被四周同时挤压，略加一点权重。
+      score += (1 - Math.min(1, Math.hypot(bubble.x - bag.cx, bubble.y - bag.cy) / Math.max(1, bag.rx))) * 0.35;
+      if (score > bestScore) { bestScore = score; best = bubble; }
+    });
+    return best;
+  }
+
+  function emitSettlingDust(count) {
+    const total = Math.max(8, Math.round(Number(count) || 18));
+    for (let i = 0; i < total; i += 1) {
+      particles.push({
+        x: bag.cx + random(-bag.rx * 0.72, bag.rx * 0.72),
+        y: bag.cy + random(-bag.ry * 0.34, bag.ry * 0.36),
+        vx: random(-6, 6),
+        vy: random(5, 13),
+        life: random(2.4, 3.6),
+        maxLife: 3.6,
+        size: random(1.2, 3.1),
+        color: 'rgba(2,137,180,0.34)',
+        kind: 'settle'
+      });
+    }
+  }
+
+  function beginOverloadChain() {
+    if (!overloadEnding || !overloadEnding.active) return;
+    const first = mostCrowdedBubble();
+    if (!first) {
+      overloadEnding.phase = 'still';
+      overloadEnding.phaseTime = 0;
+      notifyOverloadStage('still');
+      return;
+    }
+    overloadEnding.originX = first.x;
+    overloadEnding.originY = first.y;
+    startBurst(first, false, 0);
+    overloadEnding.phase = 'first-pause';
+    overloadEnding.phaseTime = 0;
+    notifyOverloadStage('first-burst');
+  }
+
+  function queueOverloadChain() {
+    const normal = activeOverloadBubbles();
+    overloadEnding.chainQueue = [];
+    if (!normal.length) return;
+    let maxDistance = 1;
+    normal.forEach(function (bubble) {
+      maxDistance = Math.max(maxDistance,
+        Math.hypot(bubble.x - overloadEnding.originX, bubble.y - overloadEnding.originY));
+    });
+    normal.forEach(function (bubble) {
+      const distance = Math.hypot(bubble.x - overloadEnding.originX, bubble.y - overloadEnding.originY);
+      const radial = distance / maxDistance;
+      // 同一圈略带随机错位，形成“啪…啪…啪啪”的传播，而不是机械同拍。
+      const delay = radial * overloadEnding.chainSec * 0.86 + random(0, 0.16);
+      overloadEnding.chainQueue.push({ bubble: bubble, delay: delay, fired: false });
+    });
+  }
+
+  function updateOverloadEnding(dt) {
+    if (!overloadEnding || !overloadEnding.active) return;
+    overloadEnding.phaseTime += dt;
+
+    if (overloadEnding.phase === 'effort') {
+      notifyOverloadStage('effort');
+      // 玩家仍能点击，但额外生成速度更高，所以会真实感到“越处理越赶不上”。
+      overloadEnding.spawnClock += dt;
+      while (overloadEnding.spawnClock >= overloadEnding.effortSpawnSec && activeOverloadBubbles().length < overloadEnding.maxBubbles) {
+        overloadEnding.spawnClock -= overloadEnding.effortSpawnSec;
+        if (!spawnBubble(false, true)) break;
+      }
+      if (overloadEnding.phaseTime >= overloadEnding.effortSec) {
+        gameplay = false;
+        overloadEnding.phase = 'crowd';
+        overloadEnding.phaseTime = 0;
+        overloadEnding.spawnClock = 0;
+        notifyOverloadStage('crowd');
+      }
+      return;
+    }
+
+    if (overloadEnding.phase === 'crowd') {
+      overloadEnding.spawnClock += dt;
+      while (overloadEnding.spawnClock >= overloadEnding.crowdSpawnSec && activeOverloadBubbles().length < overloadEnding.maxBubbles) {
+        overloadEnding.spawnClock -= overloadEnding.crowdSpawnSec;
+        if (!spawnBubble(false, true)) break;
+      }
+      if (overloadEnding.phaseTime >= overloadEnding.crowdSec || stats.packing >= overloadEnding.packingTrigger) {
+        overloadEnding.phase = 'pulse';
+        overloadEnding.phaseTime = 0;
+        notifyOverloadStage('pulse');
+      }
+      return;
+    }
+
+    if (overloadEnding.phase === 'pulse') {
+      // 用袋壁的细微受力配合泡泡视觉脉动，不改变配色，不做危险闪烁。
+      const progress = clamp(overloadEnding.phaseTime / Math.max(0.01, overloadEnding.pulseSec), 0, 1);
+      const phase = overloadEnding.phaseTime * (4.0 + progress * 8.0);
+      for (let i = 0; i < NODE_COUNT; i += 1) {
+        wallF[i] += Math.sin(phase + i / NODE_COUNT * Math.PI * 2) * (0.006 + progress * 0.018);
+      }
+      if (overloadEnding.phaseTime >= overloadEnding.pulseSec) beginOverloadChain();
+      return;
+    }
+
+    if (overloadEnding.phase === 'first-pause') {
+      if (overloadEnding.phaseTime >= overloadEnding.firstPauseSec) {
+        overloadEnding.phase = 'chain';
+        overloadEnding.phaseTime = 0;
+        queueOverloadChain();
+        notifyOverloadStage('chain');
+      }
+      return;
+    }
+
+    if (overloadEnding.phase === 'chain') {
+      (overloadEnding.chainQueue || []).forEach(function (item) {
+        if (item.fired || overloadEnding.phaseTime < item.delay) return;
+        item.fired = true;
+        if (item.bubble && item.bubble.state === 'normal') startBurst(item.bubble, false, 0);
+      });
+      if (overloadEnding.phaseTime >= overloadEnding.chainSec + 0.52) {
+        // 接近全部破裂；若因碰撞时序还有残留，也在这里柔和补齐。
+        activeOverloadBubbles().forEach(function (bubble) { startBurst(bubble, false, 0); });
+        overloadEnding.phase = 'still';
+        overloadEnding.phaseTime = 0;
+        wallV.fill(0);
+        wallF.fill(0);
+        notifyOverloadStage('still');
+      }
+      return;
+    }
+
+    if (overloadEnding.phase === 'still') {
+      // 高潮之后强制留一小段完全停止；袋壁只保留形状，不继续抖动。
+      wallV.fill(0);
+      wallF.fill(0);
+      if (overloadEnding.phaseTime >= overloadEnding.stillSec) {
+        particles.length = 0;
+        emitSettlingDust(22);
+        overloadEnding.phase = 'settle';
+        overloadEnding.phaseTime = 0;
+        notifyOverloadStage('settle');
+      }
+      return;
+    }
+
+    if (overloadEnding.phase === 'settle') {
+      // 无泡泡支撑后，袋壁逐渐回到自然松弛形态。
+      const relax = Math.min(1, dt * 2.6);
+      for (let i = 0; i < NODE_COUNT; i += 1) {
+        wallU[i] -= wallU[i] * relax;
+        wallV[i] *= 0.76;
+      }
+      if (overloadEnding.phaseTime >= overloadEnding.settleSec) {
+        const callback = overloadEnding.onComplete;
+        overloadEnding.active = false;
+        overloadEnding = null;
+        if (typeof callback === 'function') callback(getStats());
+      }
+    }
+  }
+
+  function playOverloadEnding(options) {
+    if (!running || !bag) return false;
+    const opts = options || {};
+    returnEnding = null;
+    mouthForced = false;
+    overloadEnding = {
+      active: true,
+      phase: 'effort',
+      phaseTime: 0,
+      spawnClock: 0,
+      stageNotified: '',
+      effortSec: tunedSec('ENDING4_EFFORT_MS', Number(opts.effortMs) || 1900, 0.8),
+      crowdSec: tunedSec('ENDING4_CROWD_MS', Number(opts.crowdMs) || 1750, 0.8),
+      pulseSec: tunedSec('ENDING4_PULSE_MS', Number(opts.pulseMs) || 2200, 1.0),
+      firstPauseSec: tunedSec('ENDING4_FIRST_PAUSE_MS', Number(opts.firstPauseMs) || 430, 0.2),
+      chainSec: tunedSec('ENDING4_CHAIN_MS', Number(opts.chainMs) || 1450, 0.7),
+      stillSec: tunedSec('ENDING4_STILL_MS', Number(opts.stillMs) || 420, 0.25),
+      settleSec: tunedSec('ENDING4_SETTLE_MS', Number(opts.settleMs) || 2600, 1.4),
+      effortSpawnSec: tunedSec('ENDING4_SPAWN_EFFORT_MS', 140, 0.05),
+      crowdSpawnSec: tunedSec('ENDING4_SPAWN_CROWD_MS', 120, 0.05),
+      maxBubbles: Math.max(8, Math.round(tuned('ENDING4_MAX_BUBBLES', Number(opts.maxBubbles) || 34))),
+      packingTrigger: tuned('ENDING4_PACKING_TRIGGER', 0.84),
+      onStage: typeof opts.onStage === 'function' ? opts.onStage : null,
+      onComplete: typeof opts.onComplete === 'function' ? opts.onComplete : null,
+      originX: bag.cx,
+      originY: bag.cy
+    };
+    notifyOverloadStage('effort');
+    return true;
+  }
   function playOutcome(kind, onComplete) {
     gameplay = false;
     if (kind === 'escape') {
@@ -1670,11 +2160,18 @@ const LevelGame = (function () {
   function updateParticles(dt) {
     for (let i = particles.length - 1; i >= 0; i -= 1) {
       const particle = particles[i];
+      if (overloadEnding && overloadEnding.active && overloadEnding.phase === 'still' &&
+          particle.kind !== 'settle') continue;
       particle.life -= dt;
       particle.x += particle.vx * dt;
       particle.y += particle.vy * dt;
-      particle.vx *= 0.98;
-      particle.vy *= 0.98;
+      if (particle.kind === 'settle') {
+        particle.vx *= 0.992;
+        particle.vy = Math.min(24, particle.vy + 3.2 * dt);
+      } else {
+        particle.vx *= 0.98;
+        particle.vy *= 0.98;
+      }
       if (particle.life <= 0) particles.splice(i, 1);
     }
   }
@@ -2093,7 +2590,13 @@ const LevelGame = (function () {
   // 两层交叉淡入：膜相位在相邻两帧之间淡（只取整帧的话 0.21 的流速相当于每 240ms
   // 才换一帧，能看出跳格），警戒态在常规/警戒两套精灵之间按 edgeGlow 淡。
   function drawBubble(bubble, time) {
-    const radius = bubble.r * bubble.scale;
+    let overloadScale = 1;
+    if (overloadEnding && overloadEnding.active && overloadEnding.phase === 'pulse' && !reducedMotion) {
+      const progress = clamp(overloadEnding.phaseTime / Math.max(0.01, overloadEnding.pulseSec), 0, 1);
+      overloadScale += Math.sin(overloadEnding.phaseTime * (5 + progress * 8) + bubble.phase) *
+        (0.018 + progress * 0.035);
+    }
+    const radius = bubble.r * bubble.scale * overloadScale;
     if (radius < 0.4 || bubble.opacity <= 0.01) return;
     ctx.save();
     ctx.globalAlpha = bubble.opacity;
@@ -2139,7 +2642,7 @@ const LevelGame = (function () {
       }
     }
 
-    if (bubble.state === 'normal' && radius > 24) {
+    if ((bubble.state === 'normal' || bubble.state === 'returning') && radius > 24) {
       const fontMin = Number(LEVEL_TUNING.LEVEL_GAME_FONT_MIN_PX) || 16;
       const fontMax = Number(LEVEL_TUNING.LEVEL_GAME_FONT_MAX_PX) || 24;
       const maxLines = Number(LEVEL_TUNING.LEVEL_GAME_TEXT_MAX_LINES) || 3;
@@ -2176,6 +2679,8 @@ const LevelGame = (function () {
     destroy: destroy,
     triggerButton: triggerButton,
     playOutcome: playOutcome,
+    playReturnEnding: playReturnEnding,
+    playOverloadEnding: playOverloadEnding,
     playFarewell: playFarewell,
     getStats: getStats,
     isRunning: function () { return running; },
@@ -2184,7 +2689,16 @@ const LevelGame = (function () {
       resolvePair: resolvePair,
       collisionGap: COLLISION_GAP,
       motionTuningFor: motionTuningFor,
-      filmBakeMs: function () { return filmBakeMs; }
+      filmBakeMs: function () { return filmBakeMs; },
+      // 只读快照，仅供 assets/dev 下的自动化测试点中真实泡泡；不参与玩法。
+      bubbles: function () {
+        return bubbles.map(function (bubble) {
+          return {
+            x: bubble.x, y: bubble.y, r: bubble.r,
+            scale: bubble.scale, state: bubble.state
+          };
+        });
+      }
     })
   };
 })();

@@ -46,6 +46,8 @@ const appData = {
   levelResult: null,
   latestGameStats: null,
   levelStars: 0,           // 最近一次结算的星数（0~3），只给结算卡自己看，不参与玩法
+  ending3Demo: false,
+  ending4Demo: false,
 
   // ---- 结尾段（u11 / u12）----
   dialogueIndex: 0,
@@ -299,7 +301,22 @@ const App = (function () {
   }
 
   function startCurrentLevel() {
-    const level = GameState.current();
+    const stateLevel = GameState.current();
+    let level = stateLevel;
+    if (appData.ending3Demo && stateLevel.level === 3) {
+      level = Object.assign({}, stateLevel, {
+        // target 必须高于 ENDING3_MIN_CLEARED，否则清完场也过不了防误触下限，
+        // 测试页永远走不到结局3。逃逸会把结局判给结局1，这里一并关掉。
+        key: 'L3-DEMO', bag: 1, spawn: 1, expand: 1, escape: 1,
+        duration: 99, target: 14, initialCount: 6, disableEscape: true
+      });
+    } else if (appData.ending4Demo && stateLevel.level === 3) {
+      // 结局4本地测试：袋口保持关闭，泡泡只在袋内堆积、挤压和破裂。
+      level = Object.assign({}, stateLevel, {
+        key: 'L3-OVERLOAD-DEMO', bag: 1, spawn: 3, expand: 3, escape: 1,
+        duration: 99, target: 120, initialCount: 16, disableEscape: true
+      });
+    }
     if (!appData.worries.length) {
       SceneManager.goToId('u03');
       return;
@@ -354,7 +371,13 @@ const App = (function () {
         onTimeout: handleLevelTimeout
       }
     });
+
+    // 本地结局4测试不改正式触发条件：进入第三关后直接启动“过载”叙事时间线。
+    if (appData.ending4Demo && level.level === 3) {
+      playEndingFourInteractive();
+    }
   }
+
 
   function resultSceneForLevel(level) {
     return level === 1 ? 'u07' : 'u09';
@@ -366,9 +389,8 @@ const App = (function () {
     const level = GameState.current();
     appData.latestGameStats = stats;
     if (level.level === 3) {
-      GameState.completeManual(stats);
-      setText('gameStatus', '最后一个泡泡被你亲手清除了。麻袋安静下来了。');
-      SceneManager.addTimer(function () { SceneManager.goToId('u11'); }, 720);
+      const outcome = GameState.completeManual(stats);
+      playEndingThreeInteractive(outcome);
       return;
     }
     const result = GameState.completeManual(stats);
@@ -379,25 +401,27 @@ const App = (function () {
     }, 420);
   }
 
+
   function playThirdLevelEnding(outcome) {
-    const kind = outcome.ending === 1 ? 'escape' : outcome.ending === 4 ? 'burst' : 'hold';
     if (outcome.ending === 1) {
       setText('gameStatus', outcome.trigger === 'button-failed'
         ? '独裁者按钮没有反应。麻袋松开了，泡泡正从缝隙中飘走……'
         : '你没有继续追赶它们。泡泡正慢慢飘向远方……');
-    } else if (outcome.ending === 4) {
-      setText('gameStatus', '麻袋里的泡泡正在失去稳定，它们挤在一起开始自行爆裂……');
-    }
-    if (outcome.ending === 1) {
       // 结局1 是唯一一条「画面自己长成结局页」的路：不切场景，
       // 而是让第三关当前这一帧慢慢变成 u11。结局 2/4 仍走原来的硬切。
       playEndingOne();
       return;
     }
-    LevelGame.playOutcome(kind, function () {
+    if (outcome.ending === 4) {
+      // 倒计时到点判成结局4：走「过载」叙事，不再用旧的一次性 burst 收场。
+      playEndingFourInteractive();
+      return;
+    }
+    LevelGame.playOutcome('hold', function () {
       SceneManager.goToId('u11');
     });
   }
+
 
   function handleLevelTimeout(stats) {
     if (appData.gameResolving) return;
@@ -415,6 +439,129 @@ const App = (function () {
     }, 360);
   }
 
+  function setEndingTwoNarrativeMode(active) {
+    const scene = immersiveScene();
+    if (!scene) return;
+    scene.classList.toggle('is-ending2-narrative', Boolean(active));
+    if (active) scene.dataset.phase = 'ending2-return';
+    else if (scene.dataset.phase === 'ending2-return') scene.dataset.phase = 'level';
+  }
+  function playEndingTwoInteractive(outcome) {
+    appData.finalChoice = outcome && outcome.trigger ? outcome.trigger : 'button-temporary';
+    setEndingTwoNarrativeMode(true);
+    setText('gameStatus', '');
+    const texts = appData.selectedWorries.map(function (item) { return item.text; }).filter(Boolean);
+    LevelGame.playReturnEnding({
+      text: texts[0] || '尚未说出口的烦恼',
+      texts: texts,
+      repeatClicks: CONFIG.ENDING2_REPEAT_CLICKS,
+      blankMs: CONFIG.ENDING2_BLANK_MS,
+      respawnMs: CONFIG.ENDING2_RESPAWN_MS,
+      finalMin: CONFIG.ENDING2_FINAL_MIN,
+      finalMax: CONFIG.ENDING2_FINAL_MAX,
+      groupSpawnMs: CONFIG.ENDING2_GROUP_SPAWN_MS,
+      settleMs: CONFIG.ENDING2_SETTLE_MS,
+      onComplete: function () { SceneManager.goToId('u11'); }
+    });
+  }
+  function clearEndingThreeNarrativeMode() {
+    const scene = immersiveScene();
+    if (!scene) return;
+    scene.classList.remove(
+      'is-ending3-narrative',
+      'ending3-stage-hud-out',
+      'ending3-stage-button-off',
+      'ending3-stage-space'
+    );
+    if (scene.dataset.phase === 'ending3-calm') scene.dataset.phase = 'level';
+  }
+  function playEndingThreeInteractive(outcome) {
+    const scene = immersiveScene();
+    appData.finalChoice = outcome && outcome.trigger ? outcome.trigger : 'manual-clear';
+    if (!scene) { SceneManager.goToId('u11'); return; }
+
+    clearEndingThreeNarrativeMode();
+    scene.classList.add('is-ending3-narrative');
+    scene.dataset.phase = 'ending3-calm';
+    setText('gameStatus', '最后一个泡泡被你亲手处理掉了。');
+
+    // 先给玩家约 1 秒确认“真的没有了”，再逐层退出游戏信息。
+    SceneManager.addTimer(function () {
+      scene.classList.add('ending3-stage-hud-out');
+      setText('gameStatus', '');
+    }, Math.max(0, Number(CONFIG.ENDING3_CALM_MS) || 1000));
+
+    // HUD 退场后只留下独裁者按钮。它不是坏掉，而是慢慢失去“必须使用”的意味。
+    SceneManager.addTimer(function () {
+      AudioManager.playSfx(CONFIG.AUDIO_BUTTON_OFF_SFX);
+      scene.classList.add('ending3-stage-button-off');
+    }, Math.max(0, Number(CONFIG.ENDING3_BUTTON_OFF_MS) || 2550));
+
+    // 最后一段只留空麻袋、已熄灭的按钮和大量留白，让画面真正松下来。
+    SceneManager.addTimer(function () {
+      scene.classList.add('ending3-stage-space');
+    }, Math.max(0, Number(CONFIG.ENDING3_SPACE_MS) || 3500));
+
+    SceneManager.addTimer(function () {
+      SceneManager.goToId('u11');
+    }, Math.max(0, Number(CONFIG.ENDING3_ENTER_MS) || 4600));
+  }
+  function clearEndingFourNarrativeMode() {
+    const scene = immersiveScene();
+    if (!scene) return;
+    scene.classList.remove(
+      'is-ending4-narrative',
+      'ending4-stage-hud-out',
+      'ending4-stage-pulse',
+      'ending4-stage-still',
+      'ending4-stage-settle'
+    );
+    if (scene.dataset.phase === 'ending4-overload') scene.dataset.phase = 'level';
+  }
+  function playEndingFourInteractive() {
+    const scene = immersiveScene();
+    if (!scene) return;
+    clearEndingFourNarrativeMode();
+    scene.classList.add('is-ending4-narrative');
+    scene.dataset.phase = 'ending4-overload';
+    setText('gameStatus', '泡泡还在增加。你可以继续试着处理它们。');
+
+    LevelGame.playOverloadEnding({
+      effortMs: CONFIG.ENDING4_EFFORT_MS,
+      crowdMs: CONFIG.ENDING4_CROWD_MS,
+      pulseMs: CONFIG.ENDING4_PULSE_MS,
+      firstPauseMs: CONFIG.ENDING4_FIRST_PAUSE_MS,
+      chainMs: CONFIG.ENDING4_CHAIN_MS,
+      stillMs: CONFIG.ENDING4_STILL_MS,
+      settleMs: CONFIG.ENDING4_SETTLE_MS,
+      maxBubbles: CONFIG.ENDING4_MAX_BUBBLES,
+      onStage: function (stage) {
+        if (stage === 'crowd') {
+          scene.classList.add('ending4-stage-hud-out');
+          setText('gameStatus', '处理速度已经跟不上了。');
+        } else if (stage === 'pulse') {
+          scene.classList.add('ending4-stage-pulse');
+          setText('gameStatus', '');
+        } else if (stage === 'first-burst') {
+          setText('gameStatus', '');
+        } else if (stage === 'still') {
+          scene.classList.add('ending4-stage-still');
+        } else if (stage === 'settle') {
+          scene.classList.add('ending4-stage-settle');
+        }
+      },
+      onComplete: function (stats) {
+        appData.latestGameStats = stats;
+        // 正式路径上结局已经由 resolveLevelThree 判完了，这里再调 endExperience
+        // 会把 trigger 覆写成 end-experience。只有本地测试页需要补一次判定。
+        if (appData.ending4Demo) {
+          GameState.endExperience(Object.assign({}, stats,
+            { autoBurst: Math.max(1, stats.autoBurst || 0) }));
+        }
+        SceneManager.goToId('u11');
+      }
+    });
+  }
   function useDictatorButton() {
     if (appData.gameResolving || !LevelGame.isPlaying()) return;
     const level = GameState.current();
@@ -450,8 +597,7 @@ const App = (function () {
         appData.latestGameStats = stats;
         const outcome = GameState.completeWithButton(stats);
         if (level.level === 3) {
-          setText('gameStatus', '等等，它们又回来了。');
-          SceneManager.addTimer(function () { SceneManager.goToId('u11'); }, 720);
+          playEndingTwoInteractive(outcome);
           return;
         }
         appData.levelResult = outcome;
@@ -711,6 +857,9 @@ const App = (function () {
       scene.dataset.branch = 'L1';
       scene.classList.remove('is-time-low', 'is-resolving');
     }
+    clearEndingThreeNarrativeMode();
+    clearEndingFourNarrativeMode();
+    setEndingTwoNarrativeMode(false);
     setText('gameLevel', '第一关');
     setText('gameTitle', '在时间结束前，清空麻袋里的泡泡');
     setText('gameWorry', '');
@@ -792,7 +941,7 @@ const App = (function () {
 
     SceneManager.registerHooks('u10', {
       onEnter: startCurrentLevel,
-      onExit: LevelGame.stop
+      onExit: function () { LevelGame.stop(); clearEndingThreeNarrativeMode(); clearEndingFourNarrativeMode(); setEndingTwoNarrativeMode(false); }
     });
 
     SceneManager.registerHooks('u11', {
@@ -927,6 +1076,72 @@ const App = (function () {
     document.documentElement.style.setProperty('--progress-x', String(isFinal ? 1 : index / (SceneManager.total - 1)));
   }
 
+  function maybeStartEndingTwoDemo() {
+    if (typeof URLSearchParams === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('ending2demo') !== '1') return false;
+    appData.selectedWorries = [
+      { text: '对亲密关系没有安全感', behaviorType: 'B1_LIGHT' },
+      { text: '异地关系带来的不安', behaviorType: 'B1_LIGHT' },
+      { text: '和伴侣沟通困难', behaviorType: 'B1_LIGHT' }
+    ];
+    appData.worries = appData.selectedWorries.slice();
+    appData.gameSessionStarted = true;
+    GameState.reset();
+    GameState.completeWithButton({});
+    GameState.advance();
+    GameState.completeManual({});
+    GameState.advance();
+    SceneManager.goToId('u10');
+    return true;
+  }
+  function maybeStartEndingThreeDemo() {
+    if (typeof URLSearchParams === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('ending3demo') !== '1') return false;
+    appData.ending3Demo = true;
+    appData.selectedWorries = [
+      { text: '害怕失败', behaviorType: 'B1_LIGHT' },
+      { text: '总是在反复内耗', behaviorType: 'B1_LIGHT' },
+      { text: '害怕失去控制', behaviorType: 'B1_LIGHT' }
+    ];
+    appData.worries = appData.selectedWorries.slice();
+    appData.gameSessionStarted = true;
+    GameState.reset();
+    // 用既有状态机走到 L3D，只缩短本地测试关的泡泡数量；正式触发规则不在这里改。
+    GameState.completeManual({});
+    GameState.advance();
+    GameState.completeManual({});
+    GameState.advance();
+    SceneManager.goToId('u10');
+    return true;
+  }
+  function maybeStartEndingFourDemo() {
+    if (typeof URLSearchParams === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('ending4demo') !== '1') return false;
+    appData.ending4Demo = true;
+    appData.selectedWorries = [
+      { text: '任务一下子全挤过来', behaviorType: 'B1_LIGHT' },
+      { text: '总想把每件事都同时做好', behaviorType: 'B1_LIGHT' },
+      { text: '越着急越不知道先做什么', behaviorType: 'B1_LIGHT' }
+    ];
+    appData.worries = appData.selectedWorries.slice();
+    appData.gameSessionStarted = true;
+    GameState.reset();
+    // 与结局3测试一样，只借现有状态机走到第三关；不定义正式结局4触发条件。
+    GameState.completeManual({});
+    GameState.advance();
+    GameState.completeManual({});
+    GameState.advance();
+    SceneManager.goToId('u10');
+    return true;
+  }
+  function maybeStartLocalEndingDemo() {
+    if (maybeStartEndingFourDemo()) return true;
+    if (maybeStartEndingThreeDemo()) return true;
+    return maybeStartEndingTwoDemo();
+  }
   function init() {
     // 音频最先起：它要在捕获期挂一次性的手势监听，
     // 必须早于 bindEvents() 的冒泡期点击委托，
@@ -961,6 +1176,7 @@ const App = (function () {
 
     resetGameUi();
     SceneManager.reset();
+    maybeStartLocalEndingDemo();
   }
 
   return { init: init, data: appData, restart: restart };

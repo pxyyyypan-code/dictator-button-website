@@ -27,11 +27,12 @@ assert(html.includes('doraemon-wave.png'));
 assert(!html.includes('doraemon-sit.webp'));
 assert(!css.includes('doraemon-peek.webp'));
 
-// 所有静态 src 都必须存在。
+// 所有静态 src 都必须存在。?v= 缓存戳不是路径的一部分，比对前先去掉。
 Array.from(html.matchAll(/(?:src|href)="([^"#]+)"/g), function (m) { return m[1]; })
   .filter(function (ref) { return !/^(?:https?:|data:|mailto:)/.test(ref); })
   .forEach(function (ref) {
-    assert(fs.existsSync(path.join(root, ref)), '静态资源不存在：' + ref);
+    const file = ref.split('?')[0];
+    assert(fs.existsSync(path.join(root, file)), '静态资源不存在：' + ref);
   });
 
 // 最小 CSS 结构校验：去掉注释与字符串后，花括号必须完全配对。

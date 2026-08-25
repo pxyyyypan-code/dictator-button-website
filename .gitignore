@@ -16,3 +16,8 @@ assets/dev/_shots-ending1/
 
 # 静音按钮的位置验收截图，同理：跑 _mute-shot.js 重生成（2 档 × 4 张）。
 assets/dev/_shots-mute/
+
+# 结局2/3/4 的验收截图，同理：跑 _ending-shots.js 重生成（约 5.7MB）。
+assets/dev/_ending2-*.png
+assets/dev/_ending3-*.png
+assets/dev/_ending4-*.png

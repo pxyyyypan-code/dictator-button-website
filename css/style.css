@@ -3946,12 +3946,36 @@ body[data-current-scene="u03"] .stage {
 .scene--ending[data-ending="3"] .ending-bubble { color: transparent; background: transparent; }
 .scene--ending[data-ending="3"] .ending-doraemon { right: 10%; height: 90%; }
 .scene--ending[data-ending="4"] .ending-sack {
-  height: 82%;
-  transform: skewX(-7deg) rotate(-2deg);
-  border-color: rgba(255, 217, 210, 0.86);
+  height: 68%;
+  background: rgba(253,251,246,.30);
+  border-color: rgba(2,137,180,.30);
+  box-shadow: inset 0 0 0 1px rgba(2,137,180,.06);
+  transform: rotate(.6deg);
 }
-.scene--ending[data-ending="4"] .ending-bubble { border-color: #FFD4CC; }
-.scene--ending[data-ending="4"] .ending-doraemon { right: -1%; height: 84%; }
+.scene--ending[data-ending="4"] .ending-sack::before { border-color: rgba(2,137,180,.16); }
+.scene--ending[data-ending="4"] .ending-sack::after {
+  border-color: rgba(2,137,180,.30);
+  border-bottom: 0;
+}
+.scene--ending[data-ending="4"] .ending-bubble {
+  width: clamp(8px, .9vw, 14px);
+  height: clamp(8px, .9vw, 14px);
+  padding: 0;
+  color: transparent;
+  background: rgba(2,137,180,.18);
+  border: 0;
+  opacity: .62;
+  animation: ending4-dust-fall 4.8s ease-in infinite;
+}
+.scene--ending[data-ending="4"] .ending-bubble--a { left: 54%; top: -14%; }
+.scene--ending[data-ending="4"] .ending-bubble--b { left: 26%; top: 6%; animation-delay: -1.6s; }
+.scene--ending[data-ending="4"] .ending-bubble--c { left: 43%; top: -3%; animation-delay: -3.1s; }
+.scene--ending[data-ending="4"] .ending-doraemon {
+  right: 7%;
+  bottom: -1%;
+  height: 82%;
+  animation: ending3-breathe 5.2s ease-in-out infinite alternate;
+}
 
 @keyframes ending-float {
   from { transform: translate3d(-8px, 10px, 0); }
@@ -4759,3 +4783,263 @@ body.is-muted .audio-toggle__wave { opacity: 0; }
   .ending-exit { right: 62px; }
 }
 
+
+
+.game-scene { position: relative; }
+
+/* Ending 2 · 回返：第三关清空后的结局交互。 */
+.game-scene .game-header,
+.game-scene .game-timer,
+.game-scene .immersive-exit,
+.game-scene .game-bag-note,
+.game-scene .game-dictator,
+.game-scene .game-status {
+  transition: opacity 680ms var(--ease), transform 680ms var(--ease);
+}
+.game-scene.is-ending2-narrative .game-header,
+.game-scene.is-ending2-narrative .game-timer,
+.game-scene.is-ending2-narrative .immersive-exit,
+.game-scene.is-ending2-narrative .game-bag-note,
+.game-scene.is-ending2-narrative .game-dictator,
+.game-scene.is-ending2-narrative .game-status { opacity: 0; pointer-events: none; }
+.game-scene.is-ending2-narrative .game-header { transform: translateY(-10px); }
+.game-scene.is-ending2-narrative .game-timer,
+.game-scene.is-ending2-narrative .immersive-exit { transform: translateY(-8px); }
+.game-scene.is-ending2-narrative .game-dictator { transform: translateY(10px); }
+
+/* 回返结局保持米白空间，和结局1的青蓝“远去”形成区分。 */
+.scene--ending[data-ending="2"] { color: var(--c-ink); background: var(--c-paper); }
+.scene--ending[data-ending="2"] .ending-exit { color: rgba(39,57,68,.52); }
+.scene--ending[data-ending="2"] .ending-label { color: rgba(39,57,68,.62); }
+.scene--ending[data-ending="2"] .ending-title,
+.scene--ending[data-ending="2"] .ending-insight { color: var(--c-ink); }
+.scene--ending[data-ending="2"] .ending-worry,
+.scene--ending[data-ending="2"] .ending-doraemon-copy { color: rgba(39,57,68,.66); }
+.scene--ending[data-ending="2"] .ending-doraemon-copy { border-left-color: rgba(2,137,180,.32); }
+.scene--ending[data-ending="2"] .ending-primary {
+  color: var(--c-paper-3); background: var(--c-teal); border-color: var(--c-teal);
+}
+.scene--ending[data-ending="2"] .ending-primary:hover {
+  color: var(--c-paper-3); background: var(--c-teal-deep); border-color: var(--c-teal-deep);
+}
+.scene--ending[data-ending="2"] .btn--on-primary { color: var(--c-teal-deep); }
+.scene--ending[data-ending="2"] .ending-sack {
+  height: 70%; background: rgba(253,251,246,.32); border-color: rgba(2,137,180,.38);
+  box-shadow: inset 0 0 0 1px rgba(2,137,180,.08); transform: rotate(-1deg);
+}
+.scene--ending[data-ending="2"] .ending-sack::before { border-color: rgba(2,137,180,.22); }
+.scene--ending[data-ending="2"] .ending-sack::after { border-color: rgba(2,137,180,.38); border-bottom: 0; }
+.scene--ending[data-ending="2"] .ending-button { display: none; }
+.scene--ending[data-ending="2"] .ending-doraemon { right: 7%; bottom: -1%; height: 82%; }
+.scene--ending[data-ending="2"] .ending-bubble {
+  color: var(--c-ink); background: rgba(253,251,246,.44); border-color: rgba(2,137,180,.40);
+  animation: ending-return-drift 5.8s var(--ease) infinite alternate;
+}
+.scene--ending[data-ending="2"] .ending-bubble--b { animation-delay: -1.8s; }
+.scene--ending[data-ending="2"] .ending-bubble--c { animation-delay: -3.1s; }
+@keyframes ending-return-drift {
+  from { transform: translate3d(-5px,7px,0) scale(.98); }
+  to { transform: translate3d(9px,-12px,0) scale(1.02); }
+}
+
+/* Ending 3 · 暂时晴朗：亲手处理最后一颗后的安静收束。 */
+.game-scene.is-ending3-narrative .bubble-canvas--immersive {
+  cursor: default;
+}
+
+/* 第一秒先不急着退 UI，让玩家确认场上真的已经没有泡泡。 */
+.game-scene.is-ending3-narrative .game-header,
+.game-scene.is-ending3-narrative .game-timer,
+.game-scene.is-ending3-narrative .immersive-exit,
+.game-scene.is-ending3-narrative .game-bag-note,
+.game-scene.is-ending3-narrative .game-status,
+.game-scene.is-ending3-narrative .game-dictator,
+.game-scene.is-ending3-narrative .game-dictator__label,
+.game-scene.is-ending3-narrative .game-dictator small,
+.game-scene.is-ending3-narrative .game-dictator__button,
+.game-scene.is-ending3-narrative .game-dictator__button img {
+  transition: opacity 760ms var(--ease), transform 900ms var(--ease), filter 900ms var(--ease), box-shadow 900ms var(--ease);
+}
+
+/* 计数 / 时间 / 提示依次退场，独裁者按钮本体暂时留下。 */
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-header,
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-timer,
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .immersive-exit,
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-bag-note,
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-status {
+  opacity: 0;
+  pointer-events: none;
+}
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-header { transform: translateY(-10px); }
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-timer,
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .immersive-exit { transform: translateY(-8px); }
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-dictator__label,
+.game-scene.is-ending3-narrative.ending3-stage-hud-out .game-dictator small { opacity: 0; }
+
+/* 按钮没有损坏，只是“熄灭”：减去红色强调和亮度，仍保留实体。 */
+.game-scene.is-ending3-narrative.ending3-stage-button-off .game-dictator__button {
+  pointer-events: none;
+  background: rgba(253,251,246,.72);
+  border-color: rgba(39,57,68,.16);
+  box-shadow: 0 8px 22px rgba(39,57,68,.05);
+  transform: translateY(2px) scale(.97);
+}
+.game-scene.is-ending3-narrative.ending3-stage-button-off .game-dictator__button img {
+  filter: saturate(.18) brightness(1.05) contrast(.92);
+  opacity: .68;
+}
+
+/* 最后只剩安静的空麻袋和一个已经不需要被按下的按钮。 */
+.game-scene.is-ending3-narrative.ending3-stage-space .game-dictator {
+  opacity: .58;
+  transform: translateY(10px) scale(.94);
+}
+
+/* 结局3最终页：继续使用米白 + 青蓝，不做胜利页，也不弹白卡。 */
+.scene--ending[data-ending="3"] {
+  color: var(--c-ink);
+  background: var(--c-paper);
+}
+.scene--ending[data-ending="3"] .ending-exit { color: rgba(39,57,68,.50); }
+.scene--ending[data-ending="3"] .ending-label { color: var(--c-teal); }
+.scene--ending[data-ending="3"] .ending-title,
+.scene--ending[data-ending="3"] .ending-insight { color: var(--c-ink); }
+.scene--ending[data-ending="3"] .ending-worry,
+.scene--ending[data-ending="3"] .ending-doraemon-copy { color: rgba(39,57,68,.68); }
+.scene--ending[data-ending="3"] .ending-doraemon-copy { border-left-color: rgba(2,137,180,.30); }
+.scene--ending[data-ending="3"] .ending-primary {
+  color: var(--c-paper-3);
+  background: var(--c-teal);
+  border-color: var(--c-teal);
+}
+.scene--ending[data-ending="3"] .ending-primary:hover {
+  color: var(--c-paper-3);
+  background: var(--c-teal-deep);
+  border-color: var(--c-teal-deep);
+}
+.scene--ending[data-ending="3"] .btn--on-primary { color: var(--c-teal-deep); }
+.scene--ending[data-ending="3"] .ending-sack {
+  height: 66%;
+  background: rgba(253,251,246,.30);
+  border-color: rgba(2,137,180,.32);
+  box-shadow: inset 0 0 0 1px rgba(2,137,180,.07);
+  transform: rotate(-.4deg);
+}
+.scene--ending[data-ending="3"] .ending-sack::before { border-color: rgba(2,137,180,.18); }
+.scene--ending[data-ending="3"] .ending-sack::after { border-color: rgba(2,137,180,.32); border-bottom: 0; }
+.scene--ending[data-ending="3"] .ending-bubble { display: none; }
+.scene--ending[data-ending="3"] .ending-button {
+  display: block;
+  left: 27%;
+  bottom: 18%;
+  width: clamp(82px, 8vw, 126px);
+  opacity: .52;
+  filter: saturate(.12) brightness(1.08) contrast(.9);
+  transform: rotate(-3deg) scale(.9);
+}
+.scene--ending[data-ending="3"] .ending-doraemon {
+  right: 7%;
+  bottom: -1%;
+  height: 82%;
+  animation: ending3-breathe 4.8s ease-in-out infinite alternate;
+}
+@keyframes ending3-breathe {
+  from { transform: translateY(0); }
+  to { transform: translateY(-6px); }
+}
+
+
+/* Ending 4 · 过载：压力来自密度、运动和声音，不使用暗色或警示红。 */
+.game-scene.is-ending4-narrative .bubble-canvas--immersive { cursor: crosshair; }
+.game-scene.is-ending4-narrative .game-dictator { pointer-events: none; }
+.game-scene.is-ending4-narrative .game-header,
+.game-scene.is-ending4-narrative .game-timer,
+.game-scene.is-ending4-narrative .immersive-exit,
+.game-scene.is-ending4-narrative .game-bag-note,
+.game-scene.is-ending4-narrative .game-status,
+.game-scene.is-ending4-narrative .game-dictator {
+  transition: opacity 760ms var(--ease), transform 820ms var(--ease), filter 820ms var(--ease);
+}
+
+/* 前 1~2 秒玩家仍能点击；进入 crowd 后才逐层退出“游戏界面”。 */
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-header,
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-timer,
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .immersive-exit,
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-bag-note,
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-status,
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-dictator {
+  opacity: 0;
+  pointer-events: none;
+}
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-header { transform: translateY(-10px); }
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-timer,
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .immersive-exit { transform: translateY(-8px); }
+.game-scene.is-ending4-narrative.ending4-stage-hud-out .game-dictator { transform: translateY(10px) scale(.96); }
+
+/* 同步波动阶段只做很轻的空间呼吸，不改变米白基调。 */
+.game-scene.is-ending4-narrative.ending4-stage-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 54%, rgba(4,156,191,.035), transparent 58%);
+  animation: ending4-space-pulse 1.1s ease-in-out infinite alternate;
+}
+@keyframes ending4-space-pulse {
+  from { opacity: .18; transform: scale(1); }
+  to { opacity: .55; transform: scale(1.012); }
+}
+
+/* 连锁高峰之后短暂“停住”，随后恢复柔和空间。 */
+.game-scene.is-ending4-narrative.ending4-stage-still::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(253,251,246,.035);
+}
+.game-scene.is-ending4-narrative.ending4-stage-settle .bubble-canvas--immersive {
+  cursor: default;
+}
+
+/* 结局4最终页：继续米白 + 青蓝，保留空麻袋、哆啦A梦与少量下落颗粒。 */
+.scene--ending[data-ending="4"] {
+  color: var(--c-ink);
+  background: var(--c-paper);
+}
+.scene--ending[data-ending="4"] .ending-exit { color: rgba(39,57,68,.50); }
+.scene--ending[data-ending="4"] .ending-label { color: var(--c-teal); }
+.scene--ending[data-ending="4"] .ending-title,
+.scene--ending[data-ending="4"] .ending-insight { color: var(--c-ink); }
+.scene--ending[data-ending="4"] .ending-worry,
+.scene--ending[data-ending="4"] .ending-doraemon-copy { color: rgba(39,57,68,.68); }
+.scene--ending[data-ending="4"] .ending-doraemon-copy { border-left-color: rgba(2,137,180,.30); }
+.scene--ending[data-ending="4"] .ending-primary {
+  color: var(--c-paper-3);
+  background: var(--c-teal);
+  border-color: var(--c-teal);
+}
+.scene--ending[data-ending="4"] .ending-primary:hover {
+  color: var(--c-paper-3);
+  background: var(--c-teal-deep);
+  border-color: var(--c-teal-deep);
+}
+.scene--ending[data-ending="4"] .btn--on-primary { color: var(--c-teal-deep); }
+
+
+
+@keyframes ending4-dust-fall {
+  0% { transform: translate3d(0,-8px,0); opacity: 0; }
+  18% { opacity: .62; }
+  100% { transform: translate3d(8px,72px,0); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-scene.is-ending2-narrative .ending-bubble,
+  .game-scene.is-ending3-narrative .ending-doraemon,
+  .scene--ending[data-ending="2"] .ending-bubble,
+  .scene--ending[data-ending="4"] .ending-bubble,
+  .scene--ending[data-ending="4"] .ending-doraemon { animation: none; }
+  .game-scene.is-ending4-narrative.ending4-stage-pulse::after { animation: none; }
+}
