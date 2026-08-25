@@ -4785,7 +4785,13 @@ body.is-muted .audio-toggle__wave { opacity: 0; }
 
 
 
-.game-scene { position: relative; }
+/* 结局2/4 的遮罩用 ::after + inset:0 铺满画面，需要一个定位祖先。
+   但 .game-scene 就是 .scene--immersive 本身，它必须保持 position: fixed
+   才能贴着视口——写成 relative 会让它退回 #stage 的网格里，被
+   --scene-pad-* 推开一个内距，整屏右下偏移、右侧裁掉（见文件头硬约束）。
+   所以只在真正需要遮罩的结局相位上补定位，且用 fixed 而非 relative。 */
+.game-scene.is-ending2-narrative,
+.game-scene.is-ending4-narrative { position: fixed; }
 
 /* Ending 2 · 回返：第三关清空后的结局交互。 */
 .game-scene .game-header,

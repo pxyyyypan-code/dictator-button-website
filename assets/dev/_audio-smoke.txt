@@ -37,7 +37,7 @@
   当前场景：u06
   [ok]   u06 换到 BGM3 — sfx01,bgm3,sfx09
   [ok]   泡泡生成声 SFX09 — sfx01,bgm3,sfx09
-  [ok]   泡泡点破声 SFX11/12 — 4 声（sfx12,sfx11）
+  [ok]   泡泡点破声 SFX11/12 — 4 声（sfx11,sfx12）
   [ok]   独裁者按钮 stinger BGM5 — sfx01,bgm5
   [ok]   独裁者按钮用统一的点击音 SFX01 — sfx01,bgm5
   结算场景：u07

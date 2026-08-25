@@ -1,4 +1,4 @@
-ending2 进场: {"scene":"u10","phase":"level","cls":"","status":"泡泡正在彼此推挤，留给你的空间不多了","label":"泡泡飘向远方","title":""}
+ending2 进场: {"scene":"u10","phase":"level","cls":"","status":"麻袋已经快要撑不住了","label":"泡泡飘向远方","title":""}
 ending2 空白: {"scene":"u10","phase":"ending2-return","cls":"is-ending2-narrative","status":"","label":"泡泡飘向远方","title":""}
 ending2 整批回返: {"scene":"u10","phase":"ending2-return","cls":"is-ending2-narrative","status":"","label":"泡泡飘向远方","title":""}
 ending2 结局页: {"scene":"u11","phase":"level","cls":"scene scene--immersive game-scene","status":"","label":"短暂的安静","title":"它消失了一会儿，又回来了。"}
